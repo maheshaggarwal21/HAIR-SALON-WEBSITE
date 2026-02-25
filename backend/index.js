@@ -243,6 +243,10 @@ app.post("/api/create-order", authenticate, async (req, res) => {
         customer_phone: parsed.phone,
         amount_inr: String(req.body.amount),
       },
+      customer: {
+        name: parsed.name,
+        contact: "+91" + parsed.phone,
+      },
     });
 
     return res.json({

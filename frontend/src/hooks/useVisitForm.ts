@@ -277,6 +277,10 @@ export function useVisitForm() {
           name: formData.name.trim(),
           contact: `+91${formData.phone.trim()}`,
         },
+        readonly: {
+          contact: true,
+          name: true,
+        },
         theme: { color: "#1c1917" },
         modal: {
           ondismiss: () => {

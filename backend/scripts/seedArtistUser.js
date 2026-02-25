@@ -6,8 +6,8 @@
  * Run:  node scripts/seedArtistUser.js
  *
  * Credentials:
- *   Email:    artist@theexperts.in
- *   Password: Artist@123
+  *   Email:    artist@theexperts.in
+  *   Password: Artist@123
  */
 
 require("dotenv").config();

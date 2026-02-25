@@ -127,6 +127,8 @@ router.post("/", createRules, async (req, res) => {
     }
 
     // ── Derive cash / online split amounts ───────────────────────────────
+    // Always re-derive from finalTotal to ensure cash + online = finalTotal exactly.
+    // For partial: trust the cashAmount sent from frontend (already validated above).
     let derivedCash = 0;
     let derivedOnline = 0;
     if (paymentMethod === "cash") {
@@ -134,9 +136,9 @@ router.post("/", createRules, async (req, res) => {
       derivedOnline = 0;
     } else if (paymentMethod === "partial") {
       derivedCash = Math.round(Number(cashAmount));
-      derivedOnline = finalTotal - derivedCash;
+      derivedOnline = Math.round(finalTotal - derivedCash);
     } else {
-      // "online"
+      // "online" — entire bill paid online
       derivedCash = 0;
       derivedOnline = finalTotal;
     }

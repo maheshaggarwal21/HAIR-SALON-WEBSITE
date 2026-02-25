@@ -329,8 +329,8 @@ router.get("/export", async (req, res) => {
       "Discount (₹)": v.discountAmount,
       "Final Total": v.finalTotal,
       "Payment Method": v.paymentMethod || "online",
-      "Cash Amount": v.cashAmount || 0,
-      "Online Amount": v.onlineAmount || 0,
+      "Cash Amount": Number(v.cashAmount) || 0,
+      "Online Amount": Number(v.onlineAmount) || 0,
       "Payment Status": v.paymentStatus,
       "Payment ID": v.razorpayPaymentId || "",
     }));

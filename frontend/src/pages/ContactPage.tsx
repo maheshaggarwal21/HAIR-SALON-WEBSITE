@@ -12,7 +12,7 @@ const contactDetails = [
     icon: MapPin,
     label: "Address",
     value: "Near: Sunrise Motel, Sirhind Road Patial, Punjab 147004",
-    href: "https://maps.google.com/?q=123+MG+Road+Bengaluru",
+    href: "https://share.google/K0R6KU00DnUpnOoTq",
   },
   {
     icon: Phone,
@@ -120,16 +120,23 @@ export default function ContactPage() {
           </div>
         </motion.div>
 
-        {/* Map placeholder */}
+        {/* Map */}
         <motion.div
           {...fadeUp}
           transition={{ duration: 0.5 }}
           className="rounded-2xl border border-stone-200/80 bg-stone-50 shadow-sm overflow-hidden"
         >
-          <div className="flex items-center justify-center h-56 text-stone-400 text-sm">
-            <MapPin className="w-5 h-5 mr-2" />
-            Map coming soon
-          </div>
+          <iframe
+            title="The Experts Hair Salon Location"
+            src="https://maps.google.com/maps?q=Near+Sunrise+Motel+Sirhind+Road+Patiala+Punjab+147004&output=embed"
+            width="100%"
+            height="320"
+            style={{ border: 0 }}
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            className="w-full"
+          />
         </motion.div>
       </div>
     </AppLayout>
