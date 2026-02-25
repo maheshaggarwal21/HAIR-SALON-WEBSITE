@@ -14,6 +14,7 @@
   "type": "commonjs",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^1.41.3",
     "connect-mongo": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -24,6 +25,7 @@
     "helmet": "^8.1.0",
     "mongoose": "^9.2.1",
     "multer": "^2.0.2",
+    "multer-storage-cloudinary": "^4.0.0",
     "razorpay": "^2.9.6",
     "xlsx": "^0.18.5"
   }

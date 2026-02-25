@@ -16,6 +16,8 @@ const bcrypt = require("bcryptjs");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const { v2: cloudinary } = require("cloudinary");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Artist = require("../models/Artist");
@@ -269,23 +271,22 @@ router.delete("/:id/permanent", validateId, authorize("owner"), async (req, res)
   }
 });
 
-// ─── Photo upload via multer ─────────────────────────────────────────────────
-// Vercel's serverless filesystem is read-only except /tmp.
-// Use /tmp/uploads so multer can write files without crashing on cold start.
+// ─── Photo upload via Cloudinary ─────────────────────────────────────────────
+// Files are stored in Cloudinary (permanent cloud storage) instead of the
+// local filesystem, which is ephemeral on Vercel serverless functions.
 
-const uploadsDir = process.env.VERCEL
-  ? path.join("/tmp", "uploads")
-  : path.join(__dirname, "..", "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
-    const uniqueName = `artist-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-    cb(null, uniqueName);
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "the-experts-salon/artists",
+    allowed_formats: ["jpg", "jpeg", "png", "webp", "gif"],
+    transformation: [{ width: 400, height: 400, crop: "fill", gravity: "face" }],
   },
 });
 
@@ -301,8 +302,8 @@ const upload = multer({
 });
 
 /**
- * POST /:id/photo  — Upload a photo from the user's system.
- * Saves the file to /uploads/ and stores the URL in artist.photo.
+ * POST /:id/photo  — Upload a photo to Cloudinary.
+ * Stores the permanent Cloudinary URL in artist.photo.
  * Returns the updated artist record.
  */
 router.post(
@@ -322,18 +323,24 @@ router.post(
         return res.status(400).json({ error: "No valid image file provided. Allowed: jpg, png, webp, gif (max 5 MB)" });
       }
 
-      // Delete old uploaded photo if it's a local file
-      if (artist.photo && artist.photo.startsWith("/uploads/")) {
-        const filename = path.basename(artist.photo);
-        const oldPath = path.join(uploadsDir, filename);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
+      // Delete old photo from Cloudinary if it was a Cloudinary URL
+      if (artist.photo && artist.photo.includes("cloudinary.com")) {
+        try {
+          // public_id is stored in req.file.filename by multer-storage-cloudinary.
+          // For the OLD photo we must extract it from the URL:
+          // URL format: https://res.cloudinary.com/<cloud>/image/upload/v<ver>/<folder>/<id>.<ext>
+          // public_id = everything after /upload/(v<digits>/)  without the extension
+          const match = artist.photo.match(/\/upload\/(?:v\d+\/)?(.+)\.[^.]+$/);
+          if (match) {
+            await cloudinary.uploader.destroy(match[1]);
+          }
+        } catch (delErr) {
+          console.warn("[artists] Could not delete old Cloudinary photo:", delErr.message);
         }
       }
 
-      // Store relative URL: /uploads/filename.ext
-      const photoUrl = `/uploads/${req.file.filename}`;
-      artist.photo = photoUrl;
+      // multer-storage-cloudinary v4 sets req.file.path = secure_url (permanent CDN URL)
+      artist.photo = req.file.path;
       await artist.save();
 
       return res.json(artist);
