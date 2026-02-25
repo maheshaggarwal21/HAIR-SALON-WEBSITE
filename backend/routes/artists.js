@@ -270,8 +270,12 @@ router.delete("/:id/permanent", validateId, authorize("owner"), async (req, res)
 });
 
 // ─── Photo upload via multer ─────────────────────────────────────────────────
+// Vercel's serverless filesystem is read-only except /tmp.
+// Use /tmp/uploads so multer can write files without crashing on cold start.
 
-const uploadsDir = path.join(__dirname, "..", "uploads");
+const uploadsDir = process.env.VERCEL
+  ? path.join("/tmp", "uploads")
+  : path.join(__dirname, "..", "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -320,7 +324,8 @@ router.post(
 
       // Delete old uploaded photo if it's a local file
       if (artist.photo && artist.photo.startsWith("/uploads/")) {
-        const oldPath = path.join(__dirname, "..", artist.photo);
+        const filename = path.basename(artist.photo);
+        const oldPath = path.join(uploadsDir, filename);
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath);
         }

@@ -82,7 +82,7 @@ async function ensureOwner() {
 
 // ── New: session & auth packages ─────────────────────────────────────────────
 const session = require("express-session");
-const { MongoStore } = require("connect-mongo");
+const MongoStore = require("connect-mongo");
 const { authenticate, authorize } = require("./middleware/authMiddleware");
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -118,7 +118,10 @@ const app = express();
 
 // Serve uploaded artist photos
 const path = require("path");
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+const uploadsPath = process.env.VERCEL
+  ? path.join("/tmp", "uploads")
+  : path.join(__dirname, "uploads");
+app.use("/uploads", express.static(uploadsPath));
 
 // Required for secure cookies behind Vercel's reverse proxy
 app.set("trust proxy", 1);
