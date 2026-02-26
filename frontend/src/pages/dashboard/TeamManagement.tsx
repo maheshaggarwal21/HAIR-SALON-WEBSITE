@@ -485,24 +485,27 @@ export default function TeamManagement() {
                         <p className="text-xs text-stone-500 mt-0.5">
                           {u.email}
                         </p>
-                        <p className="text-[11px] text-stone-500 mt-1">
-                          Created: {new Date(u.createdAt).toLocaleString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}
-                          {" · "}
-                          Updated: {new Date(u.updatedAt).toLocaleString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}
+                        <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                          <span className="block">
+                            Created: {new Date(u.createdAt).toLocaleString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                            })}
+                          </span>
+                          <span className="block">
+                            Updated: {new Date(u.updatedAt).toLocaleString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                            })}
+                          </span>
                         </p>
                       </td>
 
