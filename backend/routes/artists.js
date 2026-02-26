@@ -55,23 +55,8 @@ router.get("/", async (_req, res) => {
 
 router.get("/all", authorize("manager", "owner"), async (_req, res) => {
   try {
-    const artists = await Artist.find({}).sort({ createdAt: -1 }).lean();
-
-    // Map linked users to surface login activity status
-    const userIds = artists.map((a) => a.userId).filter(Boolean);
-    const users = userIds.length
-      ? await User.find({ _id: { $in: userIds } })
-          .select("_id isActive")
-          .lean()
-      : [];
-    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
-
-    const hydrated = artists.map((a) => ({
-      ...a,
-      loginActive: a.userId ? Boolean(userMap.get(a.userId.toString())?.isActive) : false,
-    }));
-
-    return res.json(hydrated);
+    const artists = await Artist.find({}).sort({ createdAt: -1 });
+    return res.json(artists);
   } catch (err) {
     console.error("[artists] List all error:", err);
     return res.status(500).json({ error: "Failed to fetch artists" });
