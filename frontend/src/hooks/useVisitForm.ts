@@ -21,6 +21,19 @@ import type {
 import { loadRazorpayScript } from "@/services/razorpay";
 import { fetchFormData, createOrder, verifyOrderPayment, createVisit } from "@/services/api";
 
+/** Convert a "HH:mm" string to total minutes since midnight. Returns null if invalid. */
+function timeToMins(t: string): number | null {
+  if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/** Return current local time as "HH:mm" (24h). */
+function nowHHMM(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
 const today = new Date().toISOString().split("T")[0];
 
 const EMPTY_FORM: VisitFormData = {
@@ -30,7 +43,7 @@ const EMPTY_FORM: VisitFormData = {
   age: "",
   gender: "",
   startTime: "",
-  endTime: "",
+  endTime: "",   // will be pre-filled on mount with current time
   artist: "",
   serviceType: [],
   searchService: [],
@@ -55,6 +68,13 @@ export function useVisitForm() {
   const [dropdownLoading, setDropdownLoading] = useState(true);
   const [dropdownError, setDropdownError] = useState(false);
 
+  // Pre-fill endTime with current system time on mount.
+  // Staff tap "end visit" and the time is already correct — they just confirm.
+  useEffect(() => {
+    setFormData((prev) => ({ ...prev, endTime: nowHHMM() }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load dropdown options on mount
   useEffect(() => {
     setDropdownLoading(true);
@@ -68,6 +88,23 @@ export function useVisitForm() {
       })
       .finally(() => setDropdownLoading(false));
   }, []);
+
+  // ── Derived visit duration (for display + backend storage) ───────────────
+  /**
+   * Duration in minutes between startTime and endTime.
+   * null if either time is missing or end is not after start.
+   *
+   * useMemo: only recalculates when startTime or endTime changes.
+   * This is a "derived value" — we don't store it in state because
+   * it's always computable from the other two values.
+   */
+  const durationMins = useMemo(() => {
+    const start = timeToMins(formData.startTime);
+    const end = timeToMins(formData.endTime);
+    if (start === null || end === null) return null;
+    const diff = end - start;
+    return diff > 0 ? diff : null;
+  }, [formData.startTime, formData.endTime]);
 
   // ── Service display items for MultiSelect (append price to name) ───────────
   const serviceDisplayItems = useMemo(
@@ -168,7 +205,9 @@ export function useVisitForm() {
 
   // ── Reset ──────────────────────────────────────────────────────────────────
   const handleReset = () => {
-    setFormData({ ...EMPTY_FORM, date: today });
+    // Re-fill endTime with current time (same as on mount) so the field
+    // isn't left empty after a form reset.
+    setFormData({ ...EMPTY_FORM, date: today, endTime: nowHHMM() });
     setErrors({});
     setPaymentError(null);
   };
@@ -213,6 +252,8 @@ export function useVisitForm() {
         razorpayPaymentId: opts.razorpayPaymentId,
         cashAmount: opts.cashAmount,
         onlineAmount: opts.onlineAmount,
+        // Send the computed duration so the backend stores it without recalculating
+        visitDurationMins: durationMins,
       });
     };
 
@@ -363,6 +404,7 @@ export function useVisitForm() {
     payable,
     cashAmountNum,
     onlinePayable,
+    durationMins,
     handleChange,
     handleSelect,
     handleMultiSelect,

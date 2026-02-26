@@ -16,6 +16,11 @@ interface Employee {
   uniqueCustomers: number;
   revenue: number;
   hoursWorked: number;
+  // Phase 3: productivity fields
+  revenuePerHour: number;          // ₹ per effective hour
+  totalExtraMins: number;          // net extra time (+ = late, - = early)
+  schedulableVisits: number;       // visits with full duration data
+  productivityScore: number;       // revenue ÷ effectiveHours (ranking key)
 }
 
 interface Props {
@@ -62,7 +67,7 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-semibold text-stone-900">Employee Leaderboard</h2>
-          <p className="text-sm text-stone-500">Ranked by revenue generated</p>
+          <p className="text-sm text-stone-500">Ranked by productivity (₹ per effective hour)</p>
         </div>
         {topEmployee && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
@@ -84,7 +89,8 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
               <th className="text-right py-3 px-2 text-stone-500 font-medium">Customers</th>
               <th className="text-right py-3 px-2 text-stone-500 font-medium">Revenue</th>
               <th className="text-right py-3 px-2 text-stone-500 font-medium">Hours</th>
-              <th className="text-right py-3 px-2 text-stone-500 font-medium">₹/Customer</th>
+              <th className="text-right py-3 px-2 text-stone-500 font-medium">₹/Hour</th>
+              <th className="text-right py-3 px-2 text-stone-500 font-medium">Extra Time</th>
             </tr>
           </thead>
           <tbody>
@@ -107,8 +113,21 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
                   ₹{e.revenue.toLocaleString("en-IN")}
                 </td>
                 <td className="py-3 px-2 text-right text-stone-600">{e.hoursWorked}h</td>
+                {/* ₹/Hour: based on effective hours if duration data exists, else actual */}
                 <td className="py-3 px-2 text-right text-stone-600">
-                  ₹{e.customersServed > 0 ? Math.round(e.revenue / e.customersServed).toLocaleString("en-IN") : 0}
+                  {e.revenuePerHour > 0 ? `₹${e.revenuePerHour.toLocaleString("en-IN")}` : "—"}
+                </td>
+                {/* Extra Time: net overrun/underrun beyond ±10 min tolerance */}
+                <td className="py-3 px-2 text-right">
+                  {e.schedulableVisits === 0 ? (
+                    <span className="text-stone-400 text-xs">no data</span>
+                  ) : e.totalExtraMins > 0 ? (
+                    <span className="text-red-500 font-medium text-xs">+{e.totalExtraMins}m</span>
+                  ) : e.totalExtraMins < 0 ? (
+                    <span className="text-emerald-600 font-medium text-xs">{e.totalExtraMins}m</span>
+                  ) : (
+                    <span className="text-emerald-500 text-xs">On Time</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -120,20 +139,33 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
       <div className="mt-4 p-4 bg-stone-50 border border-stone-100 rounded-lg space-y-1.5">
         <p className="text-sm font-medium text-stone-700">Key Insights:</p>
         <p className="text-sm text-stone-600">
-          <span className="text-stone-900 font-medium">{topEmployee.name}</span> leads with ₹{topEmployee.revenue.toLocaleString("en-IN")} revenue across {topEmployee.customersServed} customers.
+          <span className="text-stone-900 font-medium">{topEmployee.name}</span> leads with{" "}
+          ₹{topEmployee.revenue.toLocaleString("en-IN")} revenue across {topEmployee.customersServed} customers
+          {topEmployee.revenuePerHour > 0 && (
+            <> at <span className="text-emerald-600 font-medium">₹{topEmployee.revenuePerHour.toLocaleString("en-IN")}/hr</span> effectiveness</>
+          )}.
         </p>
         {data.length > 1 && (
           <p className="text-sm text-stone-600">
-            Revenue gap between #{1} and #{data.length}: ₹{(data[0].revenue - data[data.length - 1].revenue).toLocaleString("en-IN")}
+            Productivity gap (#1 vs last): ₹{(data[0].productivityScore - data[data.length - 1].productivityScore).toLocaleString("en-IN")}/hr effective
           </p>
         )}
         {(() => {
-          const topHours = [...data].sort((a, b) => b.hoursWorked - a.hoursWorked)[0];
-          return (
+          // Highlight whoever finished earliest (most negative totalExtraMins)
+          const withData = data.filter((e) => e.schedulableVisits > 0);
+          if (withData.length === 0) return null;
+          const mostEfficient = [...withData].sort((a, b) => a.totalExtraMins - b.totalExtraMins)[0];
+          return mostEfficient.totalExtraMins < 0 ? (
             <p className="text-sm text-stone-600">
-              Most hours worked: <span className="text-stone-900 font-medium">{topHours.name}</span> ({topHours.hoursWorked}h)
+              Most time-efficient: <span className="text-stone-900 font-medium">{mostEfficient.name}</span>{" "}
+              (<span className="text-emerald-600">{mostEfficient.totalExtraMins}m</span> under expected)
             </p>
-          );
+          ) : mostEfficient.totalExtraMins > 0 ? (
+            <p className="text-sm text-stone-600">
+              Watch: <span className="text-stone-900 font-medium">{mostEfficient.name}</span>{" "}
+              accumulating <span className="text-red-500">+{mostEfficient.totalExtraMins}m</span> overtime
+            </p>
+          ) : null;
         })()}
       </div>
     </div>

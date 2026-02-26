@@ -226,4 +226,80 @@ router.get("/daily-trend", async (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────────
+// 5. GET /time-performance — Extra time vs expected for this artist
+//
+// HOW IT WORKS:
+//   For each visit, we compare actual duration (endTime - startTime) against
+//   expected duration (sum of service.duration snapshots).
+//
+//   A visit is "schedulable" only if every service in it has a duration
+//   snapshot (duration !== null). This excludes older pre-Phase-3 visits.
+//
+//   Tolerance: ±10 minutes. Only time BEYOND that threshold counts as extra.
+//     diff > +10 → over by (diff - 10) mins  → positive (bad)
+//     diff < -10 → early by (|diff| - 10) mins → negative (good)
+//     |diff| ≤ 10 → within tolerance → 0
+//
+//   totalExtraMins is the NET sum across all schedulable visits.
+//   ─ Positive total: artist consistently runs over → needs improvement.
+//   ─ Negative total: artist consistently finishes early → efficient!
+// ────────────────────────────────────────────────────
+router.get("/time-performance", async (req, res) => {
+  try {
+    const artistName = req.artistRecord.name;
+    const match = { ...dateFilter(req.query), artist: artistName };
+
+    const visits = await Visit.find(match).sort({ date: 1 });
+
+    const perVisit = [];
+    let totalExtraMins = 0;
+    let schedulableVisits = 0;
+    let nonSchedulableVisits = 0;
+
+    visits.forEach((v) => {
+      // Actual duration from stored time strings
+      const actualMins = calcHours(v.startTime, v.endTime) * 60;
+
+      // Check if ALL services have a duration snapshot
+      const allHaveDuration =
+        v.services.length > 0 &&
+        v.services.every((s) => s.duration !== null && s.duration !== undefined);
+
+      if (!allHaveDuration) {
+        nonSchedulableVisits++;
+        return; // skip this visit from time calculations
+      }
+
+      schedulableVisits++;
+      const expectedMins = v.services.reduce((sum, s) => sum + (s.duration || 0), 0);
+      const diff = actualMins - expectedMins;
+
+      // Apply ±10 min tolerance — only count excess beyond threshold
+      let extraMins = 0;
+      if (diff > 10) extraMins = diff - 10;        // ran over
+      else if (diff < -10) extraMins = diff + 10;  // finished early (negative)
+
+      totalExtraMins += extraMins;
+
+      perVisit.push({
+        date: v.date,
+        actualMins: Math.round(actualMins),
+        expectedMins,
+        extraMins: Math.round(extraMins),
+      });
+    });
+
+    return res.json({
+      schedulableVisits,
+      nonSchedulableVisits,
+      totalExtraMins: Math.round(totalExtraMins),
+      perVisit,
+    });
+  } catch (err) {
+    console.error("[artist-dashboard] Time performance error:", err);
+    return res.status(500).json({ error: "Failed to fetch time performance" });
+  }
+});
+
 module.exports = router;

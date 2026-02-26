@@ -90,6 +90,11 @@ router.post(
       .isFloat({ min: 0 })
       .withMessage("Price must be a non-negative number"),
     body("category").optional().trim(),
+    // durationMinutes is optional — must be a positive integer when provided
+    body("durationMinutes")
+      .optional({ nullable: true })
+      .isInt({ min: 1 })
+      .withMessage("Duration must be a whole number of minutes (at least 1)"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -112,6 +117,8 @@ router.post(
         name: req.body.name.trim(),
         price: Number(req.body.price),
         category: req.body.category?.trim() || "",
+        // undefined means "don't set" — Mongoose will use the schema default (null)
+        durationMinutes: req.body.durationMinutes != null ? Number(req.body.durationMinutes) : null,
       });
 
       return res.status(201).json(service);
@@ -140,6 +147,10 @@ router.patch(
       .withMessage("Price must be a non-negative number"),
     body("category").optional().trim(),
     body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+    body("durationMinutes")
+      .optional({ nullable: true })
+      .custom((v) => v === null || (Number.isInteger(Number(v)) && Number(v) >= 1))
+      .withMessage("Duration must be a whole number ≥ 1, or null to clear it"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -174,6 +185,9 @@ router.patch(
       if (req.body.price !== undefined) updateObj.price = Number(req.body.price);
       if (req.body.category !== undefined) updateObj.category = req.body.category.trim();
       if (req.body.isActive !== undefined) updateObj.isActive = req.body.isActive;
+      // Allow setting to null (clear) or a new number
+      if (req.body.durationMinutes !== undefined)
+        updateObj.durationMinutes = req.body.durationMinutes === null ? null : Number(req.body.durationMinutes);
 
       const updated = await Service.findByIdAndUpdate(id, updateObj, { new: true });
       return res.json(updated);

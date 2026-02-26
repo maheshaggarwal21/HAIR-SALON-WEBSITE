@@ -33,8 +33,17 @@ const visitSchema = new mongoose.Schema(
       {
         name: { type: String, required: true },
         price: { type: Number, required: true, min: 0 },
+        // Snapshot of durationMinutes at the time of visit creation.
+        // Null for services that had no duration set, or older visits.
+        // Snapshotting protects historical accuracy — if the admin edits
+        // a service's duration tomorrow, past visits should not change.
+        duration: { type: Number, default: null },
       },
     ],
+    // Total actual duration of the full visit in minutes (endTime - startTime).
+    // Calculated in the frontend and sent with the form, stored here for
+    // efficient analytics queries (avoids recalculating from time strings).
+    visitDurationMins: { type: Number, default: null },
     filledBy: { type: String, required: true, trim: true },
 
     // ── Billing ──

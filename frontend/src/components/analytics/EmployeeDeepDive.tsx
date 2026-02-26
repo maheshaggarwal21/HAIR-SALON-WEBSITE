@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { User, TrendingUp, Clock, Users, Award } from "lucide-react";
+import { User, TrendingUp, Clock, Users, Award, Zap, Timer } from "lucide-react";
 
 interface EmployeeDetail {
   name: string;
@@ -21,6 +21,10 @@ interface EmployeeDetail {
   topServices: { service: string; count: number; revenue: number }[];
   rank: number;
   totalArtists: number;
+  // Phase 3: time performance fields
+  revenuePerHour: number;       // ₹ per effective hour
+  totalExtraMins: number;       // net over/under time (+ = late, - = early)
+  schedulableVisits: number;    // visits with duration data
 }
 
 interface EmployeeName {
@@ -106,13 +110,51 @@ export default function EmployeeDeepDive({ api, qs }: Props) {
         </div>
       ) : data && data.customersServed > 0 ? (
         <>
-          {/* Stat cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          {/* Stat cards: core 5 always shown + 2 Phase-3 cards when data exists */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <StatCard icon={Award} label="Rank" value={`#${data.rank} of ${data.totalArtists}`} color="text-amber-500" />
             <StatCard icon={TrendingUp} label="Revenue" value={`₹${data.revenue.toLocaleString("en-IN")}`} color="text-emerald-600" />
             <StatCard icon={Users} label="Customers" value={String(data.customersServed)} color="text-blue-500" />
             <StatCard icon={Clock} label="Hours Worked" value={`${data.hoursWorked}h`} color="text-purple-500" />
+          </div>
+          <div className={`grid gap-4 mb-6 ${
+            data.schedulableVisits > 0 ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2 md:grid-cols-2"
+          }`}>
             <StatCard icon={User} label="Avg ₹/Visit" value={`₹${data.avgRevenuePerVisit.toLocaleString("en-IN")}`} color="text-pink-500" />
+            {/* ₹/Hour: only meaningful when we have at least some visits with duration data */}
+            <StatCard
+              icon={Zap}
+              label="₹/Hour (Effective)"
+              value={data.schedulableVisits > 0 && data.revenuePerHour > 0
+                ? `₹${data.revenuePerHour.toLocaleString("en-IN")}`
+                : "—"}
+              color="text-indigo-500"
+            />
+            {/* Extra Time: net overrun/underrun beyond ±10 min tolerance */}
+            {data.schedulableVisits > 0 && (
+              <div className="bg-white border border-stone-200 rounded-lg p-4">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Timer className={`w-4 h-4 ${
+                    data.totalExtraMins > 0 ? "text-red-500"
+                    : data.totalExtraMins < 0 ? "text-emerald-500"
+                    : "text-stone-400"
+                  }`} />
+                  <span className="text-xs text-stone-500">Extra Time</span>
+                </div>
+                {data.totalExtraMins === 0 ? (
+                  <p className="text-lg font-bold text-emerald-500">On Time</p>
+                ) : (
+                  <p className={`text-lg font-bold ${
+                    data.totalExtraMins > 0 ? "text-red-500" : "text-emerald-600"
+                  }`}>
+                    {data.totalExtraMins > 0 ? "+" : ""}{data.totalExtraMins}m
+                  </p>
+                )}
+                <p className="text-xs text-stone-400 mt-0.5">
+                  across {data.schedulableVisits} timed visit{data.schedulableVisits !== 1 ? "s" : ""}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Top services bar chart */}
@@ -147,6 +189,20 @@ export default function EmployeeDeepDive({ api, qs }: Props) {
             <p className="text-sm text-stone-600">
               Average earning per customer visit: <span className="text-stone-900 font-medium">₹{data.avgRevenuePerVisit.toLocaleString("en-IN")}</span>
             </p>
+            {data.schedulableVisits > 0 && data.revenuePerHour > 0 && (
+              <p className="text-sm text-stone-600">
+                Effective productivity: <span className="text-indigo-500 font-medium">₹{data.revenuePerHour.toLocaleString("en-IN")}/hr</span>{" "}
+                (adjusted for {data.totalExtraMins > 0 ? "overtime" : data.totalExtraMins < 0 ? "time saved" : "on-time performance"})
+              </p>
+            )}
+            {data.schedulableVisits > 0 && data.totalExtraMins !== 0 && (
+              <p className="text-sm text-stone-600">
+                Net extra time:{" "}
+                {data.totalExtraMins > 0
+                  ? <span className="text-red-500 font-medium">+{data.totalExtraMins} min over schedule</span>
+                  : <span className="text-emerald-600 font-medium">{data.totalExtraMins} min under schedule</span>}
+              </p>
+            )}
             {data.rank === 1 && (
               <p className="text-sm text-amber-600 font-medium mt-1">
                 ⭐ Top performer — recommended for incentive!

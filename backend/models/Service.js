@@ -30,6 +30,14 @@ const serviceSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    // Expected duration of this service in minutes.
+    // Optional — null means "no duration set yet".
+    // Used to calculate artist time performance (actual vs expected).
+    durationMinutes: {
+      type: Number,
+      min: [1, "Duration must be at least 1 minute"],
+      default: null,
+    },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

@@ -14,9 +14,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Phone, Calendar,
-   Percent, Calculator,
+  Percent, Calculator,
   Banknote, CreditCard, SplitSquareHorizontal,
-  IndianRupee,
+  IndianRupee, Clock,
 } from "lucide-react";
 import { SparklesCore } from "@/components/ui/sparkles";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { TimePicker } from "@/components/ui/time-picker";
+import { TimePicker, MaskedTimeInput } from "@/components/ui/time-picker";
 import { cn } from "@/lib/utils";
 import AppLayout from "@/layouts/AppLayout";
 import { useVisitForm } from "@/hooks/useVisitForm";
@@ -50,6 +50,7 @@ export default function VisitEntryPage() {
     payable,
     cashAmountNum,
     onlinePayable,
+    durationMins,
     handleChange,
     handleSelect,
     handleMultiSelect,
@@ -223,18 +224,42 @@ export default function VisitEntryPage() {
               </Field>
 
               <Field label="Start Time" required error={errors.startTime}>
-                <TimePicker
+                {/* MaskedTimeInput: staff type the time directly (faster than drum-roll).
+                    Auto-inserts ":" at position 2. Validates on blur. */}
+                <MaskedTimeInput
                   value={formData.startTime}
                   onChange={(v) => handleSelect("startTime")(v)}
+                  hasError={!!errors.startTime}
                 />
               </Field>
 
               <Field label="End Time" required error={errors.endTime}>
+                {/* TimePicker (drum-roll): pre-filled with current system time.
+                    Staff just confirm or scroll to adjust. */}
                 <TimePicker
                   value={formData.endTime}
                   onChange={(v) => handleSelect("endTime")(v)}
                 />
               </Field>
+
+              {/* Duration badge — appears once both times are set and valid */}
+              {durationMins !== null && (
+                <div className="sm:col-span-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <p className="text-sm font-medium text-amber-800">
+                    Visit duration: <span className="font-bold">{durationMins} min{durationMins !== 1 ? "s" : ""}</span>
+                    <span className="text-amber-600 font-normal ml-2">
+                      ({Math.floor(durationMins / 60) > 0 ? `${Math.floor(durationMins / 60)}h ` : ""}{durationMins % 60 > 0 ? `${durationMins % 60}m` : ""})
+                    </span>
+                  </p>
+                </div>
+              )}
+              {formData.startTime && formData.endTime && durationMins === null && (
+                <div className="sm:col-span-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200">
+                  <Clock className="w-4 h-4 text-red-500 shrink-0" />
+                  <p className="text-sm text-red-700">End time must be after start time</p>
+                </div>
+              )}
 
               <Field label="Services" required error={errors.amount} className="sm:col-span-2">
                 {!dropdownLoading && serviceDisplayItems.length === 0 ? (

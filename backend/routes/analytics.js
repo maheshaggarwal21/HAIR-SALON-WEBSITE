@@ -147,35 +147,107 @@ router.get("/top-services", async (req, res) => {
 
 // ────────────────────────────────────────────────────
 // 3. GET /api/analytics/employees
-//    Returns: leaderboard — rank, name, customers, revenue, hours
+//    Returns: leaderboard ranked by PRODUCTIVITY SCORE
+//
+//    PRODUCTIVITY SCORE = revenue ÷ effectiveHours
+//    where:
+//      effectiveHours = actualHours + (penaltyMins/60) − (bonusMins/60)
+//      penaltyMins = total overtime beyond +10 min tolerance
+//      bonusMins   = total time saved beyond −10 min tolerance
+//
+//    For artists with no duration data (all pre-Phase-3 visits):
+//      effectiveHours = actualHours  (fallback, no penalty/bonus)
+//
+//    Also returns revenuePerHour (based on effectiveHours if data exists,
+//    else actualHours) and totalExtraMins (net over/under).
 // ────────────────────────────────────────────────────
 router.get("/employees", async (req, res) => {
   try {
     const match = dateFilter(req.query);
     const visits = await Visit.find(match);
 
-    // Group by artist
+    // Build per-artist stats
     const map = {};
     visits.forEach((v) => {
       const key = v.artist;
       if (!map[key]) {
-        map[key] = { name: key, customers: 0, revenue: 0, totalHours: 0, contacts: new Set() };
+        map[key] = {
+          name: key,
+          customers: 0,
+          revenue: 0,
+          totalHours: 0,
+          contacts: new Set(),
+          penaltyMins: 0,   // total overrun beyond +10 min
+          bonusMins: 0,     // total underrun beyond -10 min
+          totalExtraMins: 0,// net = penaltyMins - bonusMins
+          schedulableVisits: 0, // visits where all services have duration
+        };
       }
-      map[key].customers += 1;
-      map[key].revenue += v.finalTotal || 0;
-      map[key].totalHours += calcHours(v.startTime, v.endTime);
-      map[key].contacts.add(v.contact);
+      const a = map[key];
+      a.customers += 1;
+      a.revenue += v.finalTotal || 0;
+      const actualMins = calcHours(v.startTime, v.endTime) * 60;
+      a.totalHours += actualMins / 60;
+      a.contacts.add(v.contact);
+
+      // Time performance calculation
+      // A visit is "schedulable" only if ALL its services have a duration snapshot
+      const allHaveDuration =
+        v.services.length > 0 &&
+        v.services.every((s) => s.duration !== null && s.duration !== undefined);
+
+      if (allHaveDuration) {
+        a.schedulableVisits++;
+        const expectedMins = v.services.reduce((s, svc) => s + (svc.duration || 0), 0);
+        const diff = actualMins - expectedMins;
+
+        // Only time BEYOND the ±10 min tolerance counts
+        if (diff > 10) {
+          a.penaltyMins += diff - 10;  // ran over
+        } else if (diff < -10) {
+          a.bonusMins += Math.abs(diff) - 10; // finished early
+        }
+        // Track net extra for display
+        a.totalExtraMins += diff > 10 ? (diff - 10) : diff < -10 ? (diff + 10) : 0;
+      }
     });
 
     const leaderboard = Object.values(map)
-      .map((e) => ({
-        name: e.name,
-        customersServed: e.customers,
-        uniqueCustomers: e.contacts.size,
-        revenue: Math.round(e.revenue),
-        hoursWorked: Math.round(e.totalHours * 10) / 10,
-      }))
-      .sort((a, b) => b.revenue - a.revenue)
+      .map((e) => {
+        const actualHours = Math.round(e.totalHours * 10) / 10;
+        const revenue = Math.round(e.revenue);
+
+        // Effective hours: adjust actual by penalty/bonus
+        // If no duration data exists, fall back to actual hours (fair — missing data)
+        let effectiveHours;
+        if (e.schedulableVisits > 0) {
+          effectiveHours = e.totalHours + (e.penaltyMins / 60) - (e.bonusMins / 60);
+          effectiveHours = Math.max(effectiveHours, 0.01); // avoid div-by-zero
+        } else {
+          effectiveHours = e.totalHours || 0.01; // fallback
+        }
+
+        // Productivity score: revenue per effective hour (used for ranking)
+        const productivityScore = revenue / effectiveHours;
+
+        // ₹/Hour shown in UI: based on effective hours if we have duration data
+        const revenuePerHour = e.schedulableVisits > 0
+          ? Math.round(revenue / effectiveHours)
+          : (actualHours > 0 ? Math.round(revenue / actualHours) : 0);
+
+        return {
+          name: e.name,
+          customersServed: e.customers,
+          uniqueCustomers: e.contacts.size,
+          revenue,
+          hoursWorked: actualHours,
+          revenuePerHour,
+          totalExtraMins: Math.round(e.totalExtraMins),
+          schedulableVisits: e.schedulableVisits,
+          productivityScore: Math.round(productivityScore),
+        };
+      })
+      .sort((a, b) => b.productivityScore - a.productivityScore) // rank by productivity
       .map((e, i) => ({ rank: i + 1, ...e }));
 
     res.json(leaderboard);
@@ -232,14 +304,40 @@ router.get("/employee/:name", async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Rank vs peers (by revenue)
+    // Rank vs peers — must use the same productivityScore formula as the
+    // leaderboard so the rank shown in deep dive equals the leaderboard rank.
     const peerMap = {};
     allVisits.forEach((v) => {
-      if (!peerMap[v.artist]) peerMap[v.artist] = 0;
-      peerMap[v.artist] += v.finalTotal || 0;
+      if (!peerMap[v.artist]) {
+        peerMap[v.artist] = { revenue: 0, totalHours: 0, penaltyMins: 0, bonusMins: 0, schedulableVisits: 0 };
+      }
+      peerMap[v.artist].revenue += v.finalTotal || 0;
+      peerMap[v.artist].totalHours += calcHours(v.startTime, v.endTime);
+      const allHaveDuration =
+        v.services.length > 0 &&
+        v.services.every((s) => s.duration !== null && s.duration !== undefined);
+      if (allHaveDuration) {
+        peerMap[v.artist].schedulableVisits++;
+        const actualMins = calcHours(v.startTime, v.endTime) * 60;
+        const expectedMins = v.services.reduce((s2, svc) => s2 + (svc.duration || 0), 0);
+        const diff = actualMins - expectedMins;
+        if (diff > 10) peerMap[v.artist].penaltyMins += diff - 10;
+        else if (diff < -10) peerMap[v.artist].bonusMins += Math.abs(diff) - 10;
+      }
     });
-    const sorted = Object.entries(peerMap).sort((a, b) => b[1] - a[1]);
-    const rank = sorted.findIndex(([name]) => name === artistName) + 1;
+    const sorted = Object.entries(peerMap)
+      .map(([name, p]) => {
+        let effectiveHours = p.totalHours;
+        if (p.schedulableVisits > 0) {
+          effectiveHours = p.totalHours + (p.penaltyMins / 60) - (p.bonusMins / 60);
+          effectiveHours = Math.max(effectiveHours, 0.01);
+        } else {
+          effectiveHours = p.totalHours || 0.01;
+        }
+        return { name, score: Math.round(p.revenue) / effectiveHours };
+      })
+      .sort((a, b) => b.score - a.score);
+    const rank = sorted.findIndex((e) => e.name === artistName) + 1;
     const totalArtists = sorted.length;
 
     res.json({
@@ -252,6 +350,35 @@ router.get("/employee/:name", async (req, res) => {
       topServices,
       rank,
       totalArtists,
+      // ─ Time performance fields ─
+      // Calculate the same penalty/bonus logic as the leaderboard endpoint
+      ...(() => {
+        let penaltyMins = 0, bonusMins = 0, totalExtraMinsVal = 0, schedVisits = 0;
+        artistVisits.forEach((v) => {
+          const allHaveDuration =
+            v.services.length > 0 &&
+            v.services.every((s) => s.duration !== null && s.duration !== undefined);
+          if (!allHaveDuration) return;
+          schedVisits++;
+          const actualMins = calcHours(v.startTime, v.endTime) * 60;
+          const expectedMins = v.services.reduce((s, svc) => s + (svc.duration || 0), 0);
+          const diff = actualMins - expectedMins;
+          if (diff > 10) { penaltyMins += diff - 10; totalExtraMinsVal += diff - 10; }
+          else if (diff < -10) { bonusMins += Math.abs(diff) - 10; totalExtraMinsVal += diff + 10; }
+        });
+        let effectiveHours = totalHours;
+        if (schedVisits > 0) {
+          effectiveHours = totalHours + (penaltyMins / 60) - (bonusMins / 60);
+          effectiveHours = Math.max(effectiveHours, 0.01);
+        }
+        return {
+          totalExtraMins: Math.round(totalExtraMinsVal),
+          schedulableVisits: schedVisits,
+          revenuePerHour: effectiveHours > 0
+            ? Math.round(Math.round(revenue) / effectiveHours)
+            : 0,
+        };
+      })(),
     });
   } catch (err) {
     console.error("Employee detail error:", err);

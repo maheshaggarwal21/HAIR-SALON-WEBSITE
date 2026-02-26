@@ -348,3 +348,138 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
     </div>
   );
 }
+
+// ─── MaskedTimeInput ──────────────────────────────────────────────────────────
+/**
+ * A 12-hour typed time input with an adjacent AM/PM toggle button.
+ *
+ * HOW IT WORKS:
+ *   - User types up to 4 digits (e.g. "0930") → auto-masked to "09:30".
+ *   - Hours are clamped to 1–12; minutes to 0–59.
+ *   - An AM / PM pill button sits right next to the field. Tapping
+ *     it toggles the period instantly and re-fires onChange.
+ *   - onChange always fires a 24h "HH:mm" string (same contract as before)
+ *     so the hook, backend and DB are completely untouched.
+ *   - The external `value` prop is a 24h "HH:mm" string; when it changes
+ *     (e.g. form reset) the display and period are re-derived.
+ */
+interface MaskedTimeInputProps {
+  value: string;          // "HH:mm" 24h or ""
+  onChange: (v: string) => void;
+  placeholder?: string;
+  hasError?: boolean;
+  className?: string;
+}
+
+/** Parse a 24h "HH:mm" into { display12: "hh:mm", period } for the typed field. */
+function to12hDisplay(v: string): { display: string; period: "AM" | "PM" } {
+  if (!v || !/^\d{2}:\d{2}$/.test(v)) return { display: "", period: "AM" };
+  const { h12, minute, period } = parseTime(v);
+  return {
+    display: `${String(h12).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    period,
+  };
+}
+
+export function MaskedTimeInput({
+  value,
+  onChange,
+  placeholder = "hh:mm",
+  hasError = false,
+  className,
+}: MaskedTimeInputProps) {
+  const initial = to12hDisplay(value);
+  const [display, setDisplay] = useState(initial.display);
+  const [period, setPeriod] = useState<"AM" | "PM">(initial.period);
+
+  // Sync when external value changes (e.g. form reset)
+  useEffect(() => {
+    const parsed = to12hDisplay(value);
+    setDisplay(parsed.display);
+    setPeriod(parsed.period);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  /** Convert local 12h state → 24h string and fire parent onChange. */
+  const emit = (disp: string, per: "AM" | "PM") => {
+    const digits = disp.replace(/\D/g, "");
+    if (digits.length < 4) return; // need all 4 digits (HHMM) before firing
+    const h12 = Math.min(12, Math.max(1, Number(digits.slice(0, 2) || "12")));
+    const m   = Math.min(59, Number(digits.slice(2, 4) || "0"));
+    onChange(buildTime(h12, m, per));
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Keep only digits, max 4
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 4);
+
+    // Rebuild 12h masked display: insert colon after 2 digits
+    let masked = digits;
+    if (digits.length >= 3) masked = digits.slice(0, 2) + ":" + digits.slice(2);
+    setDisplay(masked);
+
+    // Fire early only when 4 digits are entered and hours are valid (1–12)
+    if (digits.length === 4) {
+      const h12 = Number(digits.slice(0, 2));
+      const m   = Number(digits.slice(2, 4));
+      if (h12 >= 1 && h12 <= 12 && m <= 59) {
+        onChange(buildTime(h12, m, period));
+      }
+    }
+  };
+
+  const handleBlur = () => {
+    const digits = display.replace(/\D/g, "");
+    if (!digits) return;
+    // Clamp and complete any partial input
+    const h12 = Math.min(12, Math.max(1, Number(digits.slice(0, 2) || "12")));
+    const m   = Math.min(59, Number(digits.slice(2, 4) || "0"));
+    const completed = `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    setDisplay(completed);
+    onChange(buildTime(h12, m, period));
+  };
+
+  const togglePeriod = () => {
+    const next: "AM" | "PM" = period === "AM" ? "PM" : "AM";
+    setPeriod(next);
+    emit(display, next); // re-fire with new period immediately
+  };
+
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      {/* Typed 12h field */}
+      <div className="relative flex-1">
+        <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+        <input
+          type="text"
+          inputMode="numeric"
+          value={display}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          maxLength={5}
+          className={cn(
+            "w-full h-11 pl-10 pr-4 rounded-xl border bg-stone-50 text-stone-900 text-sm",
+            "focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400",
+            "placeholder:text-stone-400 transition-all duration-150",
+            hasError ? "border-red-400" : "border-stone-200"
+          )}
+        />
+      </div>
+
+      {/* AM / PM toggle pill */}
+      <button
+        type="button"
+        onClick={togglePeriod}
+        className={cn(
+          "h-11 px-3 rounded-xl border text-sm font-bold select-none transition-all min-w-[54px]",
+          period === "AM"
+            ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+            : "bg-stone-800 border-stone-700 text-white hover:bg-stone-700"
+        )}
+      >
+        {period}
+      </button>
+    </div>
+  );
+}

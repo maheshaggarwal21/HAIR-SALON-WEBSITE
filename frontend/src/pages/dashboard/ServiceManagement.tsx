@@ -34,6 +34,7 @@ interface ServiceRecord {
   name: string;
   price: number;
   category: string;
+  durationMinutes?: number | null; // Phase 3: expected duration
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -43,13 +44,14 @@ interface ServiceFormData {
   name: string;
   price: string;
   category: string;
+  duration: string; // durationMinutes as string (empty = null/no duration)
 }
 
 // ── Field styling (matches ArtistManagement / TeamManagement) ────────────────
 const inputClass =
   "w-full h-11 px-4 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 placeholder:text-stone-400 transition-all duration-150";
 
-const EMPTY_FORM: ServiceFormData = { name: "", price: "", category: "" };
+const EMPTY_FORM: ServiceFormData = { name: "", price: "", category: "", duration: "" };
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function ServiceManagement() {
@@ -98,6 +100,7 @@ export default function ServiceManagement() {
         name: editingService.name,
         price: String(editingService.price),
         category: editingService.category || "",
+        duration: editingService.durationMinutes != null ? String(editingService.durationMinutes) : "",
       });
       setEditFormError("");
     }
@@ -133,6 +136,7 @@ export default function ServiceManagement() {
           name: formData.name.trim(),
           price: Number(formData.price),
           category: formData.category.trim(),
+          durationMinutes: formData.duration.trim() ? Number(formData.duration) : null,
         }),
       });
       const data = await res.json();
@@ -216,6 +220,7 @@ export default function ServiceManagement() {
           name: editForm.name.trim(),
           price: Number(editForm.price),
           category: editForm.category.trim(),
+          durationMinutes: editForm.duration.trim() ? Number(editForm.duration) : null,
         }),
       });
       const data = await res.json();
@@ -309,7 +314,7 @@ export default function ServiceManagement() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {/* Service Name */}
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
@@ -345,6 +350,25 @@ export default function ServiceManagement() {
                 />
               </div>
 
+              {/* Duration (optional) */}
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
+                  Duration (min) <span className="text-stone-400 font-normal normal-case tracking-normal">optional</span>
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={5}
+                  placeholder="e.g. 30"
+                  value={formData.duration}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, duration: e.target.value }))
+                  }
+                  className={inputClass}
+                />
+              </div>
+
               {/* Category */}
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
@@ -372,7 +396,7 @@ export default function ServiceManagement() {
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="text-sm text-red-500 col-span-3"
+                  className="text-sm text-red-500 col-span-full"
                 >
                   {formError}
                 </motion.p>
@@ -381,14 +405,14 @@ export default function ServiceManagement() {
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="text-sm text-green-600 col-span-3"
+                  className="text-sm text-green-600 col-span-full"
                 >
                   {formSuccess}
                 </motion.p>
               )}
 
               {/* Actions */}
-              <div className="col-span-3 flex justify-end gap-3 mt-2">
+              <div className="col-span-full flex justify-end gap-3 mt-2">
                 <button
                   onClick={() => setShowAddPanel(false)}
                   className="text-sm text-stone-500 hover:text-stone-800 px-4 py-2 rounded-lg border border-stone-200 hover:border-stone-300 transition-all"
@@ -425,6 +449,9 @@ export default function ServiceManagement() {
                 Price
               </th>
               <th className="text-left px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">
+                Duration
+              </th>
+              <th className="text-left px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">
                 Category
               </th>
               <th className="text-left px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">
@@ -439,7 +466,7 @@ export default function ServiceManagement() {
             {loadingServices
               ? Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-stone-100">
-                    {[1, 2, 3, 4, 5].map((j) => (
+                    {[1, 2, 3, 4, 5, 6].map((j) => (
                       <td key={j} className="px-6 py-4">
                         <div className="h-4 bg-stone-100 rounded animate-pulse" />
                       </td>
@@ -450,7 +477,7 @@ export default function ServiceManagement() {
                 ? (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-6 py-16 text-center text-stone-400 text-sm"
                       >
                         No services yet. Add your first service above.
@@ -495,6 +522,15 @@ export default function ServiceManagement() {
                           <IndianRupee className="w-3.5 h-3.5" />
                           {s.price.toLocaleString("en-IN")}
                         </span>
+                      </td>
+
+                      {/* Duration */}
+                      <td className="px-6 py-4">
+                        {s.durationMinutes != null ? (
+                          <span className="text-stone-700 text-sm font-medium">{s.durationMinutes} min</span>
+                        ) : (
+                          <span className="text-stone-400 text-xs">—</span>
+                        )}
                       </td>
 
                       {/* Category */}
@@ -616,6 +652,23 @@ export default function ServiceManagement() {
                     value={editForm.price}
                     onChange={(e) =>
                       setEditForm((p) => ({ ...p, price: e.target.value }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
+                    Duration (min) <span className="text-stone-400 font-normal normal-case tracking-normal">optional</span>
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={5}
+                    placeholder="e.g. 30"
+                    value={editForm.duration}
+                    onChange={(e) =>
+                      setEditForm((p) => ({ ...p, duration: e.target.value }))
                     }
                     className={inputClass}
                   />

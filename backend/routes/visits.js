@@ -105,6 +105,10 @@ router.post("/", createRules, async (req, res) => {
     const services = serviceDocs.map((s) => ({
       name: s.name,
       price: s.price,
+      // Snapshot the expected duration at visit creation time.
+      // If this service has no durationMinutes set, store null — this visit
+      // will be excluded from time-performance calculations (not penalised).
+      duration: s.durationMinutes ?? null,
     }));
 
     // ── Compute billing server-side ───────────────────────────────────────
@@ -157,6 +161,9 @@ router.post("/", createRules, async (req, res) => {
       artist,
       serviceType: serviceType || undefined,
       services,
+      // visitDurationMins is calculated on the frontend (endTime − startTime)
+      // and sent with the form. Storing it avoids recalculating from strings.
+      visitDurationMins: req.body.visitDurationMins != null ? Number(req.body.visitDurationMins) : null,
       filledBy: req.session.name || "Unknown",
       subtotal,
       discountPercent: pct,

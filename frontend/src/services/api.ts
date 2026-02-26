@@ -100,6 +100,9 @@ export interface CreateVisitPayload {
   cashAmount?: number;
   onlineAmount?: number;
   razorpayPaymentId?: string;
+  // Total actual visit duration in minutes (endTime − startTime).
+  // Stored on the Visit document for analytics without recalculating.
+  visitDurationMins?: number | null;
 }
 
 export interface CreateVisitResult {
