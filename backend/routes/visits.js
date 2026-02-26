@@ -12,6 +12,7 @@ const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Visit = require("../models/Visit");
 const Service = require("../models/Service");
+const { authenticate, authorize } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
@@ -189,4 +190,87 @@ router.post("/", createRules, async (req, res) => {
   }
 });
 
+// ─── GET /history — Paginated payment history ─────────────────────────────────
+// Access: receptionist, manager, owner
+// Query params:
+//   from        YYYY-MM-DD  (default: start of this month)
+//   to          YYYY-MM-DD  (default: today)
+//   customer    string      (optional, case-insensitive customer name filter)
+//   artist      string      (optional, case-insensitive artist name filter)
+//   method      online|cash|partial (optional payment method filter)
+//   page        number      (default: 1)
+//   limit       number      (default: 50, max: 200)
+router.get("/history", authorize("receptionist", "manager", "owner"), async (req, res) => {
+  try {
+    await connectDB();
+
+    const today = new Date();
+    const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const fromRaw = req.query.from ? new Date(req.query.from) : defaultFrom;
+    const toRaw = req.query.to ? new Date(req.query.to) : today;
+
+    // Set time bounds to capture full days
+    const from = new Date(fromRaw);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(toRaw);
+    to.setHours(23, 59, 59, 999);
+
+    if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+      return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD." });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    // Build filter
+    const filter = { date: { $gte: from, $lte: to } };
+    if (req.query.customer) {
+      filter.name = { $regex: req.query.customer.trim(), $options: "i" };
+    }
+    if (req.query.artist) {
+      filter.artist = { $regex: req.query.artist.trim(), $options: "i" };
+    }
+    if (req.query.method && ["online", "cash", "partial"].includes(req.query.method)) {
+      filter.paymentMethod = req.query.method;
+    }
+
+    const [visits, total] = await Promise.all([
+      Visit.find(filter)
+        .sort({ date: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select("name contact artist services subtotal discountPercent discountAmount finalTotal paymentMethod cashAmount onlineAmount razorpayPaymentId paymentStatus filledBy date startTime endTime createdAt")
+        .lean(),
+      Visit.countDocuments(filter),
+    ]);
+
+    // Aggregate summary for the filtered range
+    const summary = await Visit.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$finalTotal" },
+          totalCash: { $sum: "$cashAmount" },
+          totalOnline: { $sum: "$onlineAmount" },
+          totalDiscount: { $sum: "$discountAmount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    return res.json({
+      visits,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      summary: summary[0] || { totalRevenue: 0, totalCash: 0, totalOnline: 0, totalDiscount: 0, count: 0 },
+    });
+  } catch (err) {
+    console.error("[visits] History error:", err);
+    return res.status(500).json({ error: "Failed to fetch payment history" });
+  }
+});
+
 module.exports = router;
+

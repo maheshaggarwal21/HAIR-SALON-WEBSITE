@@ -18,6 +18,7 @@ import {
   Users,
   Palette,
   CalendarPlus,
+  Receipt,
 } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
@@ -26,10 +27,12 @@ import ServiceManagement from "@/pages/dashboard/ServiceManagement";
 import TeamManagement from "@/pages/dashboard/TeamManagement";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
+import PaymentHistory from "@/pages/dashboard/PaymentHistory";
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
   { to: "/dashboard/owner/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/dashboard/owner/payments", label: "Payments", icon: Receipt },
   { to: "/dashboard/owner/services", label: "Services", icon: Scissors },
   { to: "/dashboard/owner/artists", label: "Artists", icon: Palette },
   { to: "/dashboard/owner/team", label: "Team", icon: Users },
@@ -42,6 +45,7 @@ export default function OwnerDashboard() {
       <Routes>
         <Route index element={<DashboardOverview />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
+        <Route path="payments" element={<PaymentHistory />} />
         <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />

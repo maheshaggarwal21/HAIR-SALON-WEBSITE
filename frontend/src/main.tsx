@@ -30,6 +30,7 @@ import VisitEntryPage from './pages/VisitEntryPage'
 import ManagerDashboard from './pages/ManagerDashboard'
 import OwnerDashboard from './pages/OwnerDashboard'
 import ArtistDashboard from './pages/ArtistDashboard'
+import ReceptionistDashboard from './pages/ReceptionistDashboard'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
@@ -56,6 +57,16 @@ createRoot(document.getElementById('root')!).render(
             element={
               <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]}>
                 <VisitEntryPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ── Receptionist dashboard ── */}
+          <Route
+            path="/dashboard/receptionist/*"
+            element={
+              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]}>
+                <ReceptionistDashboard />
               </ProtectedRoute>
             }
           />

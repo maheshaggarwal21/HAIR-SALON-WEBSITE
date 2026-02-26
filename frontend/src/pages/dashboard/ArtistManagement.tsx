@@ -226,17 +226,27 @@ export default function ArtistManagement() {
       return;
     }
 
+    // Validate optional password length
+    if (editForm.password && editForm.password.length < 8) {
+      setEditFormError("Password must be at least 8 characters.");
+      return;
+    }
+
     try {
+      const body: Record<string, unknown> = {
+        name: editForm.name,
+        phone: editForm.phone,
+        registrationId: editForm.registrationId || null,
+        commission: editForm.commission ? Number(editForm.commission) : 0,
+        email: editForm.email || null,
+      };
+      if (editForm.password) body.password = editForm.password;
+
       const res = await fetch(`${API}/api/artists/${editingArtist._id}`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: editForm.name,
-          phone: editForm.phone,
-          registrationId: editForm.registrationId || null,
-          commission: editForm.commission ? Number(editForm.commission) : 0,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok) {
@@ -744,6 +754,44 @@ export default function ArtistManagement() {
                       }
                       className={inputClass}
                     />
+                  </div>
+                </div>
+
+                {/* Divider for login credentials */}
+                <div className="border-t border-stone-100 pt-4">
+                  <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <Key className="w-3 h-3" /> Dashboard Login Credentials
+                    <span className="font-normal normal-case tracking-normal text-stone-400 ml-1">— optional</span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="artist@theexperts.in"
+                        value={editForm.email}
+                        onChange={(e) =>
+                          setEditForm((p) => ({ ...p, email: e.target.value }))
+                        }
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
+                        New Password
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Leave blank to keep current"
+                        value={editForm.password}
+                        onChange={(e) =>
+                          setEditForm((p) => ({ ...p, password: e.target.value }))
+                        }
+                        className={inputClass}
+                      />
+                    </div>
                   </div>
                 </div>
 

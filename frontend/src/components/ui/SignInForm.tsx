@@ -116,7 +116,7 @@ export default function SignInForm() {
   // If already logged in, redirect based on role
   useEffect(() => {
     if (!user) return;
-    if (user.role === "receptionist") navigate("/visit-entry");
+    if (user.role === "receptionist") navigate("/dashboard/receptionist");
     else if (user.role === "manager") navigate("/dashboard/manager");
     else if (user.role === "owner") navigate("/dashboard/owner");
     else if (user.role === "artist") navigate("/dashboard/artist");
@@ -147,7 +147,7 @@ export default function SignInForm() {
       return;
     }
 
-    if (result.role === "receptionist") navigate("/visit-entry");
+    if (result.role === "receptionist") navigate("/dashboard/receptionist");
     else if (result.role === "manager") navigate("/dashboard/manager");
     else if (result.role === "owner") navigate("/dashboard/owner");
     else if (result.role === "artist") navigate("/dashboard/artist");

@@ -636,19 +636,25 @@ export default function TeamManagement() {
                   <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
                     Role
                   </label>
-                  <select
-                    value={editForm.role}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        role: e.target.value as "receptionist" | "manager",
-                      }))
-                    }
-                    className={selectClass}
-                  >
-                    <option value="receptionist">Receptionist</option>
-                    <option value="manager">Manager</option>
-                  </select>
+                  {editingUser?.role === "owner" ? (
+                    <div className={`${selectClass} bg-stone-100 text-stone-500 cursor-not-allowed flex items-center`}>
+                      Owner <span className="ml-2 text-xs text-stone-400">(cannot change)</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={editForm.role}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          role: e.target.value as "receptionist" | "manager",
+                        }))
+                      }
+                      className={selectClass}
+                    >
+                      <option value="receptionist">Receptionist</option>
+                      <option value="manager">Manager</option>
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
