@@ -807,24 +807,17 @@ export default function ArtistManagement() {
                           </span>
                         </td>
 
-                        {/* Status (login credential state) */}
+                        {/* Status badge */}
                         <td className="px-6 py-4">
-                          {a.userId ? (
-                            a.loginActive ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />{" "}
-                                Login active
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{" "}
-                                Login disabled
-                              </span>
-                            )
+                          {a.isActive ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />{" "}
+                              Active
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-500 border border-stone-200">
                               <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />{" "}
-                              No login
+                              Inactive
                             </span>
                           )}
                         </td>
