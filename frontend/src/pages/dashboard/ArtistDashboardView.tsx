@@ -150,10 +150,10 @@ export default function ArtistDashboardView() {
       const base = `${API}/api/owner/artist-dashboard/${artistId}`;
 
       const [profileRes, summaryRes, servicesRes, trendRes] = await Promise.all([
-        fetch(`${base}/profile`, { credentials: "include" }),
-        fetch(`${base}/summary?${qs}`, { credentials: "include" }),
-        fetch(`${base}/services?${qs}`, { credentials: "include" }),
-        fetch(`${base}/daily-trend?${qs}`, { credentials: "include" }),
+        fetch(`${base}/profile`, { credentials: "include", cache: "no-store" }),
+        fetch(`${base}/summary?${qs}`, { credentials: "include", cache: "no-store" }),
+        fetch(`${base}/services?${qs}`, { credentials: "include", cache: "no-store" }),
+        fetch(`${base}/daily-trend?${qs}`, { credentials: "include", cache: "no-store" }),
       ]);
 
       if (!profileRes.ok || !summaryRes.ok || !servicesRes.ok || !trendRes.ok) {
@@ -355,7 +355,7 @@ export default function ArtistDashboardView() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6"
+          className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6"
         >
           {[
             {
@@ -387,6 +387,16 @@ export default function ArtistDashboardView() {
               sub: `Avg ${formatCurrency(summary.avgTicket)}/visit`,
               color: "text-orange-600",
               bg: "bg-orange-50",
+            },
+            {
+              icon: TrendingUp,
+              label: "₹ per Hour",
+              value: summary.hoursWorked > 0
+                ? formatCurrency(Math.round(summary.totalRevenue / summary.hoursWorked))
+                : "—",
+              sub: "Revenue efficiency",
+              color: "text-rose-600",
+              bg: "bg-rose-50",
             },
           ].map((card) => (
             <div

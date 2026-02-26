@@ -170,11 +170,11 @@ export default function ArtistDashboard() {
       const qs = `from=${from}&to=${to}`;
 
       const [profileRes, summaryRes, servicesRes, trendRes, timePerfRes] = await Promise.all([
-        fetch(`${API}/api/artist-dashboard/profile`, { credentials: "include" }),
-        fetch(`${API}/api/artist-dashboard/summary?${qs}`, { credentials: "include" }),
-        fetch(`${API}/api/artist-dashboard/services?${qs}`, { credentials: "include" }),
-        fetch(`${API}/api/artist-dashboard/daily-trend?${qs}`, { credentials: "include" }),
-        fetch(`${API}/api/artist-dashboard/time-performance?${qs}`, { credentials: "include" }),
+        fetch(`${API}/api/artist-dashboard/profile`, { credentials: "include", cache: "no-store" }),
+        fetch(`${API}/api/artist-dashboard/summary?${qs}`, { credentials: "include", cache: "no-store" }),
+        fetch(`${API}/api/artist-dashboard/services?${qs}`, { credentials: "include", cache: "no-store" }),
+        fetch(`${API}/api/artist-dashboard/daily-trend?${qs}`, { credentials: "include", cache: "no-store" }),
+        fetch(`${API}/api/artist-dashboard/time-performance?${qs}`, { credentials: "include", cache: "no-store" }),
       ]);
 
       if (!profileRes.ok || !summaryRes.ok || !servicesRes.ok || !trendRes.ok) {
