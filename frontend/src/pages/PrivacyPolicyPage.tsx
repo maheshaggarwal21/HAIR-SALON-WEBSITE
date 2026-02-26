@@ -146,7 +146,7 @@ export default function PrivacyPolicyPage() {
           <ul className="list-disc pl-5 space-y-1 mt-1">
             <li>HTTPS/TLS encryption for all data in transit.</li>
             <li>Hashed password storage — plain-text passwords are never stored.</li>
-            <li>JWT-based authentication with role-based access controls.</li>
+            <li>Session-based authentication with role-based access controls.</li>
             <li>Regular security audits and dependency updates.</li>
           </ul>
           <p className="mt-2">

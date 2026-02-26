@@ -102,7 +102,7 @@ const ALLOWED_ORIGINS = [
 
 /**
  * Check whether an origin is a Vercel preview/production URL.
- * Accepts any *.vercel.app origin — real security is handled by JWT auth.
+ * Accepts any *.vercel.app origin — real security is handled by session auth.
  */
 function isVercelOrigin(origin) {
   if (!origin) return false;

@@ -24,6 +24,7 @@ const Artist = require("../models/Artist");
 const User = require("../models/User");
 const { authorize } = require("../middleware/authMiddleware");
 const validateId = require("../middleware/validateId");
+const { invalidateUserSessions } = require("../utils/sessionUtils");
 
 const router = express.Router();
 
@@ -170,6 +171,10 @@ router.patch(
       .isFloat({ min: 0, max: 100 })
       .withMessage("Commission must be 0–100"),
     body("photo").optional({ values: "falsy" }).trim(),
+    body("password")
+      .optional({ values: "falsy" })
+      .isLength({ min: 8 })
+      .withMessage("Password must be at least 8 characters"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -202,16 +207,67 @@ router.patch(
         updateObj.phone = req.body.phone.trim();
       }
       if (req.body.isActive !== undefined) updateObj.isActive = req.body.isActive;
-      if (req.body.email !== undefined) updateObj.email = req.body.email ? req.body.email.toLowerCase().trim() : null;
+      const incomingEmail =
+        req.body.email !== undefined
+          ? req.body.email
+            ? req.body.email.toLowerCase().trim()
+            : null
+          : undefined;
+      if (incomingEmail !== undefined) updateObj.email = incomingEmail;
       if (req.body.registrationId !== undefined) updateObj.registrationId = req.body.registrationId?.trim() || null;
       if (req.body.commission !== undefined) updateObj.commission = Number(req.body.commission);
       if (req.body.photo !== undefined) updateObj.photo = req.body.photo?.trim() || null;
+      const newPassword = req.body.password;
+      let shouldInvalidateSessions = false;
+
+      // Require an email when setting a password for a user without a linked account
+      if (newPassword && !artist.userId && !incomingEmail) {
+        return res.status(400).json({ error: "Email is required to set a login" });
+      }
+
+      // Sync linked User account (or create one) for email/password/name changes
+      if (artist.userId) {
+        const userUpdate = {};
+        if (updateObj.name) userUpdate.name = updateObj.name;
+
+        if (incomingEmail !== undefined && incomingEmail) {
+          const dup = await User.findOne({ email: incomingEmail, _id: { $ne: artist.userId } });
+          if (dup) {
+            return res.status(409).json({ error: "A user with this email already exists" });
+          }
+          userUpdate.email = incomingEmail;
+        }
+
+        if (newPassword) {
+          userUpdate.passwordHash = await bcrypt.hash(newPassword, 12);
+        }
+
+        if (Object.keys(userUpdate).length) {
+          await User.findByIdAndUpdate(artist.userId, userUpdate);
+          shouldInvalidateSessions = true;
+        }
+      } else if (incomingEmail && newPassword) {
+        // Create a linked user if none exists and credentials were supplied
+        const dup = await User.findOne({ email: incomingEmail });
+        if (dup) {
+          return res.status(409).json({ error: "A user with this email already exists" });
+        }
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        const createdUser = await User.create({
+          name: updateObj.name || artist.name,
+          email: incomingEmail,
+          passwordHash,
+          role: "artist",
+          createdBy: req.session.userId,
+        });
+        updateObj.userId = createdUser._id;
+      }
 
       const updated = await Artist.findByIdAndUpdate(id, updateObj, { new: true });
 
-      // If the artist has a linked User account, sync the name
-      if (updated.userId && updateObj.name) {
-        await User.findByIdAndUpdate(updated.userId, { name: updateObj.name });
+      // If linked user credentials changed, log out all active sessions for that user
+      if (shouldInvalidateSessions && (artist.userId || updateObj.userId)) {
+        await invalidateUserSessions(req.sessionStore, (artist.userId || updateObj.userId).toString());
       }
 
       return res.json(updated);
@@ -238,6 +294,7 @@ router.delete("/:id", validateId, authorize("manager", "owner"), async (req, res
     // Also deactivate the linked User account if any
     if (artist.userId) {
       await User.findByIdAndUpdate(artist.userId, { isActive: false });
+      await invalidateUserSessions(req.sessionStore, artist.userId.toString());
     }
 
     return res.json({ ok: true, message: "Artist deactivated successfully" });
@@ -260,6 +317,7 @@ router.delete("/:id/permanent", validateId, authorize("owner"), async (req, res)
 
     // Also delete the linked User account if any
     if (artist.userId) {
+      await invalidateUserSessions(req.sessionStore, artist.userId.toString());
       await User.findByIdAndDelete(artist.userId);
     }
 

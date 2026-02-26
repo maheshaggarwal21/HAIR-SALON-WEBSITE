@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users,
@@ -23,6 +24,7 @@ import {
   EyeOff,
   Trash2,
 } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -53,6 +55,8 @@ const selectClass =
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function TeamManagement() {
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [fetchError, setFetchError] = useState(false);
@@ -79,6 +83,15 @@ export default function TeamManagement() {
     newPassword: "",
   });
   const [editFormError, setEditFormError] = useState("");
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [newPasswordReveal, setNewPasswordReveal] = useState<
+    | null
+    | {
+        name: string;
+        email: string;
+        password: string;
+      }
+  >(null);
 
   // ── Fetch users ────────────────────────────────────────────────────────────
   const fetchUsers = async () => {
@@ -109,6 +122,7 @@ export default function TeamManagement() {
         newPassword: "",
       });
       setEditFormError("");
+      setShowEditPassword(false);
     }
   }, [editingUser]);
 
@@ -197,17 +211,19 @@ export default function TeamManagement() {
   const handleEditSave = async () => {
     if (!editingUser) return;
     setEditFormError("");
+    const trimmedEmail = editForm.email.trim();
+    const newPassword = editForm.newPassword.trim();
     const body: Record<string, string> = {
       name: editForm.name,
-      email: editForm.email,
+      email: trimmedEmail,
       role: editForm.role,
     };
-    if (editForm.newPassword.trim()) {
-      if (editForm.newPassword.length < 8) {
+    if (newPassword) {
+      if (newPassword.length < 8) {
         setEditFormError("New password must be at least 8 characters.");
         return;
       }
-      body.password = editForm.newPassword;
+      body.password = newPassword;
     }
     try {
       const res = await fetch(`${API}/api/admin/users/${editingUser._id}`, {
@@ -219,7 +235,19 @@ export default function TeamManagement() {
       const data = await res.json();
       if (res.ok) {
         fetchUsers();
+        if (newPassword) {
+          setNewPasswordReveal({
+            name: editingUser.name,
+            email: trimmedEmail,
+            password: newPassword,
+          });
+          if (editingUser._id === user?.id) {
+            await logout();
+            navigate("/signin");
+          }
+        }
         setEditingUser(null);
+        setShowEditPassword(false);
       } else {
         setEditFormError(data.error || "Failed to update user.");
       }
@@ -261,6 +289,41 @@ export default function TeamManagement() {
       {fetchError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           Failed to load team members. Check your connection and refresh.
+        </div>
+      )}
+
+      {newPasswordReveal && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                New password saved for {newPasswordReveal.name}
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Shown once. Login email: <span className="font-mono">{newPasswordReveal.email}</span>
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="font-mono text-base bg-white border border-amber-200 rounded-lg px-3 py-1">
+                  {newPasswordReveal.password}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(newPasswordReveal.password)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-amber-200 bg-white text-amber-800 hover:bg-amber-100 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewPasswordReveal(null)}
+              className="text-amber-700 hover:text-amber-900"
+              aria-label="Dismiss new password notification"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -654,20 +717,30 @@ export default function TeamManagement() {
                   <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
                     New Password (optional)
                   </label>
-                  <input
-                    type="password"
-                    placeholder="Leave blank to keep current password"
-                    value={editForm.newPassword}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        newPassword: e.target.value,
-                      }))
-                    }
-                    className={inputClass}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showEditPassword ? "text" : "password"}
+                      placeholder="Leave blank to keep current password"
+                      value={editForm.newPassword}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          newPassword: e.target.value,
+                        }))
+                      }
+                      className={`${inputClass} pr-11`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPassword((p) => !p)}
+                      className="absolute inset-y-0 right-3 flex items-center text-stone-400 hover:text-stone-700"
+                      aria-label={showEditPassword ? "Hide password" : "Show password"}
+                    >
+                      {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   <p className="text-xs text-stone-400 mt-1">
-                    Leave blank to keep existing password
+                    Password will be shown once after saving.
                   </p>
                 </div>
 

@@ -17,6 +17,7 @@ const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const User = require("../models/User");
 const validateId = require("../middleware/validateId");
+const { invalidateUserSessions } = require("../utils/sessionUtils");
 
 const router = express.Router();
 
@@ -160,6 +161,9 @@ router.patch(
         new: true,
       }).select("-passwordHash");
 
+      // Invalidate all active sessions for this user after any account change
+      await invalidateUserSessions(req.sessionStore, id);
+
       return res.json(updated);
     } catch (err) {
       console.error("[admin] Update user error:", err);
@@ -188,6 +192,9 @@ router.delete("/users/:id", validateId, async (req, res) => {
 
     // Soft-delete only
     await User.findByIdAndUpdate(id, { isActive: false });
+
+    // Log out all active sessions for this user
+    await invalidateUserSessions(req.sessionStore, id);
 
     return res.json({ ok: true, message: "User deactivated successfully" });
   } catch (err) {
@@ -220,6 +227,9 @@ router.delete("/users/:id/permanent", validateId, async (req, res) => {
         .status(400)
         .json({ error: "Cannot delete the owner account" });
     }
+
+    // Kill any active sessions for this user before deletion
+    await invalidateUserSessions(req.sessionStore, id);
 
     await User.findByIdAndDelete(id);
 

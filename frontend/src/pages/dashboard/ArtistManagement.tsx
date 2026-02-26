@@ -28,8 +28,10 @@ import {
   Key,
   Briefcase,
   Eye,
+  EyeOff,
   Upload,
 } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -65,6 +67,7 @@ const inputClass =
 // ── Component ────────────────────────────────────────────────────────────────
 export default function ArtistManagement() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const addPhotoInputRef = useRef<HTMLInputElement>(null);
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
   const [addPhotoPreview, setAddPhotoPreview] = useState<string | null>(null);
@@ -87,6 +90,7 @@ export default function ArtistManagement() {
     commission: "",
     photo: "",
   });
+  const [showAddPassword, setShowAddPassword] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -103,6 +107,15 @@ export default function ArtistManagement() {
     photo: "",
   });
   const [editFormError, setEditFormError] = useState("");
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [newPasswordReveal, setNewPasswordReveal] = useState<
+    | null
+    | {
+        name: string;
+        email: string;
+        password: string;
+      }
+  >(null);
 
   // ── Fetch artists (all, including inactive) ────────────────────────────────
   const fetchArtists = async () => {
@@ -141,6 +154,7 @@ export default function ArtistManagement() {
       setEditFormError("");
       setEditPhotoFile(null);
       setEditPhotoPreview(null);
+      setShowEditPassword(false);
     }
   }, [editingArtist]);
 
@@ -247,18 +261,47 @@ export default function ArtistManagement() {
       return;
     }
 
+    const trimmedEmail = editForm.email.trim();
+    const existingEmail = editingArtist.email || "";
+    const newPassword = editForm.password.trim();
+    const emailForLogin = trimmedEmail || existingEmail;
+
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        setEditFormError("New password must be at least 8 characters.");
+        return;
+      }
+      if (!emailForLogin) {
+        setEditFormError("Email is required to set a login.");
+        return;
+      }
+    }
+
     try {
+      const body: Record<string, unknown> = {
+        name: editForm.name,
+        phone: editForm.phone,
+        registrationId: editForm.registrationId || null,
+        commission: editForm.commission ? Number(editForm.commission) : 0,
+        photo: editForm.photo || null,
+      };
+
+      if (trimmedEmail !== existingEmail) {
+        body.email = trimmedEmail;
+      }
+      // If a password is being set and the email wasn't changed, include the current email
+      if (newPassword) {
+        body.password = newPassword;
+        if (!body.email && emailForLogin) {
+          body.email = emailForLogin;
+        }
+      }
+
       const res = await fetch(`${API}/api/artists/${editingArtist._id}`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: editForm.name,
-          phone: editForm.phone,
-          registrationId: editForm.registrationId || null,
-          commission: editForm.commission ? Number(editForm.commission) : 0,
-          photo: editForm.photo || null,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok) {
@@ -267,9 +310,21 @@ export default function ArtistManagement() {
           await uploadPhotoFile(editingArtist._id, editPhotoFile);
         }
         fetchArtists();
+        if (newPassword) {
+          setNewPasswordReveal({
+            name: editingArtist.name,
+            email: (body.email as string) || emailForLogin,
+            password: newPassword,
+          });
+          if (editingArtist.userId && user?.id === editingArtist.userId) {
+            await logout();
+            navigate("/signin");
+          }
+        }
         setEditingArtist(null);
         setEditPhotoFile(null);
         setEditPhotoPreview(null);
+        setShowEditPassword(false);
       } else {
         setEditFormError(
           data.errors?.[0]?.msg || data.error || "Failed to update artist."
@@ -357,6 +412,41 @@ export default function ArtistManagement() {
       {fetchError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           Failed to load artists. Check your connection and refresh.
+        </div>
+      )}
+
+      {newPasswordReveal && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                New password saved for {newPasswordReveal.name}
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Shown once. Login email: <span className="font-mono">{newPasswordReveal.email || "(not provided)"}</span>
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="font-mono text-base bg-white border border-amber-200 rounded-lg px-3 py-1">
+                  {newPasswordReveal.password}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(newPasswordReveal.password)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-amber-200 bg-white text-amber-800 hover:bg-amber-100 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewPasswordReveal(null)}
+              className="text-amber-700 hover:text-amber-900"
+              aria-label="Dismiss new password notification"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -462,15 +552,25 @@ export default function ArtistManagement() {
                   <Key className="w-3 h-3 inline mr-1" /> Password
                   <span className="text-stone-400 font-normal ml-1">(min 8 chars)</span>
                 </label>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, password: e.target.value }))
-                  }
-                  className={inputClass}
-                />
+                <div className="relative">
+                  <input
+                    type={showAddPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, password: e.target.value }))
+                    }
+                    className={`${inputClass} pr-11`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPassword((p) => !p)}
+                    className="absolute inset-y-0 right-3 flex items-center text-stone-400 hover:text-stone-700"
+                    aria-label={showAddPassword ? "Hide password" : "Show password"}
+                  >
+                    {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               {/* Registration ID */}
@@ -837,6 +937,46 @@ export default function ArtistManagement() {
                     }
                     className={inputClass}
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
+                    Email (for login)
+                  </label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) =>
+                      setEditForm((p) => ({ ...p, email: e.target.value }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
+                    New Password (optional)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showEditPassword ? "text" : "password"}
+                      placeholder="Leave blank to keep current password"
+                      value={editForm.password}
+                      onChange={(e) =>
+                        setEditForm((p) => ({ ...p, password: e.target.value }))
+                      }
+                      className={`${inputClass} pr-11`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPassword((p) => !p)}
+                      className="absolute inset-y-0 right-3 flex items-center text-stone-400 hover:text-stone-700"
+                      aria-label={showEditPassword ? "Hide password" : "Show password"}
+                    >
+                      {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-1">
+                    Password will be shown once after saving.
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
