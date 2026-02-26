@@ -24,6 +24,7 @@ const rateLimit = require("express-rate-limit");
 // ── Database ─────────────────────────────────────────────────────────────────
 const connectDB = require("./db");
 const User = require("./models/User");
+const Service = require("./models/Service");
 
 // ── Auto-seed owner account from env vars ────────────────────────────────────
 /**
@@ -214,27 +215,65 @@ function hmacSha256(payload) {
 
 /**
  * POST /api/create-order
- * @body {{ name: string, phone: string, amount: number }} — amount in rupees
+ * @body {{ name, phone, serviceIds, discountPercent, paymentMode, cashAmount }}
  * @returns {{ order_id, amount, currency, key_id, name, phone }}
  *
  * Creates a Razorpay Order for the embedded Checkout SDK on the frontend.
- * Amount is locked server-side so the customer cannot alter it.
+ * Amount is computed SERVER-SIDE from serviceIds to prevent client-side tampering.
  */
 app.post("/api/create-order", authenticate, async (req, res) => {
   if (!razorpay) return res.status(503).json({ error: "Payment service not configured" });
 
-  const parsed = validatePaymentInput(req.body, res);
-  if (!parsed) return; // 400 already sent
+  const {
+    name,
+    phone,
+    serviceIds,
+    discountPercent = 0,
+    paymentMode = "online",
+    cashAmount = 0,
+  } = req.body;
+
+  if (!name || !phone) {
+    return res.status(400).json({ error: "name and phone are required" });
+  }
+  if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+    return res.status(400).json({ error: "serviceIds are required to compute the authoritative order amount" });
+  }
 
   try {
+    await connectDB();
+
+    // ── Compute amount server-side (prevents client-side tampering) ─────────
+    const serviceDocs = await Service.find({ _id: { $in: serviceIds }, isActive: true }).lean();
+    if (serviceDocs.length === 0) {
+      return res.status(400).json({ error: "No valid active services found" });
+    }
+    const subtotal = serviceDocs.reduce((sum, s) => sum + s.price, 0);
+    const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
+    const discountAmt = Math.round(subtotal * (pct / 100));
+    const finalTotal = Math.max(0, subtotal - discountAmt);
+
+    let chargeOnline = finalTotal;
+    if (paymentMode === "partial") {
+      const cash = Math.round(Number(cashAmount) || 0);
+      if (cash <= 0 || cash >= finalTotal) {
+        return res.status(400).json({ error: "Cash amount must be between ₹1 and total minus ₹1 for partial payment" });
+      }
+      chargeOnline = finalTotal - cash;
+    }
+
+    const amountInPaise = Math.round(chargeOnline * 100);
+    if (amountInPaise < 100) {
+      return res.status(400).json({ error: "Online amount must be at least ₹1" });
+    }
+
     const order = await razorpay.orders.create({
-      amount: parsed.amountInPaise,
+      amount: amountInPaise,
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
       notes: {
-        customer_name: parsed.name,
-        customer_phone: parsed.phone,
-        amount_inr: String(req.body.amount),
+        customer_name: String(name).trim(),
+        customer_phone: String(phone).trim(),
       },
     });
 
@@ -243,8 +282,8 @@ app.post("/api/create-order", authenticate, async (req, res) => {
       amount: order.amount,
       currency: order.currency,
       key_id: process.env.RAZORPAY_KEY_ID,
-      name: parsed.name,
-      phone: parsed.phone,
+      name: String(name).trim(),
+      phone: String(phone).trim(),
     });
   } catch (err) {
     console.error("[payment] Order creation error:", err);

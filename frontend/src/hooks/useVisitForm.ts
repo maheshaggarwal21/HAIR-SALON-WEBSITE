@@ -260,7 +260,10 @@ export function useVisitForm() {
       const order = await createOrder({
         name: formData.name.trim(),
         phone: formData.phone.trim(),
-        amount: chargeOnline,
+        serviceIds: formData.searchService,
+        discountPercent: discountPct,
+        paymentMode: formData.paymentMode as "online" | "partial",
+        cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
       });
 
       const rzp = new window.Razorpay({

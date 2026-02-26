@@ -22,7 +22,10 @@ export async function fetchFormData(): Promise<ApiFormData> {
 export interface CreateOrderPayload {
   name: string;
   phone: string;
-  amount: number;
+  serviceIds: string[];
+  discountPercent: number;
+  paymentMode?: "online" | "partial";
+  cashAmount?: number;
 }
 
 export interface CreateOrderResult {

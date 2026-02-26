@@ -9,6 +9,7 @@
 
 const express = require("express");
 const { body, validationResult } = require("express-validator");
+const connectDB = require("../db");
 const Visit = require("../models/Visit");
 const Service = require("../models/Service");
 
@@ -72,6 +73,7 @@ router.post("/", createRules, async (req, res) => {
   }
 
   try {
+    await connectDB();
     const {
       name,
       contact,
