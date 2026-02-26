@@ -460,12 +460,12 @@ export default function ServiceManagement() {
                 : services.map((s) => (
                     <tr
                       key={s._id}
-                      className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors"
+                      className="group border-b border-stone-100 hover:bg-stone-50/50 transition-colors"
                     >
                       {/* Name with timestamps */}
                       <td className="px-6 py-4">
                         <p className="font-medium text-stone-900">{s.name}</p>
-                        <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                        <div className="text-[11px] text-stone-500 mt-1 leading-snug opacity-0 max-h-0 overflow-hidden group-hover:opacity-100 group-hover:max-h-16 transition-all duration-200">
                           <span className="block">
                             Created: {new Date(s.createdAt).toLocaleString("en-IN", {
                               day: "numeric",
@@ -486,7 +486,7 @@ export default function ServiceManagement() {
                               hour12: true,
                             })}
                           </span>
-                        </p>
+                        </div>
                       </td>
 
                       {/* Price */}
