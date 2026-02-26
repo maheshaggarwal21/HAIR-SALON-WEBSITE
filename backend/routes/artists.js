@@ -13,11 +13,6 @@
 
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer");
-const { v2: cloudinary } = require("cloudinary");
-const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Artist = require("../models/Artist");
@@ -86,7 +81,6 @@ router.post(
       .optional()
       .isFloat({ min: 0, max: 100 })
       .withMessage("Commission must be 0–100"),
-    body("photo").optional({ values: "falsy" }).trim(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -134,7 +128,6 @@ router.post(
         email: req.body.email ? req.body.email.toLowerCase().trim() : null,
         registrationId: req.body.registrationId?.trim() || null,
         commission: Number(req.body.commission) || 0,
-        photo: req.body.photo?.trim() || null,
         userId,
       });
 
@@ -170,7 +163,6 @@ router.patch(
       .optional()
       .isFloat({ min: 0, max: 100 })
       .withMessage("Commission must be 0–100"),
-    body("photo").optional({ values: "falsy" }).trim(),
     body("password")
       .optional({ values: "falsy" })
       .isLength({ min: 8 })
@@ -216,7 +208,6 @@ router.patch(
       if (incomingEmail !== undefined) updateObj.email = incomingEmail;
       if (req.body.registrationId !== undefined) updateObj.registrationId = req.body.registrationId?.trim() || null;
       if (req.body.commission !== undefined) updateObj.commission = Number(req.body.commission);
-      if (req.body.photo !== undefined) updateObj.photo = req.body.photo?.trim() || null;
       const newPassword = req.body.password;
       let shouldInvalidateSessions = false;
 
@@ -328,85 +319,5 @@ router.delete("/:id/permanent", validateId, authorize("owner"), async (req, res)
     return res.status(500).json({ error: "Failed to delete artist" });
   }
 });
-
-// ─── Photo upload via Cloudinary ─────────────────────────────────────────────
-// Files are stored in Cloudinary (permanent cloud storage) instead of the
-// local filesystem, which is ephemeral on Vercel serverless functions.
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: "the-experts-salon/artists",
-    allowed_formats: ["jpg", "jpeg", "png", "webp", "gif"],
-    transformation: [{ width: 400, height: 400, crop: "fill", gravity: "face" }],
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
-  fileFilter: (_req, file, cb) => {
-    const allowed = /jpeg|jpg|png|webp|gif/;
-    const extOk = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mimeOk = allowed.test(file.mimetype);
-    cb(null, extOk && mimeOk);
-  },
-});
-
-/**
- * POST /:id/photo  — Upload a photo to Cloudinary.
- * Stores the permanent Cloudinary URL in artist.photo.
- * Returns the updated artist record.
- */
-router.post(
-  "/:id/photo",
-  validateId,
-  authorize("manager", "owner"),
-  upload.single("photo"),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const artist = await Artist.findById(id);
-      if (!artist) {
-        return res.status(404).json({ error: "Artist not found" });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ error: "No valid image file provided. Allowed: jpg, png, webp, gif (max 5 MB)" });
-      }
-
-      // Delete old photo from Cloudinary if it was a Cloudinary URL
-      if (artist.photo && artist.photo.includes("cloudinary.com")) {
-        try {
-          // public_id is stored in req.file.filename by multer-storage-cloudinary.
-          // For the OLD photo we must extract it from the URL:
-          // URL format: https://res.cloudinary.com/<cloud>/image/upload/v<ver>/<folder>/<id>.<ext>
-          // public_id = everything after /upload/(v<digits>/)  without the extension
-          const match = artist.photo.match(/\/upload\/(?:v\d+\/)?(.+)\.[^.]+$/);
-          if (match) {
-            await cloudinary.uploader.destroy(match[1]);
-          }
-        } catch (delErr) {
-          console.warn("[artists] Could not delete old Cloudinary photo:", delErr.message);
-        }
-      }
-
-      // multer-storage-cloudinary v4 sets req.file.path = secure_url (permanent CDN URL)
-      artist.photo = req.file.path;
-      await artist.save();
-
-      return res.json(artist);
-    } catch (err) {
-      console.error("[artists] Photo upload error:", err);
-      return res.status(500).json({ error: "Failed to upload photo" });
-    }
-  }
-);
 
 module.exports = router;
