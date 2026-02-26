@@ -24,7 +24,7 @@ import {
   BadgePercent,
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const API = import.meta.env.VITE_BACKEND_URL || "";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ArtistProfile {

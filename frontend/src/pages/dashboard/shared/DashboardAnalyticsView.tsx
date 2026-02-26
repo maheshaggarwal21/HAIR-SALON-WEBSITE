@@ -16,7 +16,7 @@ import RepeatCustomers from "@/components/analytics/RepeatCustomers";
 import EmployeeDeepDive from "@/components/analytics/EmployeeDeepDive";
 import ExportButton from "@/components/analytics/ExportButton";
 
-const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const API = import.meta.env.VITE_BACKEND_URL || "";
 
 export default function DashboardAnalyticsView() {
   const [from, setFrom] = useState(dayjs().startOf("month").format("YYYY-MM-DD"));

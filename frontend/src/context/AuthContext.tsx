@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+  const API = import.meta.env.VITE_BACKEND_URL || "";
 
   // Restore session on mount
   useEffect(() => {

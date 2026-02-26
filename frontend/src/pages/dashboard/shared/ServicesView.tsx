@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
-const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const API = import.meta.env.VITE_BACKEND_URL || "";
 
 interface Service {
   _id: string;

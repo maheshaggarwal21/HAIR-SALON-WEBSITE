@@ -12,7 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import EmployeeLeaderboard from "@/components/analytics/EmployeeLeaderboard";
 import TopServices from "@/components/analytics/TopServices";
 
-const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const API = import.meta.env.VITE_BACKEND_URL || "";
 
 interface SummaryData {
   totalRevenue: number;

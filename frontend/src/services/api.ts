@@ -10,7 +10,7 @@
 import type { ApiFormData } from "@/types/visit";
 
 /** Backend base URL (injected at build time). */
-const BASE = import.meta.env.VITE_BACKEND_URL as string;
+const BASE = (import.meta.env.VITE_BACKEND_URL || "") as string;
 
 /** Fetch dropdown options for the visit entry form. */
 export async function fetchFormData(): Promise<ApiFormData> {

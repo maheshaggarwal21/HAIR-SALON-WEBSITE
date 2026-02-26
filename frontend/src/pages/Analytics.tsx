@@ -18,7 +18,7 @@ import ExportButton from "@/components/analytics/ExportButton";
 import AppLayout from "@/layouts/AppLayout";
 
 /** Backend API base URL (injected at build time via Vite env vars). */
-const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const API = import.meta.env.VITE_BACKEND_URL || "";
 
 export default function Analytics() {
   const [from, setFrom] = useState(dayjs().startOf("month").format("YYYY-MM-DD"));

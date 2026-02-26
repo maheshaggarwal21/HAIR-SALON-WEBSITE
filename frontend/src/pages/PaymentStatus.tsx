@@ -90,7 +90,7 @@ export default function PaymentStatus() {
         razorpay_signature: signature,
       });
 
-      fetch(`${import.meta.env.VITE_BACKEND_URL}/api/verify-payment?${params}`, {
+      fetch(`${import.meta.env.VITE_BACKEND_URL || ""}/api/verify-payment?${params}`, {
         credentials: "include",
       })
         .then((r) => r.json())
