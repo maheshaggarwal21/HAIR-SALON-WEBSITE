@@ -373,7 +373,12 @@ interface MaskedTimeInputProps {
 
 /** Parse a 24h "HH:mm" into { display12: "hh:mm", period } for the typed field. */
 function to12hDisplay(v: string): { display: string; period: "AM" | "PM" } {
-  if (!v || !/^\d{2}:\d{2}$/.test(v)) return { display: "", period: "AM" };
+  if (!v || !/^\d{2}:\d{2}$/.test(v)) {
+    // Default to the current system AM/PM so an empty start-time field
+    // shows the correct period automatically (matching the pre-filled end-time).
+    const currentPeriod: "AM" | "PM" = new Date().getHours() < 12 ? "AM" : "PM";
+    return { display: "", period: currentPeriod };
+  }
   const { h12, minute, period } = parseTime(v);
   return {
     display: `${String(h12).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
