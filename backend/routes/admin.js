@@ -116,6 +116,7 @@ router.post(
 router.patch(
   "/users/:id",
   validateId,
+  authorizePermission(PERMISSIONS.TEAM_MANAGE),
   [
     body("name").optional().trim().notEmpty().withMessage("Name cannot be empty"),
     body("email")

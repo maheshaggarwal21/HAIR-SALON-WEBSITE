@@ -426,7 +426,7 @@ app.get("/api/verify-payment", authenticate, async (req, res) => {
 // ─── Auth & Admin Routes ─────────────────────────────────────────────────────
 
 app.use("/api/auth", require("./routes/auth"));
-app.use("/api/admin", authenticate, authorize("owner"), require("./routes/admin"));
+app.use("/api/admin", authenticate, authorize("receptionist", "manager", "owner"), require("./routes/admin"));
 app.use("/api/artists", authenticate, require("./routes/artists"));
 app.use("/api/services", authenticate, require("./routes/services"));
 app.use("/api/visits", authenticate, require("./routes/visits"));
