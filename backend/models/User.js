@@ -12,6 +12,7 @@
 
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { PERMISSIONS, ROLE_DEFAULTS } = require('../constants/permissions');
 
 const userSchema = new mongoose.Schema(
   {
@@ -35,6 +36,17 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
     isActive: { type: Boolean, default: true },
+    permissions: {
+      type:    [String],
+      default: [], // existing users start empty; migratePermissions.js will backfill them
+      validate: {
+        validator: function(arr) {
+          const validKeys = Object.values(PERMISSIONS);
+          return arr.every(k => validKeys.includes(k));
+        },
+        message: 'permissions array contains an invalid permission key',
+      },
+    },
   },
   { timestamps: true }
 );

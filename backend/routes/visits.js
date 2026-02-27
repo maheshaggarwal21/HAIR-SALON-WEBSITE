@@ -12,7 +12,8 @@ const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Visit = require("../models/Visit");
 const Service = require("../models/Service");
-const { authenticate, authorize } = require("../middleware/authMiddleware");
+const { authenticate, authorize, authorizePermission } = require("../middleware/authMiddleware");
+const { PERMISSIONS } = require('../constants/permissions');
 
 const router = express.Router();
 
@@ -67,7 +68,7 @@ const createRules = [
 ];
 
 // ─── POST / — create a visit ─────────────────────────────────────────────────
-router.post("/", createRules, async (req, res) => {
+router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, async (req, res) => {
   const errs = validationResult(req);
   if (!errs.isEmpty()) {
     return res.status(400).json({ errors: errs.array() });
@@ -200,7 +201,7 @@ router.post("/", createRules, async (req, res) => {
 //   method      online|cash|partial (optional payment method filter)
 //   page        number      (default: 1)
 //   limit       number      (default: 50, max: 200)
-router.get("/history", authorize("receptionist", "manager", "owner"), async (req, res) => {
+router.get("/history", authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (req, res) => {
   try {
     await connectDB();
 

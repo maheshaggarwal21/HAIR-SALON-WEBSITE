@@ -19,6 +19,8 @@ const express = require("express");
 const XLSX = require("xlsx");
 const Visit = require("../models/Visit");
 const connectDB = require("../db");
+const { authorizePermission } = require('../middleware/authMiddleware');
+const { PERMISSIONS } = require('../constants/permissions');
 
 const router = express.Router();
 
@@ -85,7 +87,7 @@ function calcHours(startTime, endTime) {
 // 1. GET /api/analytics/summary
 //    Returns: totalRevenue, totalVisits, uniqueCustomers, avgTicket
 // ────────────────────────────────────────────────────
-router.get("/summary", async (req, res) => {
+router.get("/summary", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = dateFilter(req.query);
     const visits = await Visit.find(match);
@@ -113,7 +115,7 @@ router.get("/summary", async (req, res) => {
 // 2. GET /api/analytics/top-services
 //    Returns: services ranked by frequency + revenue
 // ────────────────────────────────────────────────────
-router.get("/top-services", async (req, res) => {
+router.get("/top-services", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = dateFilter(req.query);
 
@@ -161,7 +163,7 @@ router.get("/top-services", async (req, res) => {
 //    Also returns revenuePerHour (based on effectiveHours if data exists,
 //    else actualHours) and totalExtraMins (net over/under).
 // ────────────────────────────────────────────────────
-router.get("/employees", async (req, res) => {
+router.get("/employees", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = dateFilter(req.query);
     const visits = await Visit.find(match);
@@ -261,7 +263,7 @@ router.get("/employees", async (req, res) => {
 // 4. GET /api/analytics/employee/:name
 //    Returns: individual employee deep dive
 // ────────────────────────────────────────────────────
-router.get("/employee/:name", async (req, res) => {
+router.get("/employee/:name", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = dateFilter(req.query);
     const artistName = req.params.name;
@@ -390,7 +392,7 @@ router.get("/employee/:name", async (req, res) => {
 // 5. GET /api/analytics/repeat-customers
 //    Returns: new vs returning count + repeat rate %
 // ────────────────────────────────────────────────────
-router.get("/repeat-customers", async (req, res) => {
+router.get("/repeat-customers", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = dateFilter(req.query);
 
@@ -433,7 +435,7 @@ router.get("/repeat-customers", async (req, res) => {
 // 6. GET /api/analytics/export
 //    Returns: .xlsx file download
 // ────────────────────────────────────────────────────
-router.get("/export", async (req, res) => {
+router.get("/export", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = dateFilter(req.query);
     const visits = await Visit.find(match).sort({ date: -1 }).lean();

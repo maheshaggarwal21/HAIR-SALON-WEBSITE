@@ -16,6 +16,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: Role;
+  permissions: string[]; // PBAC — permission keys fetched from /api/auth/me
 }
 
 interface AuthContextValue {

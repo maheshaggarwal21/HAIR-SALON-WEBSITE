@@ -17,7 +17,8 @@ const express = require("express");
 const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Service = require("../models/Service");
-const { authorize } = require("../middleware/authMiddleware");
+const { authorize, authorizePermission } = require("../middleware/authMiddleware");
+const { PERMISSIONS } = require('../constants/permissions');
 const validateId = require("../middleware/validateId");
 
 const router = express.Router();
@@ -52,7 +53,7 @@ router.get("/", async (_req, res) => {
 
 // ─── GET /all — List ALL services (including inactive) — owner only ─────────
 
-router.get("/all", authorize("owner"), async (_req, res) => {
+router.get("/all", authorize("owner"), authorizePermission(PERMISSIONS.SERVICES_VIEW), async (_req, res) => {
   try {
     const services = await Service.find({}).sort({ createdAt: -1 });
     return res.json(services);
@@ -64,7 +65,7 @@ router.get("/all", authorize("owner"), async (_req, res) => {
 
 // ─── GET /categories — Distinct active categories ───────────────────────────
 
-router.get("/categories", async (_req, res) => {
+router.get("/categories", authorizePermission(PERMISSIONS.SERVICES_VIEW), async (_req, res) => {
   try {
     const categories = await Service.distinct("category", {
       isActive: true,
@@ -82,6 +83,7 @@ router.get("/categories", async (_req, res) => {
 router.post(
   "/",
   authorize("owner"),
+  authorizePermission(PERMISSIONS.SERVICES_CRUD),
   [
     body("name").trim().notEmpty().withMessage("Service name is required"),
     body("price")
@@ -135,6 +137,7 @@ router.patch(
   "/:id",
   validateId,
   authorize("owner"),
+  authorizePermission(PERMISSIONS.SERVICES_CRUD),
   [
     body("name")
       .optional()
@@ -200,7 +203,7 @@ router.patch(
 
 // ─── DELETE /:id — Soft-delete a service — owner only ───────────────────────
 
-router.delete("/:id", validateId, authorize("owner"), async (req, res) => {
+router.delete("/:id", validateId, authorize("owner"), authorizePermission(PERMISSIONS.SERVICES_CRUD), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -219,7 +222,7 @@ router.delete("/:id", validateId, authorize("owner"), async (req, res) => {
 
 // ─── DELETE /:id/permanent — Hard-delete a service from DB ──────────────────
 
-router.delete("/:id/permanent", validateId, authorize("owner"), async (req, res) => {
+router.delete("/:id/permanent", validateId, authorize("owner"), authorizePermission(PERMISSIONS.SERVICES_CRUD), async (req, res) => {
   try {
     const { id } = req.params;
 

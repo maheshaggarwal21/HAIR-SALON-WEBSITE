@@ -84,6 +84,7 @@ router.post(
           name: user.name,
           email: user.email,
           role: user.role,
+          permissions: user.permissions ?? [],
         });
       });
     } catch (err) {
@@ -113,16 +114,20 @@ router.post("/logout", (req, res) => {
 
 // ─── GET /me ────────────────────────────────────────────────────────────────
 
-router.get("/me", (req, res) => {
+router.get("/me", async (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
+
+  // Fetch permissions from DB so they are always fresh
+  const user = await User.findById(req.session.userId, { permissions: 1 }).lean();
 
   return res.json({
     id: req.session.userId,
     name: req.session.name,
     email: req.session.email,
     role: req.session.role,
+    permissions: user?.permissions ?? [],
   });
 });
 

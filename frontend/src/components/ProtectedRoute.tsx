@@ -12,10 +12,11 @@ import { useAuth, type Role } from "@/context/AuthContext";
 
 interface Props {
   allowedRoles: Role[];
+  requiredPermission?: string; // optional PBAC key check
   children: React.ReactNode;
 }
 
-export default function ProtectedRoute({ allowedRoles, children }: Props) {
+export default function ProtectedRoute({ allowedRoles, requiredPermission, children }: Props) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -31,6 +32,13 @@ export default function ProtectedRoute({ allowedRoles, children }: Props) {
 
   if (!user) return <Navigate to="/signin" replace />;
   if (!allowedRoles.includes(user.role)) return <Navigate to="/unauthorized" replace />;
+
+  // PBAC check — owner is always exempt
+  if (requiredPermission && user.role !== "owner") {
+    if (!user.permissions.includes(requiredPermission)) {
+      return <Navigate to="/unauthorized" replace />;
+    }
+  }
 
   return <>{children}</>;
 }

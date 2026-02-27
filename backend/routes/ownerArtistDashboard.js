@@ -20,6 +20,8 @@ const connectDB = require("../db");
 const Artist = require("../models/Artist");
 const Visit = require("../models/Visit");
 const validateId = require("../middleware/validateId");
+const { authorizePermission } = require('../middleware/authMiddleware');
+const { PERMISSIONS } = require('../constants/permissions');
 
 const router = express.Router();
 
@@ -90,7 +92,7 @@ function calcHours(startTime, endTime) {
 // ────────────────────────────────────────────────────
 // 1. GET /:artistId/profile
 // ────────────────────────────────────────────────────
-router.get("/:artistId/profile", async (req, res) => {
+router.get("/:artistId/profile", authorizePermission(PERMISSIONS.ARTIST_DASHBOARD_VIEW), async (req, res) => {
   try {
     const a = req.artistRecord;
     return res.json({
@@ -113,7 +115,7 @@ router.get("/:artistId/profile", async (req, res) => {
 // ────────────────────────────────────────────────────
 // 2. GET /:artistId/summary
 // ────────────────────────────────────────────────────
-router.get("/:artistId/summary", async (req, res) => {
+router.get("/:artistId/summary", authorizePermission(PERMISSIONS.ARTIST_DASHBOARD_VIEW), async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
     const commissionPct = req.artistRecord.commission || 0;
@@ -150,7 +152,7 @@ router.get("/:artistId/summary", async (req, res) => {
 // ────────────────────────────────────────────────────
 // 3. GET /:artistId/services
 // ────────────────────────────────────────────────────
-router.get("/:artistId/services", async (req, res) => {
+router.get("/:artistId/services", authorizePermission(PERMISSIONS.ARTIST_DASHBOARD_VIEW), async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
     const match = { ...dateFilter(req.query), artist: artistName };
@@ -186,7 +188,7 @@ router.get("/:artistId/services", async (req, res) => {
 // ────────────────────────────────────────────────────
 // 4. GET /:artistId/daily-trend
 // ────────────────────────────────────────────────────
-router.get("/:artistId/daily-trend", async (req, res) => {
+router.get("/:artistId/daily-trend", authorizePermission(PERMISSIONS.ARTIST_DASHBOARD_VIEW), async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
     const commissionPct = req.artistRecord.commission || 0;

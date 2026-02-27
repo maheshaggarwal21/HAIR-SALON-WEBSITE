@@ -33,6 +33,7 @@ interface UserRecord {
   email: string;
   role: "receptionist" | "manager" | "owner";
   isActive: boolean;
+  permissions: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +81,14 @@ export default function TeamManagement() {
   });
   const [editFormError, setEditFormError] = useState("");
 
+  // Permission editor
+  const [permissionRegistry, setPermissionRegistry] = useState<{
+    permissions: string[];
+    labels: Record<string, string>;
+    groups: Array<{ label: string; keys: string[] }>;
+  } | null>(null);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+
   // ── Fetch users ────────────────────────────────────────────────────────────
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -98,6 +107,11 @@ export default function TeamManagement() {
 
   useEffect(() => {
     fetchUsers();
+    // Fetch permission registry once on mount
+    fetch(`${API}/api/admin/permissions`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setPermissionRegistry(data))
+      .catch((err) => console.error("Failed to fetch permission registry:", err));
   }, []);
 
   useEffect(() => {
@@ -108,9 +122,17 @@ export default function TeamManagement() {
         role: editingUser.role,
         newPassword: "",
       });
+      setSelectedPermissions(editingUser.permissions ?? []);
       setEditFormError("");
     }
   }, [editingUser]);
+
+  /** Toggle a single permission key in the local selection. */
+  const togglePermission = (key: string) => {
+    setSelectedPermissions((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
 
   // ── Add user ───────────────────────────────────────────────────────────────
   const handleAddUser = async () => {
@@ -197,10 +219,11 @@ export default function TeamManagement() {
   const handleEditSave = async () => {
     if (!editingUser) return;
     setEditFormError("");
-    const body: Record<string, string> = {
+    const body: Record<string, unknown> = {
       name: editForm.name,
       email: editForm.email,
       role: editForm.role,
+      permissions: selectedPermissions,
     };
     if (editForm.newPassword.trim()) {
       if (editForm.newPassword.length < 8) {
@@ -583,13 +606,13 @@ export default function TeamManagement() {
       {/* ── Edit User Modal ── */}
       <AnimatePresence>
         {editingUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm overflow-y-auto py-8">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-7"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-7 max-h-[90vh] overflow-y-auto"
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
@@ -676,6 +699,44 @@ export default function TeamManagement() {
                     Leave blank to keep existing password
                   </p>
                 </div>
+
+                {/* ── Permission Editor ── */}
+                {editingUser && editingUser.role !== "owner" && permissionRegistry && (
+                  <div className="mt-2 border-t border-stone-200 pt-4">
+                    <h4 className="text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
+                      Feature Permissions
+                    </h4>
+                    <p className="text-xs text-stone-400 mb-4">
+                      Select which features this team member can access. Changes take effect on their next login.
+                    </p>
+
+                    {permissionRegistry.groups.map((group) => (
+                      <div key={group.label} className="mb-4">
+                        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
+                          {group.label}
+                        </p>
+                        <div className="space-y-2">
+                          {group.keys.map((key) => (
+                            <label
+                              key={key}
+                              className="flex items-center gap-3 cursor-pointer hover:bg-stone-50 rounded-md p-1.5 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedPermissions.includes(key)}
+                                onChange={() => togglePermission(key)}
+                                className="w-4 h-4 rounded border-stone-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              <span className="text-sm text-stone-700">
+                                {permissionRegistry.labels[key] ?? key}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {editFormError && (
                   <p className="text-sm text-red-500">{editFormError}</p>

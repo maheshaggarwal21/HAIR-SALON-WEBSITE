@@ -18,6 +18,8 @@ const connectDB = require("../db");
 const User = require("../models/User");
 const validateId = require("../middleware/validateId");
 const { invalidateUserSessions } = require("../utils/sessionUtils");
+const { PERMISSIONS, ROLE_DEFAULTS, PERMISSION_LABELS, PERMISSION_GROUPS } = require('../constants/permissions');
+const { authorizePermission, evictPermissionCache } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -32,9 +34,19 @@ router.use(async (_req, res, next) => {
   }
 });
 
+// ─── GET /permissions — Return permission registry for UI ──────────────────
+
+router.get("/permissions", (req, res) => {
+  res.json({
+    permissions: Object.values(PERMISSIONS),
+    labels:      PERMISSION_LABELS,
+    groups:      PERMISSION_GROUPS,
+  });
+});
+
 // ─── GET /users ─────────────────────────────────────────────────────────────
 
-router.get("/users", async (_req, res) => {
+router.get("/users", authorizePermission(PERMISSIONS.TEAM_VIEW), async (_req, res) => {
   try {
     const users = await User.find({}, "-passwordHash").sort({ createdAt: -1 });
     return res.json(users);
@@ -48,6 +60,7 @@ router.get("/users", async (_req, res) => {
 
 router.post(
   "/users",
+  authorizePermission(PERMISSIONS.TEAM_MANAGE),
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("A valid email is required"),
@@ -83,6 +96,7 @@ router.post(
         passwordHash,
         role: req.body.role,
         createdBy: req.session.userId,
+        permissions: ROLE_DEFAULTS[req.body.role] ?? [],
       });
 
       // Return without passwordHash
@@ -139,6 +153,16 @@ router.patch(
           .json({ error: "Cannot change your own role" });
       }
 
+      // Validate permissions if provided
+      const { permissions } = req.body;
+      if (permissions !== undefined) {
+        const validKeys = Object.values(PERMISSIONS);
+        const invalid = permissions.filter(k => !validKeys.includes(k));
+        if (invalid.length > 0) {
+          return res.status(400).json({ error: 'Invalid permission key(s)', invalid, valid: validKeys });
+        }
+      }
+
       // Build update object from provided fields only
       const updateObj = {};
       if (req.body.name !== undefined) updateObj.name = req.body.name.trim();
@@ -156,10 +180,15 @@ router.patch(
         updateObj.passwordHash = await bcrypt.hash(req.body.password, 12);
       }
       if (req.body.isActive !== undefined) updateObj.isActive = req.body.isActive;
+      if (permissions !== undefined) updateObj.permissions = permissions;
 
       const updated = await User.findByIdAndUpdate(id, updateObj, {
         new: true,
+        runValidators: true,
       }).select("-passwordHash");
+
+      // Evict the permission cache so the next request fetches fresh data
+      evictPermissionCache(id);
 
       // Invalidate all active sessions for this user after any account change
       await invalidateUserSessions(req.sessionStore, id);
@@ -174,7 +203,7 @@ router.patch(
 
 // ─── DELETE /users/:id ──────────────────────────────────────────────────────
 
-router.delete("/users/:id", validateId, async (req, res) => {
+router.delete("/users/:id", validateId, authorizePermission(PERMISSIONS.TEAM_MANAGE), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -205,7 +234,7 @@ router.delete("/users/:id", validateId, async (req, res) => {
 
 // ─── DELETE /users/:id/permanent — Hard-delete a user from DB ───────────────
 
-router.delete("/users/:id/permanent", validateId, async (req, res) => {
+router.delete("/users/:id/permanent", validateId, authorizePermission(PERMISSIONS.TEAM_MANAGE), async (req, res) => {
   try {
     const { id } = req.params;
 

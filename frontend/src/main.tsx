@@ -55,7 +55,7 @@ createRoot(document.getElementById('root')!).render(
           <Route
             path="/visit-entry"
             element={
-              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]}>
+              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]} requiredPermission="visit.create">
                 <VisitEntryPage />
               </ProtectedRoute>
             }

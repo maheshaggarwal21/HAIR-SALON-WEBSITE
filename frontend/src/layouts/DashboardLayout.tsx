@@ -17,10 +17,11 @@ import { LogOut, Scissors, Menu, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-interface SidebarLink {
+export interface SidebarLink {
   to: string;
   label: string;
   icon: React.ElementType;
+  requiredPermission?: string; // PBAC — if present, link is hidden when user lacks permission
 }
 
 interface DashboardLayoutProps {
@@ -38,6 +39,15 @@ export default function DashboardLayout({
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Filter sidebar links based on PBAC permissions.
+  // Links without requiredPermission are always visible.
+  // Owner sees all links regardless of permission.
+  const visibleLinks = sidebarLinks.filter((link) => {
+    if (!link.requiredPermission) return true;
+    if (user?.role === "owner") return true;
+    return user?.permissions.includes(link.requiredPermission) ?? false;
+  });
 
   const handleSignOut = async () => {
     setSidebarOpen(false);
@@ -61,7 +71,7 @@ export default function DashboardLayout({
       {/* Navigation */}
       <div className="flex-1 py-4 overflow-y-auto">
         <nav className="px-3 space-y-1">
-          {sidebarLinks.map(({ to, label, icon: Icon }) => (
+          {visibleLinks.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}

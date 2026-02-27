@@ -18,12 +18,14 @@ import ServicesView from "@/pages/dashboard/shared/ServicesView";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
 
-const managerLinks = [
+import type { SidebarLink } from "@/layouts/DashboardLayout";
+
+const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
-  { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt },
-  { to: "/dashboard/manager/services", label: "Services", icon: Scissors },
-  { to: "/dashboard/manager/artists", label: "Artists", icon: Palette },
+  { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
+  { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
+  { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: "services.view" },
+  { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: "artists.view" },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus },
 ];
 
