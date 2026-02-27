@@ -21,7 +21,7 @@ import PaymentHistory from "@/pages/dashboard/PaymentHistory";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
-import ServicesView from "@/pages/dashboard/shared/ServicesView";
+import ServiceManagement from "@/pages/dashboard/ServiceManagement";
 import TeamManagement from "@/pages/dashboard/TeamManagement";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
@@ -42,7 +42,7 @@ export default function ReceptionistDashboard() {
         <Route index element={<Navigate to="payments" replace />} />
         <Route path="payments" element={<PaymentHistory />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
-        <Route path="services" element={<ServicesView />} />
+        <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />
         <Route path="team" element={<TeamManagement />} />

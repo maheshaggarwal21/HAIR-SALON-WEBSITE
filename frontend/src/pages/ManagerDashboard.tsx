@@ -15,7 +15,7 @@ import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, U
 import DashboardLayout from "@/layouts/DashboardLayout";
 import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
-import ServicesView from "@/pages/dashboard/shared/ServicesView";
+import ServiceManagement from "@/pages/dashboard/ServiceManagement";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
@@ -40,7 +40,7 @@ export default function ManagerDashboard() {
         <Route index element={<DashboardOverview />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
         <Route path="payments" element={<PaymentHistory />} />
-        <Route path="services" element={<ServicesView />} />
+        <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />
         <Route path="team" element={<TeamManagement />} />

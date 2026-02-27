@@ -25,6 +25,7 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
+import { usePermission } from "@/hooks/usePermission";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -55,6 +56,7 @@ const EMPTY_FORM: ServiceFormData = { name: "", price: "", category: "", duratio
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function ServiceManagement() {
+  const canCrud = usePermission("services.crud");
   const [services, setServices] = useState<ServiceRecord[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [fetchError, setFetchError] = useState(false);
@@ -258,13 +260,15 @@ export default function ServiceManagement() {
             Manage salon services, prices, and categories
           </p>
         </div>
-        <button
-          onClick={() => setShowAddPanel((p) => !p)}
-          className="flex items-center gap-2 bg-stone-900 text-white text-sm rounded-xl px-5 py-2.5 hover:bg-stone-800 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add New Service
-        </button>
+        {canCrud && (
+          <button
+            onClick={() => setShowAddPanel((p) => !p)}
+            className="flex items-center gap-2 bg-stone-900 text-white text-sm rounded-xl px-5 py-2.5 hover:bg-stone-800 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add New Service
+          </button>
+        )}
       </div>
 
       {fetchError && (
@@ -563,21 +567,25 @@ export default function ServiceManagement() {
                       {/* Actions */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setEditingService(s)}
-                            className="flex items-center gap-1.5 text-xs text-stone-600 hover:text-stone-900 border border-stone-200 hover:border-stone-300 rounded-lg px-3 py-1.5 transition-all"
-                          >
-                            <Pencil className="w-3 h-3" /> Edit
-                          </button>
+                          {canCrud && (
+                            <button
+                              onClick={() => setEditingService(s)}
+                              className="flex items-center gap-1.5 text-xs text-stone-600 hover:text-stone-900 border border-stone-200 hover:border-stone-300 rounded-lg px-3 py-1.5 transition-all"
+                            >
+                              <Pencil className="w-3 h-3" /> Edit
+                            </button>
+                          )}
 
-                          {s.isActive ? (
+                          {canCrud && s.isActive && (
                             <button
                               onClick={() => handleDeactivate(s._id)}
                               className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 border border-red-100 hover:border-red-200 rounded-lg px-3 py-1.5 transition-all"
                             >
                               <XCircle className="w-3 h-3" /> Deactivate
                             </button>
-                          ) : (
+                          )}
+
+                          {canCrud && !s.isActive && (
                             <button
                               onClick={() => handleReactivate(s._id)}
                               className="flex items-center gap-1.5 text-xs text-green-600 hover:text-green-800 border border-green-100 hover:border-green-200 rounded-lg px-3 py-1.5 transition-all"
@@ -586,13 +594,15 @@ export default function ServiceManagement() {
                             </button>
                           )}
 
-                          <button
-                            onClick={() => handlePermanentDelete(s)}
-                            className="flex items-center gap-1.5 text-xs text-red-600 hover:text-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg px-3 py-1.5 transition-all"
-                            title="Permanently delete from database"
-                          >
-                            <Trash2 className="w-3 h-3" /> Delete
-                          </button>
+                          {canCrud && (
+                            <button
+                              onClick={() => handlePermanentDelete(s)}
+                              className="flex items-center gap-1.5 text-xs text-red-600 hover:text-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg px-3 py-1.5 transition-all"
+                              title="Permanently delete from database"
+                            >
+                              <Trash2 className="w-3 h-3" /> Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -705,14 +715,16 @@ export default function ServiceManagement() {
                   onClick={() => setEditingService(null)}
                   className="text-sm text-stone-500 hover:text-stone-800 px-4 py-2 rounded-lg border border-stone-200 hover:border-stone-300 transition-all"
                 >
-                  Cancel
+                  {canCrud ? "Cancel" : "Close"}
                 </button>
-                <button
-                  onClick={handleEditSave}
-                  className="flex items-center gap-2 bg-stone-900 text-white text-sm rounded-xl px-6 py-2.5 hover:bg-stone-800 transition-colors"
-                >
-                  Save Changes
-                </button>
+                {canCrud && (
+                  <button
+                    onClick={handleEditSave}
+                    className="flex items-center gap-2 bg-stone-900 text-white text-sm rounded-xl px-6 py-2.5 hover:bg-stone-800 transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

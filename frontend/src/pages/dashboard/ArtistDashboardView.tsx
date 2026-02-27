@@ -201,7 +201,7 @@ export default function ArtistDashboardView() {
       {/* ── Back button + title ── */}
       <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => navigate("/dashboard/owner/artists")}
+          onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 text-sm text-stone-600 hover:text-stone-900 border border-stone-200 hover:border-stone-300 rounded-lg px-3 py-1.5 transition-all"
         >
           <ArrowLeft className="w-4 h-4" />
