@@ -53,7 +53,7 @@ router.get("/", async (_req, res) => {
 
 // ─── GET /all — List ALL services (including inactive) — owner only ─────────
 
-router.get("/all", authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.SERVICES_VIEW), async (_req, res) => {
+router.get("/all", authorize("receptionist", "manager", "owner", "artist"), authorizePermission(PERMISSIONS.SERVICES_VIEW), async (_req, res) => {
   try {
     const services = await Service.find({}).sort({ createdAt: -1 });
     return res.json(services);
@@ -82,7 +82,7 @@ router.get("/categories", authorizePermission(PERMISSIONS.SERVICES_VIEW), async 
 
 router.post(
   "/",
-  authorize("receptionist", "manager", "owner"),
+  authorize("receptionist", "manager", "owner", "artist"),
   authorizePermission(PERMISSIONS.SERVICES_CRUD),
   [
     body("name").trim().notEmpty().withMessage("Service name is required"),
@@ -136,7 +136,7 @@ router.post(
 router.patch(
   "/:id",
   validateId,
-  authorize("receptionist", "manager", "owner"),
+  authorize("receptionist", "manager", "owner", "artist"),
   authorizePermission(PERMISSIONS.SERVICES_CRUD),
   [
     body("name")
@@ -203,7 +203,7 @@ router.patch(
 
 // ─── DELETE /:id — Soft-delete a service — owner only ───────────────────────
 
-router.delete("/:id", validateId, authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.SERVICES_CRUD), async (req, res) => {
+router.delete("/:id", validateId, authorize("receptionist", "manager", "owner", "artist"), authorizePermission(PERMISSIONS.SERVICES_CRUD), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -222,7 +222,7 @@ router.delete("/:id", validateId, authorize("receptionist", "manager", "owner"),
 
 // ─── DELETE /:id/permanent — Hard-delete a service from DB ──────────────────
 
-router.delete("/:id/permanent", validateId, authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.SERVICES_CRUD), async (req, res) => {
+router.delete("/:id/permanent", validateId, authorize("receptionist", "manager", "owner", "artist"), authorizePermission(PERMISSIONS.SERVICES_CRUD), async (req, res) => {
   try {
     const { id } = req.params;
 

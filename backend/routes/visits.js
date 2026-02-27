@@ -201,7 +201,7 @@ router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, asy
 //   method      online|cash|partial (optional payment method filter)
 //   page        number      (default: 1)
 //   limit       number      (default: 50, max: 200)
-router.get("/history", authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (req, res) => {
+router.get("/history", authorize("receptionist", "manager", "owner", "artist"), authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (req, res) => {
   try {
     await connectDB();
 

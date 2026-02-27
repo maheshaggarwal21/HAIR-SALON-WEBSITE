@@ -503,7 +503,10 @@ app.get("/api/health", async (_req, res) => {
 });
 
 // ─── Analytics Routes (mounted sub-router) ──────────────────────────────────
-app.use("/api/analytics", authenticate, authorize("receptionist", "manager", "owner"), require("./routes/analytics"));
+// Role gate only prevents completely unknown roles; PBAC (authorizePermission)
+// on each individual route is the real enforcement — so artists granted
+// analytics.view must be included here or they'd be blocked before reaching it.
+app.use("/api/analytics", authenticate, authorize("receptionist", "manager", "owner", "artist"), require("./routes/analytics"));
 
 // ─── Artist Dashboard Routes (artist-only) ──────────────────────────────────
 app.use("/api/artist-dashboard", authenticate, authorize("artist"), require("./routes/artistDashboard"));

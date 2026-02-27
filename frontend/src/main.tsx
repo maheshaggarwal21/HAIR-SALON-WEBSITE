@@ -29,7 +29,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage'
 import VisitEntryPage from './pages/VisitEntryPage'
 import ManagerDashboard from './pages/ManagerDashboard'
 import OwnerDashboard from './pages/OwnerDashboard'
-import ArtistDashboard from './pages/ArtistDashboard'
+import ArtistDashboardLayout from './pages/ArtistDashboardLayout'
 import ReceptionistDashboard from './pages/ReceptionistDashboard'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
@@ -55,7 +55,7 @@ createRoot(document.getElementById('root')!).render(
           <Route
             path="/visit-entry"
             element={
-              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]} requiredPermission="visit.create">
+              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner", "artist"]} requiredPermission="visit.create">
                 <VisitEntryPage />
               </ProtectedRoute>
             }
@@ -93,10 +93,10 @@ createRoot(document.getElementById('root')!).render(
 
           {/* ── Artist dashboard ── */}
           <Route
-            path="/dashboard/artist"
+            path="/dashboard/artist/*"
             element={
               <ProtectedRoute allowedRoles={["artist"]}>
-                <ArtistDashboard />
+                <ArtistDashboardLayout />
               </ProtectedRoute>
             }
           />

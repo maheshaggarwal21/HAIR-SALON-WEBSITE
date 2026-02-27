@@ -3,12 +3,14 @@
  * @description Shared "Overview" sub-page used by both Manager and Owner dashboards.
  *
  * Shows: welcome header, today's KPI cards, month-to-date charts.
+ * Analytics cards + charts are shown only when the user has analytics.view permission.
  */
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { useAuth } from "@/context/AuthContext";
+import { usePermission } from "@/hooks/usePermission";
 import EmployeeLeaderboard from "@/components/analytics/EmployeeLeaderboard";
 import TopServices from "@/components/analytics/TopServices";
 
@@ -21,6 +23,7 @@ interface SummaryData {
 
 export default function DashboardOverview() {
   const { user } = useAuth();
+  const canViewAnalytics = usePermission("analytics.view");
 
   const today = dayjs().format("YYYY-MM-DD");
   const monthStart = dayjs().startOf("month").format("YYYY-MM-DD");
@@ -31,6 +34,11 @@ export default function DashboardOverview() {
   const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
+    // Only fetch analytics data if the user has the analytics.view permission
+    if (!canViewAnalytics) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     Promise.all([
       fetch(`${API}/api/analytics/summary?from=${today}&to=${today}`, { credentials: "include" })
@@ -45,7 +53,7 @@ export default function DashboardOverview() {
       })
       .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
-  }, [today, monthStart]);
+  }, [today, monthStart, canViewAnalytics]);
 
   const qs = `from=${monthStart}&to=${today}`;
 
@@ -77,41 +85,52 @@ export default function DashboardOverview() {
         </p>
       </div>
 
-      {/* Stats cards */}
-      {fetchError && (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          Failed to load dashboard data. Check your connection and refresh.
+      {/* Analytics section — only rendered when the user has analytics.view */}
+      {canViewAnalytics ? (
+        <>
+          {/* Stats cards */}
+          {fetchError && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              Failed to load dashboard data. Check your connection and refresh.
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+            {loading
+              ? Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="animate-pulse bg-stone-100 rounded-2xl h-32" />
+                ))
+              : cards.map((c, index) => (
+                  <motion.div
+                    key={c.label}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: index * 0.08 }}
+                    className="bg-white rounded-2xl border border-stone-200/80 shadow-sm p-6"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-2">
+                      {c.label}
+                    </p>
+                    <p className="text-3xl font-black text-stone-900">{c.value}</p>
+                    {c.empty && (
+                      <p className="text-xs text-stone-400 mt-1">No visits yet</p>
+                    )}
+                  </motion.div>
+                ))}
+          </div>
+
+          {/* Charts row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <EmployeeLeaderboard api={API} qs={qs} />
+            <TopServices api={API} qs={qs} />
+          </div>
+        </>
+      ) : (
+        <div className="rounded-2xl border border-stone-200 bg-stone-50 px-6 py-10 text-center">
+          <p className="text-stone-500 text-sm">
+            Analytics data is not available for your account. Contact the owner to request access.
+          </p>
         </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-        {loading
-          ? Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="animate-pulse bg-stone-100 rounded-2xl h-32" />
-            ))
-          : cards.map((c, index) => (
-              <motion.div
-                key={c.label}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: index * 0.08 }}
-                className="bg-white rounded-2xl border border-stone-200/80 shadow-sm p-6"
-              >
-                <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-2">
-                  {c.label}
-                </p>
-                <p className="text-3xl font-black text-stone-900">{c.value}</p>
-                {c.empty && (
-                  <p className="text-xs text-stone-400 mt-1">No visits yet</p>
-                )}
-              </motion.div>
-            ))}
-      </div>
-
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <EmployeeLeaderboard api={API} qs={qs} />
-        <TopServices api={API} qs={qs} />
-      </div>
     </>
   );
 }
