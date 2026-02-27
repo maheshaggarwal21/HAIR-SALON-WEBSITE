@@ -14,7 +14,7 @@
 5. [Database Models](#5-database-models)
 6. [Backend — API Endpoints](#6-backend--api-endpoints)
 7. [Frontend — Pages & Screens](#7-frontend--pages--screens)
-8. [Access Control — RBAC + PBAC](#8-access-control--rbac--pbac)
+8. [Access Control — PBAC](#8-access-control--pbac)
 9. [Feature Walkthrough](#9-feature-walkthrough)
 10. [Security Architecture](#10-security-architecture)
 11. [Analytics System](#11-analytics-system)
@@ -183,7 +183,7 @@ HAIR-SALON-WEBSITE/
             ├── PaymentStatus.tsx         # Post-payment confirmation screen
             ├── VisitEntryPage.tsx        # Visit entry form (main operational page)
             ├── Analytics.tsx             # Full analytics page (manager + owner)
-            ├── ArtistDashboard.tsx       # Artist's personal dashboard
+            ├── ArtistDashboardLayout.tsx # Artist dashboard shell with permission-gated sidebar
             ├── OwnerDashboard.tsx        # Owner's dashboard shell + routes
             ├── ManagerDashboard.tsx      # Manager's dashboard shell + routes
             ├── ReceptionistDashboard.tsx # Receptionist's dashboard shell
@@ -192,14 +192,15 @@ HAIR-SALON-WEBSITE/
             │
             └── dashboard/               # Sub-pages rendered inside dashboards
                 ├── ArtistManagement.tsx      # Artist directory + edit modal
+                ├── ArtistStatsView.tsx        # Artist's personal commission & KPI stats
                 ├── ServiceManagement.tsx     # Service catalog + edit modal
                 ├── TeamManagement.tsx         # Staff accounts + edit modal
                 ├── PaymentHistory.tsx         # Transaction ledger
-                ├── ArtistDashboardView.tsx    # Owner's view of an artist's data
+                ├── ArtistDashboardView.tsx    # Manager/owner read-only view of an artist's data
                 └── shared/
-                    ├── DashboardOverview.tsx  # Welcome + today's KPIs
+                    ├── DashboardOverview.tsx  # Welcome + today's KPIs (analytics gated by analytics.view)
                     ├── DashboardAnalyticsView.tsx  # Analytics inside dashboard
-                    └── ServicesView.tsx        # Read-only service list for manager
+                    └── ServicesView.tsx        # Read-only service list
 ```
 
 ---
@@ -394,12 +395,12 @@ This single endpoint powers the visit entry form's dropdowns. It returns only ac
 ### Visits — `/api/visits`
 *File: `backend/routes/visits.js`*
 
-| Method | Path | RBAC Gate | PBAC Permission | Description |
-|---|---|---|---|---|
-| `POST` | `/api/visits/create-order` | Authenticated | `visit.create` | Creates a Razorpay order and returns `{orderId, amount, currency, key}` |
-| `POST` | `/api/visits/verify-order` | Authenticated | `visit.create` | Verifies Razorpay HMAC signature, then calls createVisit internally |
-| `POST` | `/api/visits` | Authenticated | `visit.create` | Creates a visit record (used directly for cash payments) |
-| `GET` | `/api/visits/history` | Receptionist + | `payments.view` | Paginated payment history with filters |
+| Method | Path | PBAC Permission | Description |
+|---|---|---|---|
+| `POST` | `/api/visits/create-order` | `visit.create` | Creates a Razorpay order and returns `{orderId, amount, currency, key}` |
+| `POST` | `/api/visits/verify-order` | `visit.create` | Verifies Razorpay HMAC signature, then calls createVisit internally |
+| `POST` | `/api/visits` | `visit.create` | Creates a visit record (used directly for cash payments) |
+| `GET` | `/api/visits/history` | `payments.view` | Paginated payment history with filters |
 
 **`GET /api/visits/history` query params:**
 
@@ -419,7 +420,7 @@ Response includes `{ visits[], pagination{}, summary{totalRevenue, totalCash, to
 
 ### Analytics — `/api/analytics`
 *File: `backend/routes/analytics.js`*
-*RBAC: Receptionist + Manager + Owner · PBAC: `analytics.view`*
+*PBAC: `analytics.view`*
 
 | Method | Path | Description |
 |---|---|---|
@@ -440,14 +441,14 @@ Where `effectiveHours = actualHoursWorked + (netExtraMinutes / 60)`. If an artis
 ### Artists — `/api/artists`
 *File: `backend/routes/artists.js`*
 
-| Method | Path | RBAC Gate | PBAC Permission | Description |
-|---|---|---|---|---|
-| `GET` | `/api/artists` | Authenticated | — | All active artists (for form dropdown) |
-| `GET` | `/api/artists/all` | Receptionist + | `artists.view` | All artists including inactive, with full details |
-| `POST` | `/api/artists` | Receptionist + | `artists.crud` | Create artist (optionally with login credentials) |
-| `PATCH` | `/api/artists/:id` | Receptionist + | `artists.crud` | Update artist profile + sync linked User credentials |
-| `DELETE` | `/api/artists/:id` | Receptionist + | `artists.crud` | Soft-delete (sets isActive: false) |
-| `DELETE` | `/api/artists/:id/permanent` | Receptionist + | `artists.crud` | Hard-delete from database |
+| Method | Path | PBAC Permission | Description |
+|---|---|---|---|
+| `GET` | `/api/artists` | — | All active artists (for form dropdown) |
+| `GET` | `/api/artists/all` | `artists.view` | All artists including inactive, with full details |
+| `POST` | `/api/artists` | `artists.crud` | Create artist (optionally with login credentials) |
+| `PATCH` | `/api/artists/:id` | `artists.crud` | Update artist profile + sync linked User credentials |
+| `DELETE` | `/api/artists/:id` | `artists.crud` | Soft-delete (sets isActive: false) |
+| `DELETE` | `/api/artists/:id/permanent` | `artists.crud` | Hard-delete from database |
 
 When an artist is created with email + password, a `User` document (role: "artist") is also created and linked via `artist.userId`. When the artist is edited, the linked User document is kept in sync.
 
@@ -456,21 +457,21 @@ When an artist is created with email + password, a `User` document (role: "artis
 ### Services — `/api/services`
 *File: `backend/routes/services.js`*
 
-| Method | Path | RBAC Gate | PBAC Permission | Description |
-|---|---|---|---|---|
-| `GET` | `/api/services` | Authenticated | — | All active services |
-| `GET` | `/api/services/all` | Receptionist + | `services.view` | All services including inactive |
-| `GET` | `/api/services/categories` | Authenticated | `services.view` | Distinct active category names |
-| `POST` | `/api/services` | Receptionist + | `services.crud` | Create service (validates name uniqueness, price, durationMinutes) |
-| `PATCH` | `/api/services/:id` | Receptionist + | `services.crud` | Update service fields |
-| `DELETE` | `/api/services/:id` | Receptionist + | `services.crud` | Soft-delete (sets isActive: false) |
-| `DELETE` | `/api/services/:id/permanent` | Receptionist + | `services.crud` | Hard-delete from database |
+| Method | Path | PBAC Permission | Description |
+|---|---|---|---|
+| `GET` | `/api/services` | — | All active services |
+| `GET` | `/api/services/all` | `services.view` | All services including inactive |
+| `GET` | `/api/services/categories` | `services.view` | Distinct active category names |
+| `POST` | `/api/services` | `services.crud` | Create service (validates name uniqueness, price, durationMinutes) |
+| `PATCH` | `/api/services/:id` | `services.crud` | Update service fields |
+| `DELETE` | `/api/services/:id` | `services.crud` | Soft-delete (sets isActive: false) |
+| `DELETE` | `/api/services/:id/permanent` | `services.crud` | Hard-delete from database |
 
 ---
 
 ### Admin (Team Management) — `/api/admin`
 *File: `backend/routes/admin.js`*
-*RBAC: Receptionist + Manager + Owner*
+*Mount guard: `authenticate` only — per-route access controlled entirely by PBAC permissions below*
 
 | Method | Path | PBAC Permission | Description |
 |---|---|---|---|
@@ -486,7 +487,7 @@ The `PATCH` endpoint invalidates existing sessions for the edited user so that a
 
 ### Artist Dashboard — `/api/artist-dashboard`
 *File: `backend/routes/artistDashboard.js`*
-*Access: Artist only*
+*Access: Artist only — the single route prefix guarded by `authorize("artist")` (identity-scope, not a grantable permission)*
 
 | Method | Path | Description |
 |---|---|---|
@@ -500,7 +501,7 @@ The `PATCH` endpoint invalidates existing sessions for the edited user so that a
 
 ### Owner → Artist Dashboard — `/api/owner/artist-dashboard`
 *File: `backend/routes/ownerArtistDashboard.js`*
-*RBAC: Receptionist + Manager + Owner · PBAC: `artist_dashboard.view`*
+*PBAC: `artist_dashboard.view`*
 
 Same endpoints as above but takes `:artistId` as a path parameter. Allows any user with the `artist_dashboard.view` permission to view an artist's dashboard from their own UI without needing to log in as that artist.
 
@@ -549,7 +550,7 @@ The login page. After successful login, redirects to the appropriate dashboard b
 ### Operational Pages (require login)
 
 **`/visit-entry` — Visit Entry Form (`VisitEntryPage.tsx`)**  
-*Access: Receptionist, Manager, Owner*
+*Access: Receptionist, Manager, Owner, Artist (requires `visit.create` permission)*
 
 The core operational page. Staff fills this form for every client visit:
 - **Section 1 — Client Details:** Name, phone, age range (dropdown), gender
@@ -609,9 +610,21 @@ Sidebar also has a "New Visit Entry" link to `/visit-entry` (requires `visit.cre
 
 Sidebar also has a "New Visit Entry" link to `/visit-entry` (requires `visit.create`). All sidebar links are dynamically shown/hidden based on the user's `permissions[]` array — only links the user has at least one matching permission for will appear.
 
-**`/dashboard/artist` — Artist Dashboard (`ArtistDashboard.tsx`)**
+**`/dashboard/artist/*` — Artist Dashboard (`ArtistDashboardLayout.tsx`)**
 
-Artists see only their own data — no access to other artists', no admin functions.
+Artists get a full permission-gated sidebar dashboard, identical in structure to the manager and receptionist dashboards. The index route always shows personal commission stats; all other sidebar links are gated by PBAC permissions assigned by the owner.
+
+| Sub-route | Component | PBAC Permission | Description |
+|---|---|---|---|
+| `/` (index) | `ArtistStatsView.tsx` | — | Personal commission KPIs, top services, daily earnings trend, time performance |
+| `/analytics` | `DashboardAnalyticsView.tsx` | `analytics.view` | Full salon analytics suite |
+| `/payments` | `PaymentHistory.tsx` | `payments.view` | Transaction ledger |
+| `/services` | `ServiceManagement.tsx` | `services.view` OR `services.crud` | Service catalogue (CRUD buttons gated by `services.crud`) |
+| `/artists` | `ArtistManagement.tsx` | `artists.view` OR `artists.crud` | Artist directory (CRUD buttons gated by `artists.crud`) |
+
+Sidebar also has a "New Visit Entry" link to `/visit-entry` (requires `visit.create`). By default, artists have no permissions assigned — the owner grants them individually through the permission editor in Team Management.
+
+**`ArtistStatsView.tsx`** (index route) fetches the artist's own data from `/api/artist-dashboard/*`:
 
 | Section | Description |
 |---|---|
@@ -632,32 +645,45 @@ Shown when a logged-in user tries to access a route above their permission level
 
 ---
 
-## 8. Access Control — RBAC + PBAC
+## 8. Access Control — PBAC
 
-The system implements a **three-layer** security model combining Role-Based Access Control (RBAC) with Permission-Based Access Control (PBAC).
+The system uses a **PBAC-only** (Permission-Based Access Control) model. All route prefixes are authenticated with `authenticate`, and each individual route handler is gated by `authorizePermission(key)`. There are no role-based gates at the route level — a receptionist or a manager can be granted any subset of permissions by the owner.
 
-### Layer 1 — Backend RBAC Middleware
+There is **one exception**: the `/api/artist-dashboard` prefix also applies `authorize("artist")` as an **identity-scope guard**, ensuring that only the logged-in artist can read their own dashboard data. This is not a grantable permission and has nothing to do with the PBAC system.
 
-Every sensitive API route is guarded by two middleware functions from `authMiddleware.js`:
+### Layer 1 — Backend Authentication Middleware
+
+Every protected API route mount uses `authenticate` from `authMiddleware.js`:
 
 ```
 authenticate → checks req.session.userId exists (401 if not)
-authorize("role1", "role2") → checks req.session.role is in the allowed list (403 if not)
 ```
 
-These run before any route handler can execute. A frontend manipulation (e.g., changing role in localStorage) is completely ineffective — the server checks its own session store in MongoDB.
+This runs before any route handler can execute. A frontend manipulation (e.g., changing a role in localStorage) is completely ineffective — the server reads its own session store in MongoDB.
+
+**Route mounts in `backend/index.js`:**
+
+| Mount prefix | Mount-level middleware | Per-route enforcement |
+|---|---|---|
+| `/api/auth` | none | public |
+| `/api/admin` | `authenticate` | `authorizePermission` per route |
+| `/api/artists` | `authenticate` | `authorizePermission` per route |
+| `/api/services` | `authenticate` | `authorizePermission` per route |
+| `/api/visits` | `authenticate` | `authorizePermission` per route |
+| `/api/analytics` | `authenticate` | `authorizePermission` per route |
+| `/api/artist-dashboard` | `authenticate` + `authorize("artist")` | identity-scope guard only |
+| `/api/owner/artist-dashboard` | `authenticate` | `authorizePermission(ARTIST_DASHBOARD_VIEW)` |
 
 ### Layer 2 — Backend PBAC Middleware (`authorizePermission`)
 
-After RBAC passes, individual routes are further gated by `authorizePermission(key)`:
+After authentication passes, individual routes are gated by `authorizePermission(key)`:
 
 ```js
 authorizePermission(PERMISSIONS.SERVICES_CRUD)
 ```
 
 - **Owner role always bypasses** — short-circuits before any DB lookup.
-- **Artist role** is not part of PBAC (has a fixed separate dashboard flow).
-- **Receptionist / Manager** — the middleware fetches `user.permissions[]` from MongoDB (with a 60-second in-process cache) and checks if the required key is present. Returns 403 with `{ error: "Permission denied", required: key }` if absent.
+- **All other roles (receptionist, manager, artist)** — the middleware fetches `user.permissions[]` from MongoDB (with a 60-second in-process cache) and checks if the required key is present. Returns 403 with `{ error: "Permission denied", required: key }` if absent.
 - **Cache eviction** — `evictPermissionCache(userId)` is called whenever a user's permissions or role are changed (in the admin PATCH route), ensuring the cached permissions are never stale after an edit.
 
 ### Layer 3 — Frontend Route Guard + PBAC UI Gating
@@ -708,7 +734,7 @@ When a new user account is created via `POST /api/admin/users`, their `permissio
 | **Receptionist** | `payments.view`, `visit.create` |
 | **Manager** | `analytics.view`, `payments.view`, `services.view`, `artists.view`, `artists.crud`, `visit.create` |
 | **Owner** | *(bypasses PBAC — all features always available)* |
-| **Artist** | *(not in PBAC — has a fixed separate dashboard)* |
+| **Artist** | *(empty by default — permissions granted individually by the owner)* |
 
 The owner can later customize any user's permissions through the permission editor in Team Management.
 
@@ -735,13 +761,12 @@ Each permission has a human-readable label from `PERMISSION_LABELS`, and the gro
 export function usePermission(key: string): boolean {
   const { user } = useAuth();
   if (!user) return false;
-  if (user.role === "owner") return true;   // owner is always exempt
-  if (user.role === "artist") return false;  // artist has a fixed separate flow
+  if (user.role === "owner") return true; // owner is always exempt
   return user.permissions.includes(key);
 }
 ```
 
-Used in `ArtistManagement`, `ServiceManagement`, and `TeamManagement` to conditionally render CRUD buttons. Also referenced by `DashboardLayout` for sidebar link filtering.
+Used in `ArtistManagement`, `ServiceManagement`, `TeamManagement`, `ArtistDashboardLayout`, and `DashboardOverview` to conditionally render CRUD buttons and gate analytics calls. Also referenced by `DashboardLayout` for sidebar link filtering.
 
 ### Migration Script
 
@@ -764,7 +789,7 @@ cookie: {
 }
 ```
 
-The session contains: `{ userId, role, name, email }`. The `role` is read on every request by the `authorize()` middleware — no JWT decoding, no database lookup per request.
+The session contains: `{ userId, role, name, email }`. The `authenticate` middleware reads `req.session.userId` on every request — no JWT decoding, no extra database lookup per request for authentication. Permission checks (`authorizePermission`) do make a database call once per user (with a 60-second in-process cache).
 
 ---
 
@@ -1177,7 +1202,7 @@ A quick description of every file in the project:
 | `index.js` | App entry point. Configures CORS, helmet, rate limiting, session, Razorpay, and mounts all routers. Also contains the owner auto-seed logic and `/api/form-data` endpoint. |
 | `db.js` | Singleton MongoDB connection. Caches the connection promise to avoid duplicate connections in serverless environments. |
 | `constants/permissions.js` | Canonical registry of all PBAC permission keys (`PERMISSIONS`), role defaults (`ROLE_DEFAULTS`), human-readable labels (`PERMISSION_LABELS`), and UI groupings (`PERMISSION_GROUPS`). |
-| `middleware/authMiddleware.js` | `authenticate()` — checks session exists. `authorize(...roles)` — RBAC role check. `authorizePermission(key)` — PBAC permission check with in-process cache (60s TTL). Also exports `evictPermissionCache()`. |
+| `middleware/authMiddleware.js` | `authenticate()` — checks session exists. `authorize(...roles)` — identity-scope role check (used only for `/api/artist-dashboard`). `authorizePermission(key)` — PBAC permission check with in-process cache (60s TTL). Also exports `evictPermissionCache()`. |
 | `middleware/validateId.js` | Validates `:id` route params are valid MongoDB ObjectIds before the route handler runs. |
 | `models/Visit.js` | Schema for client visit records. Includes snapshot sub-documents for services. |
 | `models/Artist.js` | Schema for salon artists. Optional link to a User account. |
@@ -1200,7 +1225,7 @@ A quick description of every file in the project:
 | `main.tsx` | React Router `<Routes>` tree. Defines all routes wrapped in `ProtectedRoute`. |
 | `context/AuthContext.tsx` | Global auth state. Calls `GET /api/auth/me` on load to restore session. Provides `user`, `loading`, `logout`. |
 | `hooks/useVisitForm.ts` | All visit form logic — state, derived values, validation, form submission. Keeps `VisitEntryPage.tsx` clean. |
-| `hooks/usePermission.ts` | PBAC hook — reads `user.permissions[]` from AuthContext. Owner always returns `true`, artist always `false`. Used by management components for CRUD button gating. |
+| `hooks/usePermission.ts` | PBAC hook — reads `user.permissions[]` from AuthContext. Owner always returns `true`. Used by management components, `ArtistDashboardLayout`, and `DashboardOverview` for CRUD button gating and analytics call gating. |
 | `layouts/AppLayout.tsx` | Navbar with auth-aware links, avatar dropdown, and mobile hamburger. "Dashboard" link shown for all logged-in staff roles. |
 | `layouts/DashboardLayout.tsx` | Sidebar navigation shell used by all four dashboards. Accepts `sidebarLinks` + `pageTitle` props. Filters sidebar links by `requiredPermission` (supports `string \| string[]` with OR logic). |
 | `layouts/AuthLayout.tsx` | Centered card layout for the sign-in page. |
@@ -1217,12 +1242,14 @@ A quick description of every file in the project:
 | `services/api.ts` | Typed helper functions: `fetchFormData`, `createOrder`, `verifyOrderPayment`, `createVisit`. All send `credentials: "include"` so the session cookie is attached. |
 | `services/razorpay.ts` | Dynamically loads the Razorpay checkout.js script from Razorpay's CDN on demand. |
 | `pages/VisitEntryPage.tsx` | Renders the visit entry form UI using hooks and components. |
+| `pages/ArtistDashboardLayout.tsx` | Artist dashboard shell with permission-gated sidebar nav and sub-routes. Mirrors manager/receptionist dashboard structure. |
+| `pages/dashboard/ArtistStatsView.tsx` | Artist's personal commission stats — KPI cards, top services, daily earnings trend, time performance. Fetches from `/api/artist-dashboard/*`. |
 | `pages/dashboard/PaymentHistory.tsx` | Full transaction ledger with date presets, customer/artist/method filters, summary cards, paginated table, and Excel export. |
 | `pages/dashboard/ArtistManagement.tsx` | Artist directory cards + add/edit/deactivate modals. CRUD buttons gated by `usePermission("artists.crud")`. Dashboard button gated by `usePermission("artist_dashboard.view")`. Edit modal includes email and password for dashboard login credentials. |
 | `pages/dashboard/ServiceManagement.tsx` | Service catalog table + add/edit/deactivate/delete modals with duration field. CRUD buttons gated by `usePermission("services.crud")`. |
 | `pages/dashboard/TeamManagement.tsx` | Staff account management. CRUD buttons gated by `usePermission("team.manage")`. Edit modal shows read-only "Owner" label if editing an owner account (cannot change role). Includes permission editor checklist. |
-| `pages/dashboard/ArtistDashboardView.tsx` | Read-only proxy view of any artist's dashboard using `/api/owner/artist-dashboard/:id/*` endpoints. Back button uses `navigate(-1)` for role-agnostic navigation. |
-| `pages/dashboard/shared/DashboardOverview.tsx` | Welcome page inside dashboards. Loads today + month KPIs and shows mini leaderboard. |
+| `pages/dashboard/ArtistDashboardView.tsx` | Read-only proxy view of any artist's dashboard using `/api/owner/artist-dashboard/:id/*` endpoints. Available to any user with `artist_dashboard.view` permission. Back button uses `navigate(-1)` for role-agnostic navigation. |
+| `pages/dashboard/shared/DashboardOverview.tsx` | Welcome page inside dashboards. Loads today + month KPIs and shows mini leaderboard. Analytics calls and charts are gated behind `usePermission("analytics.view")`. |
 | `pages/dashboard/shared/DashboardAnalyticsView.tsx` | Full analytics suite rendered inside a dashboard. Composes all analytics components. |
 | `pages/dashboard/shared/ServicesView.tsx` | Legacy read-only active services list. Replaced by `ServiceManagement` (which self-gates CRUD buttons via `usePermission`) in all dashboards. |
 | `types/visit.ts` | TypeScript interfaces for `VisitFormData`, `CreateVisitPayload`, etc. |
