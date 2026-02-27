@@ -49,7 +49,7 @@ router.get("/", async (_req, res) => {
 
 // ─── GET /all — List ALL artists (including inactive) — manager + owner ─────
 
-router.get("/all", authorize("manager", "owner"), authorizePermission(PERMISSIONS.ARTISTS_VIEW), async (_req, res) => {
+router.get("/all", authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.ARTISTS_VIEW), async (_req, res) => {
   try {
     const artists = await Artist.find({}).sort({ createdAt: -1 });
     return res.json(artists);
@@ -63,7 +63,7 @@ router.get("/all", authorize("manager", "owner"), authorizePermission(PERMISSION
 
 router.post(
   "/",
-  authorize("manager", "owner"),
+  authorize("receptionist", "manager", "owner"),
   authorizePermission(PERMISSIONS.ARTISTS_CRUD),
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
@@ -146,7 +146,7 @@ router.post(
 router.patch(
   "/:id",
   validateId,
-  authorize("manager", "owner"),
+  authorize("receptionist", "manager", "owner"),
   authorizePermission(PERMISSIONS.ARTISTS_CRUD),
   [
     body("name")
@@ -274,7 +274,7 @@ router.patch(
 
 // ─── DELETE /:id — Soft-delete an artist ────────────────────────────────────
 
-router.delete("/:id", validateId, authorize("manager", "owner"), authorizePermission(PERMISSIONS.ARTISTS_CRUD), async (req, res) => {
+router.delete("/:id", validateId, authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.ARTISTS_CRUD), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -300,7 +300,7 @@ router.delete("/:id", validateId, authorize("manager", "owner"), authorizePermis
 
 // ─── DELETE /:id/permanent — Hard-delete an artist from DB ──────────────────
 
-router.delete("/:id/permanent", validateId, authorize("owner"), authorizePermission(PERMISSIONS.ARTISTS_CRUD), async (req, res) => {
+router.delete("/:id/permanent", validateId, authorize("receptionist", "manager", "owner"), authorizePermission(PERMISSIONS.ARTISTS_CRUD), async (req, res) => {
   try {
     const { id } = req.params;
 
