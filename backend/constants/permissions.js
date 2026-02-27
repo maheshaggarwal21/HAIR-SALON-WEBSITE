@@ -26,6 +26,7 @@ const ROLE_DEFAULTS = {
     'services.view',
     'artists.view',
     'artists.crud',
+    'artist_dashboard.view',
     'visit.create',
   ],
   receptionist: [

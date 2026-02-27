@@ -628,7 +628,7 @@ export default function ArtistManagement() {
                         <div className="flex items-center gap-2">
                           {canViewDashboard && (
                             <button
-                              onClick={() => navigate(`artist-view/${a._id}`)}
+                              onClick={() => navigate(`../artist-view/${a._id}`)}
                               className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-800 border border-amber-200 hover:border-amber-300 rounded-lg px-3 py-1.5 transition-all"
                               title="View artist dashboard"
                             >
