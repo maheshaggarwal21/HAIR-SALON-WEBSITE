@@ -17,6 +17,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
+import { useAuth } from "@/context/AuthContext";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
@@ -35,11 +36,29 @@ const receptionistLinks: SidebarLink[] = [
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus, requiredPermission: "visit.create" },
 ];
 
+/** Redirect to the first sidebar link the user has permission for. */
+function DefaultRedirect() {
+  const { user } = useAuth();
+  const perms = user?.permissions ?? [];
+  const isOwner = user?.role === "owner";
+
+  for (const link of receptionistLinks) {
+    // Skip external links (like /visit-entry)
+    if (!link.to.startsWith("/dashboard/receptionist/")) continue;
+    if (!link.requiredPermission || isOwner || perms.includes(link.requiredPermission)) {
+      const sub = link.to.replace("/dashboard/receptionist/", "");
+      return <Navigate to={sub} replace />;
+    }
+  }
+  // Fallback — shouldn't happen if at least one permission is granted
+  return <Navigate to="/unauthorized" replace />;
+}
+
 export default function ReceptionistDashboard() {
   return (
     <DashboardLayout sidebarLinks={receptionistLinks} pageTitle="Receptionist Dashboard">
       <Routes>
-        <Route index element={<Navigate to="payments" replace />} />
+        <Route index element={<DefaultRedirect />} />
         <Route path="payments" element={<PaymentHistory />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
         <Route path="services" element={<ServiceManagement />} />
