@@ -47,7 +47,7 @@ const EMPTY_FORM: VisitFormData = {
   artist: "",
   serviceType: [],
   searchService: [],
-  discount: "",
+  discount: "50", // default 50% discount applied on every new visit
   date: today,
   paymentMode: "online",
   cashAmount: "",
@@ -207,6 +207,7 @@ export function useVisitForm() {
   const handleReset = () => {
     // Re-fill endTime with current time (same as on mount) so the field
     // isn't left empty after a form reset.
+    // discount is kept at "50" (from EMPTY_FORM) so the default always applies.
     setFormData({ ...EMPTY_FORM, date: today, endTime: nowHHMM() });
     setErrors({});
     setPaymentError(null);
