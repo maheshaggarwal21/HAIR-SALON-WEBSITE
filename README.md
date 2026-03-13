@@ -111,13 +111,6 @@ HAIR-SALON-WEBSITE/
 │   │   ├── artistDashboard.js        # Artist's own dashboard data
 │   │   └── ownerArtistDashboard.js   # Owner's view of any artist's dashboard
 │   │
-│   └── scripts/                      # One-time database seed / migration scripts
-│       ├── seedArtists.js
-│       ├── seedArtistUser.js
-│       ├── seedOwner.js
-│       ├── seedServices.js
-│       └── migratePermissions.js     # Backfills permissions[] for existing users
-│
 └── frontend/                         # React + TypeScript SPA
     ├── index.html                    # HTML shell
     ├── vite.config.ts                # Vite build configuration
@@ -386,7 +379,7 @@ The backend is mounted at `https://api.thexpertshair.com`. All routes except `/a
 
 | Method | Path | Access | Description |
 |---|---|---|---|
-| `GET` | `/api/form-data` | Authenticated | Returns `{artists: [{id, name}], services: [{id, name, price, category, durationMinutes}]}` |
+| `GET` | `/api/form-data` | Authenticated | Returns `{artists, serviceTypes, services}` for visit-form dropdowns |
 
 This single endpoint powers the visit entry form's dropdowns. It returns only active artists and active services. The `filledBy` field is taken from `req.session.name`.
 
@@ -397,10 +390,17 @@ This single endpoint powers the visit entry form's dropdowns. It returns only ac
 
 | Method | Path | PBAC Permission | Description |
 |---|---|---|---|
-| `POST` | `/api/visits/create-order` | `visit.create` | Creates a Razorpay order and returns `{orderId, amount, currency, key}` |
-| `POST` | `/api/visits/verify-order` | `visit.create` | Verifies Razorpay HMAC signature, then calls createVisit internally |
-| `POST` | `/api/visits` | `visit.create` | Creates a visit record (used directly for cash payments) |
+| `POST` | `/api/visits` | `visit.create` | Creates a visit record (cash/online/partial after successful verification flow) |
 | `GET` | `/api/visits/history` | `payments.view` | Paginated payment history with filters |
+
+Payment verification endpoints are mounted in `backend/index.js`:
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| `POST` | `/api/create-order` | Authenticated | Creates a Razorpay order and returns `{order_id, amount, currency, key_id}` |
+| `POST` | `/api/verify-order-payment` | Authenticated | Verifies Razorpay order signature and returns payment confirmation payload |
+| `POST` | `/api/create-payment-link` | Authenticated | Creates a Razorpay payment link (legacy flow) |
+| `GET` | `/api/verify-payment` | Authenticated | Verifies payment-link callback signature and fetches payment details |
 
 **`GET /api/visits/history` query params:**
 
@@ -503,7 +503,7 @@ The `PATCH` endpoint invalidates existing sessions for the edited user so that a
 *File: `backend/routes/ownerArtistDashboard.js`*
 *PBAC: `artist_dashboard.view`*
 
-Same endpoints as above but takes `:artistId` as a path parameter. Allows any user with the `artist_dashboard.view` permission to view an artist's dashboard from their own UI without needing to log in as that artist.
+This route group exposes an owner/manager view of artist metrics by `:artistId`. Access is permission-based (`artist_dashboard.view`).
 
 | Method | Path | Description |
 |---|---|---|
@@ -514,11 +514,14 @@ Same endpoints as above but takes `:artistId` as a path parameter. Allows any us
 
 ---
 
-### Razorpay (inline in index.js)
+### Utility & Razorpay (inline in index.js)
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/razorpay/order` | Creates Razorpay order, returns orderId + amount |
+| `POST` | `/api/create-order` | Creates Razorpay order, returns order payload for checkout |
+| `POST` | `/api/verify-order-payment` | Verifies Razorpay order payment signature |
+| `POST` | `/api/create-payment-link` | Creates Razorpay payment link (legacy path) |
+| `GET` | `/api/verify-payment` | Verifies Razorpay payment-link callback signature |
 | `GET` | `/api/health` | DB status + server uptime |
 
 ---
@@ -536,10 +539,10 @@ Salon story, team description, and philosophy.
 **`/contact` — Contact Page (`ContactPage.tsx`)**  
 Contact details, address, working hours.
 
-**`/privacy` — Privacy Policy (`PrivacyPolicyPage.tsx`)**  
+**`/privacy-policy` — Privacy Policy (`PrivacyPolicyPage.tsx`)**  
 Legal privacy policy.
 
-**`/terms` — Terms of Service (`TermsOfServicePage.tsx`)**  
+**`/terms-of-service` — Terms of Service (`TermsOfServicePage.tsx`)**  
 Legal terms.
 
 **`/signin` — Sign In Page (`SignInPage.tsx` + `SignInForm.tsx`)**  
@@ -732,7 +735,7 @@ When a new user account is created via `POST /api/admin/users`, their `permissio
 | Role | Default Permissions |
 |---|---|
 | **Receptionist** | `payments.view`, `visit.create` |
-| **Manager** | `analytics.view`, `payments.view`, `services.view`, `artists.view`, `artists.crud`, `visit.create` |
+| **Manager** | `analytics.view`, `payments.view`, `services.view`, `artists.view`, `artists.crud`, `artist_dashboard.view`, `visit.create` |
 | **Owner** | *(bypasses PBAC — all features always available)* |
 | **Artist** | *(empty by default — permissions granted individually by the owner)* |
 
@@ -767,14 +770,6 @@ export function usePermission(key: string): boolean {
 ```
 
 Used in `ArtistManagement`, `ServiceManagement`, `TeamManagement`, `ArtistDashboardLayout`, and `DashboardOverview` to conditionally render CRUD buttons and gate analytics calls. Also referenced by `DashboardLayout` for sidebar link filtering.
-
-### Migration Script
-
-*File: `backend/scripts/migratePermissions.js`*
-
-A one-time script that backfills the `permissions[]` array for existing user accounts that were created before the PBAC system was added. It applies `ROLE_DEFAULTS[user.role]` to every user document that has an empty or missing `permissions` array.
-
----
 
 ### Session Architecture
 
@@ -960,7 +955,7 @@ This ensures the boundaries are midnight-to-midnight in the server's local timez
 
 ### Rate Limiting
 - **200 requests per 15 minutes per IP** — Applied globally. Prevents brute-force login attacks and DDoS
-- The login endpoint itself is not separately rate-limited; the global limiter covers it
+- `POST /api/auth/login` has an additional stricter limiter of **10 attempts per 15 minutes per IP**
 
 ### HTTP Security Headers (Helmet)
 Automatically applied headers include:
@@ -987,7 +982,7 @@ All other origins receive a CORS error — the browser blocks the request before
 ### Payment Security
 - Razorpay payment verification uses **HMAC-SHA256 signature**
 - The `razorpay_order_id + "|" + razorpay_payment_id` string is signed with the Razorpay secret key
-- The server computes its own HMAC and compares it with the client's signature using `crypto.timingSafeEqual()` (prevents timing attacks)
+- The server computes its own HMAC and compares it with the client's signature before accepting the payment
 - A payment is only recorded in the database after signature verification passes
 
 ### Input Validation
@@ -1034,9 +1029,9 @@ Sort artists by productivityScore DESC → assigns rank 1, 2, 3...
 ```
 User selects "Online" → clicks submit
     ↓
-Frontend calls POST /api/visits/create-order
+Frontend calls POST /api/create-order
     → Backend: razorpay.orders.create({ amount: paise, currency: "INR" })
-    → Returns: { orderId, amount, currency, key }
+  → Returns: { order_id, amount, currency, key_id }
     ↓
 Frontend loads Razorpay script (if not already loaded)
     → Opens Razorpay checkout modal (name, phone pre-filled)
@@ -1045,11 +1040,10 @@ User completes payment (UPI / Card / NetBanking)
     ↓
 Razorpay calls frontend handler with { razorpay_payment_id, razorpay_order_id, razorpay_signature }
     ↓
-Frontend calls POST /api/visits/verify-order
+Frontend calls POST /api/verify-order-payment
     → Backend computes HMAC-SHA256 of orderId|paymentId using RAZORPAY_KEY_SECRET
-    → Compares with razorpay_signature using timingSafeEqual
-    → If match: calls createVisit internally
-    → Returns visit ID
+  → Compares with razorpay_signature
+  → If match: frontend then calls POST /api/visits to store the visit record
     ↓
 Frontend navigates to /payment-status?method=online&status=success
 ```
@@ -1099,7 +1093,7 @@ npm install
 # Create .env file (copy from Environment Variables section above, use test Razorpay keys)
 # Then:
 npm run dev
-# Server starts on http://localhost:3000 (or the port in your config)
+# Server starts on http://localhost:4000 by default (or PORT if configured)
 ```
 
 The `--watch` flag in `"dev": "node --watch index.js"` auto-restarts the server when files change (built into Node 18+, no nodemon needed).
@@ -1111,32 +1105,16 @@ cd frontend
 npm install
 
 # Create .env file:
-# VITE_BACKEND_URL=http://localhost:3000
+# VITE_BACKEND_URL=http://localhost:4000
 # VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx
 
 npm run dev
 # Vite dev server starts at http://localhost:5173
 ```
 
-### Seeding Initial Data (optional)
+### Initial Data Notes
 
-If you want to populate the database with sample data:
-
-```bash
-cd backend
-
-# Seed the owner account (also done automatically on first request)
-node scripts/seedOwner.js
-
-# Seed sample artists
-node scripts/seedArtists.js
-
-# Seed sample services
-node scripts/seedServices.js
-
-# Create an artist dashboard login (links Artist to User)
-node scripts/seedArtistUser.js
-```
+The current backend auto-creates/updates the owner account on first request using `OWNER_EMAIL` and `OWNER_PASSWORD` from `.env`. There is no `backend/scripts` directory in this repository at the moment.
 
 ---
 
@@ -1216,7 +1194,6 @@ A quick description of every file in the project:
 | `routes/analytics.js` | All analytics queries — summary, top services, employee leaderboard, deep-dive, repeat customers, Excel export. PBAC: `analytics.view`. |
 | `routes/artistDashboard.js` | Artist's own dashboard data endpoints. |
 | `routes/ownerArtistDashboard.js` | Any authorised user's view of an artist's dashboard data (same queries but by artistId). PBAC: `artist_dashboard.view`. |
-| `scripts/migratePermissions.js` | One-time script to backfill `permissions[]` for existing users created before PBAC. |
 
 ### Frontend
 
