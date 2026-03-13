@@ -22,6 +22,11 @@ interface Props {
 
 const COLORS = ["#34d399", "#60a5fa", "#a78bfa", "#fbbf24", "#f87171", "#2dd4bf", "#fb923c", "#e879f9"];
 
+function shortLabel(label: string, maxLen = 22): string {
+  if (!label) return "";
+  return label.length > maxLen ? `${label.slice(0, maxLen - 1)}…` : label;
+}
+
 export default function TopServices({ api, qs }: Props) {
   const [data, setData] = useState<ServiceData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,14 +58,16 @@ export default function TopServices({ api, qs }: Props) {
       ) : (
         <>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={top10} layout="vertical" margin={{ left: 10, right: 20 }}>
+            <BarChart data={top10} layout="vertical" margin={{ left: 20, right: 20 }}>
               <XAxis type="number" stroke="#d6d3d1" tick={{ fill: "#78716c", fontSize: 12 }} />
               <YAxis
                 dataKey="service"
                 type="category"
-                width={120}
+                width={170}
                 stroke="#d6d3d1"
                 tick={{ fill: "#44403c", fontSize: 12 }}
+                tickMargin={10}
+                tickFormatter={(value) => shortLabel(String(value || ""))}
               />
               <Tooltip
                 contentStyle={{ background: "#fff", border: "1px solid #e7e5e4", borderRadius: 8, color: "#1c1917" }}
@@ -80,7 +87,7 @@ export default function TopServices({ api, qs }: Props) {
           <div className="mt-4 space-y-2">
             {top10.slice(0, 3).map((s, i) => (
               <p key={s.service} className="text-sm text-stone-500">
-                <span className="text-stone-900 font-medium">#{i + 1} {s.service}</span>
+                <span className="text-stone-900 font-medium">#{i + 1}&nbsp;&nbsp;{s.service}</span>
                 {" — "}{s.count} bookings, ₹{s.revenue.toLocaleString("en-IN")} revenue
               </p>
             ))}

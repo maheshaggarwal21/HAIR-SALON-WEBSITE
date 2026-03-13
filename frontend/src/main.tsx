@@ -16,9 +16,9 @@
  *   /dashboard/owner/*     — Owner only
  */
 
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import './index.css'
 import { AuthProvider } from '@/context/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -35,75 +35,118 @@ import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
 import TermsOfServicePage from './pages/TermsOfServicePage'
+import VisitAssignmentPage from './pages/VisitAssignmentPage'
+
+function AssignmentLockGuard({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  // Mongo ObjectId shape check for local lock value safety.
+  const objectIdPattern = /^[a-f\d]{24}$/i
+  const pendingVisitId = localStorage.getItem('pendingAssignmentVisitId')
+  const isValidPendingVisitId = !!pendingVisitId && objectIdPattern.test(pendingVisitId)
+  const expectedPath = isValidPendingVisitId ? `/visit-assignment/${pendingVisitId}` : null
+  const isSignInRoute = location.pathname === '/signin'
+
+  useEffect(() => {
+    // Hardening: clear malformed stale lock IDs so users are not forced into
+    // impossible assignment URLs from corrupted local storage values.
+    if (pendingVisitId && !isValidPendingVisitId) {
+      localStorage.removeItem('pendingAssignmentVisitId')
+    }
+  }, [isValidPendingVisitId, pendingVisitId])
+
+  useEffect(() => {
+    // Hardening: allow sign-in route to avoid redirect loops when a stale lock
+    // exists but the session has expired and auth middleware redirects to /signin.
+    if (!isSignInRoute && expectedPath && location.pathname !== expectedPath) {
+      navigate(expectedPath, { replace: true })
+    }
+  }, [expectedPath, isSignInRoute, location.pathname, navigate])
+
+  return <>{children}</>
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* ── Public ── */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/signin" element={<SignInPage />} />
-          <Route path="/payment-status" element={<PaymentStatus />} />
-          <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-          <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+        <AssignmentLockGuard>
+          <Routes>
+            {/* ── Public ── */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/signin" element={<SignInPage />} />
+            <Route path="/payment-status" element={<PaymentStatus />} />
+            <Route path="/unauthorized" element={<UnauthorizedPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms-of-service" element={<TermsOfServicePage />} />
 
-          {/* ── Visit Entry: receptionist + manager + owner ── */}
-          <Route
-            path="/visit-entry"
-            element={
-              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner", "artist"]} requiredPermission="visit.create">
-                <VisitEntryPage />
-              </ProtectedRoute>
-            }
-          />
+            {/* ── Visit Entry: receptionist + manager + owner ── */}
+            <Route
+              path="/visit-entry"
+              element={
+                <ProtectedRoute allowedRoles={["receptionist", "manager", "owner", "artist"]} requiredPermission="visit.create">
+                  <VisitEntryPage />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* ── Receptionist dashboard ── */}
-          <Route
-            path="/dashboard/receptionist/*"
-            element={
-              <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]}>
-                <ReceptionistDashboard />
-              </ProtectedRoute>
-            }
-          />
+            {/* ── Visit Assignment Lock Step ── */}
+            <Route
+              path="/visit-assignment/:visitId"
+              element={
+                <ProtectedRoute allowedRoles={["receptionist", "manager", "owner", "artist"]} requiredPermission="visit.create">
+                  <VisitAssignmentPage />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* ── Manager dashboard + sub-routes ── */}
-          <Route
-            path="/dashboard/manager/*"
-            element={
-              <ProtectedRoute allowedRoles={["manager", "owner"]}>
-                <ManagerDashboard />
-              </ProtectedRoute>
-            }
-          />
+            {/* ── Receptionist dashboard ── */}
+            <Route
+              path="/dashboard/receptionist/*"
+              element={
+                <ProtectedRoute allowedRoles={["receptionist", "manager", "owner"]}>
+                  <ReceptionistDashboard />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* ── Owner dashboard + sub-routes ── */}
-          <Route
-            path="/dashboard/owner/*"
-            element={
-              <ProtectedRoute allowedRoles={["owner"]}>
-                <OwnerDashboard />
-              </ProtectedRoute>
-            }
-          />
+            {/* ── Manager dashboard + sub-routes ── */}
+            <Route
+              path="/dashboard/manager/*"
+              element={
+                <ProtectedRoute allowedRoles={["manager", "owner"]}>
+                  <ManagerDashboard />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* ── Artist dashboard ── */}
-          <Route
-            path="/dashboard/artist/*"
-            element={
-              <ProtectedRoute allowedRoles={["artist"]}>
-                <ArtistDashboardLayout />
-              </ProtectedRoute>
-            }
-          />
+            {/* ── Owner dashboard + sub-routes ── */}
+            <Route
+              path="/dashboard/owner/*"
+              element={
+                <ProtectedRoute allowedRoles={["owner"]}>
+                  <OwnerDashboard />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* ── Catch-all ── */}
-          <Route path="*" element={<Navigate to="/signin" replace />} />
-        </Routes>
+            {/* ── Artist dashboard ── */}
+            <Route
+              path="/dashboard/artist/*"
+              element={
+                <ProtectedRoute allowedRoles={["artist"]}>
+                  <ArtistDashboardLayout />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* ── Catch-all ── */}
+            <Route path="*" element={<Navigate to="/signin" replace />} />
+          </Routes>
+        </AssignmentLockGuard>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

@@ -7,8 +7,9 @@
  * Features:
  *   - Date range filter (today / this month / 3 months / year / custom)
  *   - Artist name filter (free text)
- *   - Payment method filter (all / cash / online / partial)
- *   - Summary cards: Revenue, Cash, Online, Discounts, Visit count
+ *   - Payment method filter (all / cash / card / online / partial)
+ *   - Schema filter (all / legacy / v2)
+ *   - Summary cards: Revenue, Cash, Card, Online, Discounts, Visit count
  *   - Paginated visits table
  *   - Client-side CSV export for the current filtered + loaded page
  */
@@ -45,8 +46,9 @@ interface VisitRecord {
   discountPercent: number;
   discountAmount: number;
   finalTotal: number;
-  paymentMethod: "online" | "cash" | "partial";
+  paymentMethod: "online" | "cash" | "card" | "partial";
   cashAmount: number;
+  cardAmount: number;
   onlineAmount: number;
   razorpayPaymentId: string | null;
   paymentStatus: "pending" | "success" | "failed";
@@ -67,13 +69,15 @@ interface Pagination {
 interface Summary {
   totalRevenue: number;
   totalCash: number;
+  totalCard: number;
   totalOnline: number;
   totalDiscount: number;
   count: number;
 }
 
 type DatePreset = "today" | "month" | "3months" | "year" | "custom";
-type MethodFilter = "all" | "cash" | "online" | "partial";
+type MethodFilter = "all" | "cash" | "card" | "online" | "partial";
+type SchemaFilter = "all" | "legacy" | "v2";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDate(d: Date): string {
@@ -134,6 +138,7 @@ function fmtDateTime(iso: string): string {
 
 const METHOD_COLORS: Record<string, string> = {
   cash: "bg-green-50 text-green-700 border-green-200",
+  card: "bg-violet-50 text-violet-700 border-violet-200",
   online: "bg-blue-50 text-blue-700 border-blue-200",
   partial: "bg-amber-50 text-amber-700 border-amber-200",
 };
@@ -160,6 +165,7 @@ export default function PaymentHistory() {
   const [artistFilter, setArtistFilter] = useState("");
   const [artistInput, setArtistInput] = useState(""); // interim input
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
+  const [schemaFilter, setSchemaFilter] = useState<SchemaFilter>("all");
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -178,6 +184,8 @@ export default function PaymentHistory() {
     setFetchError("");
 
     const params = new URLSearchParams({ from, to, page: String(page), limit: String(LIMIT) });
+    // Always send schema filter so backend and UI stay in sync for mixed legacy/V2 views.
+    params.set("schema", schemaFilter);
     if (customerFilter) params.set("customer", customerFilter);
     if (artistFilter) params.set("artist", artistFilter);
     if (methodFilter !== "all") params.set("method", methodFilter);
@@ -198,12 +206,12 @@ export default function PaymentHistory() {
     } finally {
       setLoading(false);
     }
-  }, [from, to, page, customerFilter, artistFilter, methodFilter]);
+  }, [from, to, page, schemaFilter, customerFilter, artistFilter, methodFilter]);
 
   // Reset to page 1 when any filter changes
   useEffect(() => {
     setPage(1);
-  }, [from, to, customerFilter, artistFilter, methodFilter]);
+  }, [from, to, schemaFilter, customerFilter, artistFilter, methodFilter]);
 
   useEffect(() => {
     fetchHistory();
@@ -225,6 +233,7 @@ export default function PaymentHistory() {
       "Total (₹)": v.finalTotal,
       Method: v.paymentMethod,
       "Cash (₹)": v.cashAmount,
+      "Card (₹)": v.cardAmount,
       "Online (₹)": v.onlineAmount,
       "Razorpay ID": v.razorpayPaymentId || "",
       Status: v.paymentStatus,
@@ -261,6 +270,7 @@ export default function PaymentHistory() {
     ? [
         { label: "Total Revenue", value: fmtCurrency(summary.totalRevenue), sub: `${summary.count} visits` },
         { label: "Cash Collected", value: fmtCurrency(summary.totalCash) },
+        { label: "Card Collected", value: fmtCurrency(summary.totalCard) },
         { label: "Online Collected", value: fmtCurrency(summary.totalOnline) },
         { label: "Discounts Given", value: fmtCurrency(summary.totalDiscount) },
       ]
@@ -345,7 +355,7 @@ export default function PaymentHistory() {
                 value={customerInput}
                 onChange={(e) => setCustomerInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") setCustomerFilter(customerInput.trim()); }}
-                className="h-10 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 w-44"
+                className="h-10 w-full sm:w-44 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400"
               />
             </div>
             <button
@@ -374,7 +384,7 @@ export default function PaymentHistory() {
                 value={artistInput}
                 onChange={(e) => setArtistInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") setArtistFilter(artistInput.trim()); }}
-                className="h-10 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 w-44"
+                className="h-10 w-full sm:w-44 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400"
               />
             </div>
             <button
@@ -403,8 +413,22 @@ export default function PaymentHistory() {
             >
               <option value="all">All Methods</option>
               <option value="cash">Cash</option>
+              <option value="card">Card</option>
               <option value="online">Online</option>
               <option value="partial">Partial</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1">Schema</label>
+            <select
+              value={schemaFilter}
+              onChange={(e) => setSchemaFilter(e.target.value as SchemaFilter)}
+              className="h-10 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400"
+            >
+              <option value="all">All Records</option>
+              <option value="legacy">Legacy</option>
+              <option value="v2">V2</option>
             </select>
           </div>
 
@@ -429,7 +453,7 @@ export default function PaymentHistory() {
 
       {/* ── Summary Cards ── */}
       {summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
           {summaryCards.map((c) => (
             <div
               key={c.label}
@@ -447,7 +471,7 @@ export default function PaymentHistory() {
 
       {/* ── Table ── */}
       <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm overflow-x-auto">
-        <table className="w-full text-sm min-w-[900px]">
+        <table className="w-full text-sm min-w-225">
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
               <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Date</th>
@@ -505,7 +529,7 @@ export default function PaymentHistory() {
                     <td className="px-4 py-3.5 text-stone-700">{v.artist}</td>
 
                     {/* Services */}
-                    <td className="px-4 py-3.5 max-w-[180px]">
+                    <td className="px-4 py-3.5 max-w-45">
                       <div className="flex flex-wrap gap-1">
                         {v.services.map((s, i) => (
                           <span
@@ -577,7 +601,7 @@ export default function PaymentHistory() {
 
       {/* ── Pagination ── */}
       {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-4 px-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4 px-2">
           <p className="text-sm text-stone-500">
             Showing {(pagination.page - 1) * pagination.limit + 1}–
             {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} visits

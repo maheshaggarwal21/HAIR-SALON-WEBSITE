@@ -158,11 +158,11 @@ export default function SignInForm() {
       initial={{ opacity: 0, y: 32, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-      className="w-full max-w-105"
+      className="w-full max-w-[26rem]"
     >
       {/* ── Glass card ── */}
       <div
-        className="rounded-2xl px-8 py-10"
+        className="rounded-2xl px-5 sm:px-8 py-8 sm:py-10"
         style={{
           background: "rgba(12, 10, 7, 0.78)",
           backdropFilter: "blur(36px)",

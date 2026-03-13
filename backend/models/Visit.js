@@ -11,10 +11,20 @@ const mongoose = require("mongoose");
 
 const visitSchema = new mongoose.Schema(
   {
+    // ── Schema versioning ──
+    // 1 = legacy single-artist flow
+    // 2 = post-payment per-service assignment flow
+    schemaVersion: {
+      type: Number,
+      enum: [1, 2],
+      default: 1,
+    },
+
     // ── Client info ──
     name: { type: String, required: true, trim: true },
     contact: { type: String, required: true, trim: true },
-    age: { type: String, required: true, trim: true },      // e.g. "21-25"
+    // Kept for legacy rows only; new rows no longer collect/store age.
+    age: { type: String, required: false, trim: true, default: null },
     gender: {
       type: String,
       required: true,
@@ -23,14 +33,22 @@ const visitSchema = new mongoose.Schema(
 
     // ── Timing ──
     date: { type: Date, required: true },
-    startTime: { type: String, required: true }, // "HH:mm"
-    endTime: { type: String, required: true },   // "HH:mm"
+    // Required for legacy flow; optional while V2 assignment is pending.
+    startTime: { type: String, default: null }, // "HH:mm"
+    endTime: { type: String, default: null },   // "HH:mm"
 
     // ── Service details ──
-    artist: { type: String, required: true, trim: true },
+    // Visit-level artist is retained for legacy compatibility.
+    // For V2, each service row holds its own artist assignment.
+    artist: { type: String, trim: true, default: null },
     serviceType: { type: String, trim: true },
     services: [
       {
+        serviceId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Service",
+          default: null,
+        },
         name: { type: String, required: true },
         price: { type: Number, required: true, min: 0 },
         // Snapshot of durationMinutes at the time of visit creation.
@@ -38,6 +56,17 @@ const visitSchema = new mongoose.Schema(
         // Snapshotting protects historical accuracy — if the admin edits
         // a service's duration tomorrow, past visits should not change.
         duration: { type: Number, default: null },
+
+        // V2 per-service assignment fields (null until confirmed).
+        artistId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Artist",
+          default: null,
+        },
+        artistName: { type: String, default: null, trim: true },
+        startTime: { type: String, default: null },
+        endTime: { type: String, default: null },
+        actualDurationMins: { type: Number, default: null },
       },
     ],
     // Total actual duration of the full visit in minutes (endTime - startTime).
@@ -55,10 +84,11 @@ const visitSchema = new mongoose.Schema(
     // ── Payment ──
     paymentMethod: {
       type: String,
-      enum: ["online", "cash", "partial"],
+      enum: ["online", "cash", "card", "partial"],
       default: "online",
     },
     cashAmount: { type: Number, default: 0, min: 0 },
+    cardAmount: { type: Number, default: 0, min: 0 },
     onlineAmount: { type: Number, default: 0, min: 0 },
     paymentStatus: {
       type: String,
@@ -66,6 +96,31 @@ const visitSchema = new mongoose.Schema(
       default: "pending",
     },
     razorpayPaymentId: { type: String, default: null },
+
+    // ── V2 assignment control fields ──
+    assignmentStatus: {
+      type: String,
+      enum: ["not_required", "pending", "completed"],
+      default: "not_required",
+    },
+    lockUntilAssigned: { type: Boolean, default: false },
+    assignmentConfirmedAt: { type: Date, default: null },
+    paymentConfirmedAt: { type: Date, default: null },
+    paymentSnapshot: {
+      subtotal: { type: Number, default: null },
+      discountPercent: { type: Number, default: null },
+      discountAmount: { type: Number, default: null },
+      finalTotal: { type: Number, default: null },
+      paymentMethod: {
+        type: String,
+        enum: ["online", "cash", "card", "partial", null],
+        default: null,
+      },
+      cashAmount: { type: Number, default: null },
+      cardAmount: { type: Number, default: null },
+      onlineAmount: { type: Number, default: null },
+      razorpayPaymentId: { type: String, default: null },
+    },
   },
   {
     timestamps: true, // Adds createdAt & updatedAt automatically
@@ -76,5 +131,7 @@ const visitSchema = new mongoose.Schema(
 visitSchema.index({ date: 1 });
 visitSchema.index({ artist: 1, date: 1 });
 visitSchema.index({ contact: 1 });
+visitSchema.index({ assignmentStatus: 1, date: -1 });
+visitSchema.index({ lockUntilAssigned: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Visit", visitSchema);

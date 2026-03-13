@@ -1,15 +1,3 @@
-/**
- * @file useVisitForm.ts
- * @description Custom React hook encapsulating all visit-entry form logic.
- *
- * Manages form state, validation, dropdown data fetching, and the
- * full Razorpay checkout flow (load SDK → create order → open modal
- * → verify → redirect to /payment-status).
- *
- * Amount is **auto-calculated** from selected services.
- * Discount is entered as a **percentage** (0–100).
- */
-
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import type {
@@ -17,22 +5,16 @@ import type {
   VisitFormErrors,
   ApiFormData,
   RazorpayResponse,
+  CustomerSuggestion,
 } from "@/types/visit";
 import { loadRazorpayScript } from "@/services/razorpay";
-import { fetchFormData, createOrder, verifyOrderPayment, createVisit } from "@/services/api";
-
-/** Convert a "HH:mm" string to total minutes since midnight. Returns null if invalid. */
-function timeToMins(t: string): number | null {
-  if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-}
-
-/** Return current local time as "HH:mm" (24h). */
-function nowHHMM(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-}
+import {
+  fetchFormData,
+  createOrder,
+  verifyOrderPayment,
+  createVisitDraftV2,
+  searchCustomersByPhone,
+} from "@/services/api";
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -40,14 +22,10 @@ const EMPTY_FORM: VisitFormData = {
   name: "",
   phone: "",
   amount: "",
-  age: "",
   gender: "",
-  startTime: "",
-  endTime: "",   // will be pre-filled on mount with current time
-  artist: "",
   serviceType: [],
   searchService: [],
-  discount: "50", // default 50% discount applied on every new visit
+  discount: "50",
   date: today,
   paymentMode: "online",
   cashAmount: "",
@@ -67,15 +45,9 @@ export function useVisitForm() {
   });
   const [dropdownLoading, setDropdownLoading] = useState(true);
   const [dropdownError, setDropdownError] = useState(false);
+  const [customerSuggestions, setCustomerSuggestions] = useState<CustomerSuggestion[]>([]);
+  const [searchingCustomers, setSearchingCustomers] = useState(false);
 
-  // Pre-fill endTime with current system time on mount.
-  // Staff tap "end visit" and the time is already correct — they just confirm.
-  useEffect(() => {
-    setFormData((prev) => ({ ...prev, endTime: nowHHMM() }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Load dropdown options on mount
   useEffect(() => {
     setDropdownLoading(true);
     fetchFormData()
@@ -89,24 +61,6 @@ export function useVisitForm() {
       .finally(() => setDropdownLoading(false));
   }, []);
 
-  // ── Derived visit duration (for display + backend storage) ───────────────
-  /**
-   * Duration in minutes between startTime and endTime.
-   * null if either time is missing or end is not after start.
-   *
-   * useMemo: only recalculates when startTime or endTime changes.
-   * This is a "derived value" — we don't store it in state because
-   * it's always computable from the other two values.
-   */
-  const durationMins = useMemo(() => {
-    const start = timeToMins(formData.startTime);
-    const end = timeToMins(formData.endTime);
-    if (start === null || end === null) return null;
-    const diff = end - start;
-    return diff > 0 ? diff : null;
-  }, [formData.startTime, formData.endTime]);
-
-  // ── Service display items for MultiSelect (append price to name) ───────────
   const serviceDisplayItems = useMemo(
     () =>
       dropdownData.services.map((s) => ({
@@ -116,7 +70,6 @@ export function useVisitForm() {
     [dropdownData.services]
   );
 
-  // ── Auto-calculated amount from selected services ──────────────────────────
   const subtotal = useMemo(() => {
     return formData.searchService.reduce((sum, id) => {
       const svc = dropdownData.services.find((s) => s.id === id);
@@ -124,20 +77,10 @@ export function useVisitForm() {
     }, 0);
   }, [formData.searchService, dropdownData.services]);
 
-  /** Discount percentage (clamped 0–100). */
   const discountPct = Math.min(100, Math.max(0, Number(formData.discount) || 0));
-
-  /** Flat discount amount derived from percentage. */
   const discountAmt = Math.round(subtotal * (discountPct / 100));
-
-  /** Final amount payable after discount. */
   const payable = Math.max(0, subtotal - discountAmt);
-
-  // ── Partial-payment derived values ────────────────────────────────────────
-  /** Cash amount entered by receptionist (only meaningful for partial mode). */
   const cashAmountNum = Math.max(0, Math.round((Number(formData.cashAmount) || 0) * 100) / 100);
-
-  /** Amount that must be paid online (Razorpay) after subtracting cash. */
   const onlinePayable = formData.paymentMode === "partial"
     ? Math.max(0, payable - cashAmountNum)
     : formData.paymentMode === "cash"
@@ -152,6 +95,28 @@ export function useVisitForm() {
     });
   }, [payable]);
 
+  useEffect(() => {
+    const phone = formData.phone.trim();
+    if (!/^[0-9]{3,10}$/.test(phone)) {
+      setCustomerSuggestions([]);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setSearchingCustomers(true);
+        const customers = await searchCustomersByPhone(phone);
+        setCustomerSuggestions(customers);
+      } catch {
+        setCustomerSuggestions([]);
+      } finally {
+        setSearchingCustomers(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [formData.phone]);
+
   // ── Validation ─────────────────────────────────────────────────────────────
   const validate = (): boolean => {
     const e: VisitFormErrors = {};
@@ -160,12 +125,8 @@ export function useVisitForm() {
     if (!formData.phone.trim()) e.phone = "Phone is required";
     else if (!/^[6-9]\d{9}$/.test(formData.phone.trim()))
       e.phone = "Valid 10-digit Indian mobile number";
-    if (!formData.age) e.age = "Age is required";
     if (!formData.gender) e.gender = "Gender is required";
     if (!formData.date) e.date = "Date is required";
-    if (!formData.startTime) e.startTime = "Start time is required";
-    if (!formData.endTime) e.endTime = "End time is required";
-    if (!formData.artist) e.artist = "Artist is required";
     if (subtotal <= 0) e.amount = "Select at least one service";
     else if (payable <= 0) e.amount = "Payable amount must be greater than ₹0";
 
@@ -177,6 +138,11 @@ export function useVisitForm() {
       else if (payable - cashAmountNum < 1)
         e.cashAmount = `Online portion must be at least ₹1 (max cash: ₹${(payable - 1).toLocaleString("en-IN")})`;
     }
+
+    if (formData.paymentMode === "card" && payable <= 0) {
+      e.amount = "Payable amount must be greater than ₹0";
+    }
+
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -203,98 +169,85 @@ export function useVisitForm() {
       setFormData((prev) => ({ ...prev, [field]: values }));
     };
 
-  // ── Reset ──────────────────────────────────────────────────────────────────
-  const handleReset = () => {
-    // Re-fill endTime with current time (same as on mount) so the field
-    // isn't left empty after a form reset.
-    // discount is kept at "50" (from EMPTY_FORM) so the default always applies.
-    setFormData({ ...EMPTY_FORM, date: today, endTime: nowHHMM() });
-    setErrors({});
-    setPaymentError(null);
+  const applyCustomerSuggestion = (customer: CustomerSuggestion) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: customer.name || prev.name,
+      phone: customer.contact || prev.phone,
+      gender: customer.gender || prev.gender,
+    }));
+    setCustomerSuggestions([]);
   };
 
-  // ── Submit / payment flow ──────────────────────────────────────────────────
+  // ── Reset ──────────────────────────────────────────────────────────────────
+  const handleReset = () => {
+    setFormData({ ...EMPTY_FORM, date: today });
+    setErrors({});
+    setPaymentError(null);
+    setCustomerSuggestions([]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
     setIsLoading(true);
     setPaymentError(null);
 
-    // Resolve artist name for the visit record
-    const selectedArtist = dropdownData.artists.find(
-      (a) => a.id === formData.artist,
-    );
-    const artistName = selectedArtist?.name ?? formData.artist;
     const serviceTypeStr =
       formData.serviceType.length > 0
         ? formData.serviceType.join(", ")
         : undefined;
 
-    // ── Helper: create visit record ─────────────────────────────────────
-    const persistVisit = async (opts: {
-      paymentMethod: "online" | "cash" | "partial";
+    const persistDraft = async (opts: {
+      paymentMethod: "online" | "cash" | "card" | "partial";
       razorpayPaymentId?: string;
       cashAmount?: number;
+      cardAmount?: number;
       onlineAmount?: number;
     }) => {
-      await createVisit({
+      const draft = await createVisitDraftV2({
         name: formData.name.trim(),
         contact: formData.phone.trim(),
-        age: formData.age,
         gender: formData.gender,
         date: formData.date,
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        artist: artistName,
         serviceType: serviceTypeStr,
         serviceIds: formData.searchService,
         discountPercent: discountPct,
         paymentMethod: opts.paymentMethod,
         razorpayPaymentId: opts.razorpayPaymentId,
         cashAmount: opts.cashAmount,
+        cardAmount: opts.cardAmount,
         onlineAmount: opts.onlineAmount,
-        // Send the computed duration so the backend stores it without recalculating
-        visitDurationMins: durationMins,
+        lockUntilAssigned: true,
       });
+
+      localStorage.setItem("pendingAssignmentVisitId", draft.visitId);
+      navigate(`/visit-assignment/${draft.visitId}`);
     };
 
     try {
-      // ═══════════════════════════════════════════════════════════════════
-      // FLOW 1: Full Cash — no Razorpay involved
-      // ═══════════════════════════════════════════════════════════════════
       if (formData.paymentMode === "cash") {
-        let visitRecordFailed = false;
-        try {
-          await persistVisit({
-            paymentMethod: "cash",
-            cashAmount: payable,
-            onlineAmount: 0,
-          });
-        } catch {
-          console.error("Visit record creation failed (cash flow)");
-          visitRecordFailed = true;
-        }
-
-        const params = new URLSearchParams({
-          payment_id: "CASH",
-          amount: String(payable),
-          name: formData.name.trim(),
-          phone: formData.phone.trim(),
-          method: "cash",
+        await persistDraft({
+          paymentMethod: "cash",
+          cashAmount: payable,
+          onlineAmount: 0,
         });
-        if (visitRecordFailed) params.set("visit_warning", "true");
-        navigate(`/payment-status?${params}`);
         return;
       }
 
-      // ═══════════════════════════════════════════════════════════════════
-      // FLOW 2 & 3: Full Online or Partial — Razorpay checkout required
-      // ═══════════════════════════════════════════════════════════════════
+      if (formData.paymentMode === "card") {
+        await persistDraft({
+          paymentMethod: "card",
+          cardAmount: payable,
+          onlineAmount: 0,
+        });
+        return;
+      }
+
       const loaded = await loadRazorpayScript();
       if (!loaded)
         throw new Error("Failed to load Razorpay SDK. Check your connection.");
 
-      // Amount to charge online
       const chargeOnline = formData.paymentMode === "partial"
         ? onlinePayable
         : payable;
@@ -344,34 +297,12 @@ export function useVisitForm() {
           });
 
           if (result.success) {
-            let visitRecordFailed = false;
-            try {
-              await persistVisit({
-                paymentMethod: formData.paymentMode === "partial" ? "partial" : "online",
-                razorpayPaymentId: result.payment_id,
-                cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
-                onlineAmount: chargeOnline,
-              });
-            } catch {
-              console.error("Visit record creation failed after payment");
-              visitRecordFailed = true;
-            }
-
-            const params = new URLSearchParams({
-              payment_id: result.payment_id,
-              amount: String(result.amount),
-              name: result.name,
-              phone: result.phone,
-              method: formData.paymentMode === "partial" ? "partial" : "online",
+            await persistDraft({
+              paymentMethod: formData.paymentMode === "partial" ? "partial" : "online",
+              razorpayPaymentId: result.payment_id,
+              cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
+              onlineAmount: chargeOnline,
             });
-            if (formData.paymentMode === "partial") {
-              params.set("cash_amount", String(cashAmountNum));
-              params.set("total_amount", String(payable));
-            }
-            if (visitRecordFailed) {
-              params.set("visit_warning", "true");
-            }
-            navigate(`/payment-status?${params}`);
           } else {
             setPaymentError("Payment verification failed. Contact support.");
             setIsLoading(false);
@@ -405,10 +336,12 @@ export function useVisitForm() {
     payable,
     cashAmountNum,
     onlinePayable,
-    durationMins,
+    customerSuggestions,
+    searchingCustomers,
     handleChange,
     handleSelect,
     handleMultiSelect,
+    applyCustomerSuggestion,
     handleSubmit,
     handleReset,
   };

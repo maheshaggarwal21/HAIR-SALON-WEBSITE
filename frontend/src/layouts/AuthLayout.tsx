@@ -24,7 +24,7 @@ export default function AuthLayout({
         className="absolute inset-0 bg-no-repeat"
         style={{
           backgroundImage: `url(${backgroundImage})`,
-          backgroundSize: "100%",
+          backgroundSize: "cover",
           backgroundPosition: "center center",
           imageRendering: "auto",
           WebkitBackfaceVisibility: "hidden",
@@ -68,7 +68,10 @@ export default function AuthLayout({
       />
 
       {/* ── Form slot — shifted 15% right ── */}
-      <div className="relative z-10 w-full flex items-center justify-center px-4 py-14" style={{ paddingLeft: "calc(5% + 1rem)" }}>
+      <div
+        className="relative z-10 w-full flex items-center justify-center px-4 py-10 sm:py-14"
+        style={{ paddingLeft: "1rem", paddingRight: "1rem" }}
+      >
         {children}
       </div>
     </div>

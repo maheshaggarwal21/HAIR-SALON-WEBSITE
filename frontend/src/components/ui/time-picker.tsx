@@ -477,7 +477,7 @@ export function MaskedTimeInput({
         type="button"
         onClick={togglePeriod}
         className={cn(
-          "h-11 px-3 rounded-xl border text-sm font-bold select-none transition-all min-w-[54px]",
+          "h-11 px-3 rounded-xl border text-sm font-bold select-none transition-all min-w-13.5",
           period === "AM"
             ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
             : "bg-stone-800 border-stone-700 text-white hover:bg-stone-700"

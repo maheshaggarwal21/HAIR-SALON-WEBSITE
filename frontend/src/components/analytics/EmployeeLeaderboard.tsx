@@ -1,12 +1,12 @@
 /**
  * @file EmployeeLeaderboard.tsx
- * @description Ranked table of artists sorted by revenue.
+ * @description Ranked table of artists with selectable ranking metric.
  *
  * Fetches data from GET /api/analytics/employees.
  * Highlights the top performer and provides key insights.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Trophy, Medal } from "lucide-react";
 
 interface Employee {
@@ -28,6 +28,15 @@ interface Props {
   qs: string;
 }
 
+type RankMetric = "productivity" | "revenue" | "customers" | "revenuePerHour";
+
+const METRIC_OPTIONS: Array<{ value: RankMetric; label: string }> = [
+  { value: "productivity", label: "Productivity Score" },
+  { value: "revenue", label: "Revenue" },
+  { value: "customers", label: "Customers Served" },
+  { value: "revenuePerHour", label: "Revenue per Hour" },
+];
+
 const RANK_STYLES: Record<number, string> = {
   1: "text-amber-500",
   2: "text-stone-400",
@@ -37,6 +46,7 @@ const RANK_STYLES: Record<number, string> = {
 export default function EmployeeLeaderboard({ api, qs }: Props) {
   const [data, setData] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rankMetric, setRankMetric] = useState<RankMetric>("productivity");
 
   useEffect(() => {
     setLoading(true);
@@ -47,11 +57,24 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
       .finally(() => setLoading(false));
   }, [api, qs]);
 
+  const rankedData = useMemo(() => {
+    const list = [...data];
+
+    list.sort((a, b) => {
+      if (rankMetric === "revenue") return b.revenue - a.revenue;
+      if (rankMetric === "customers") return b.customersServed - a.customersServed;
+      if (rankMetric === "revenuePerHour") return b.revenuePerHour - a.revenuePerHour;
+      return b.productivityScore - a.productivityScore;
+    });
+
+    return list.map((e, i) => ({ ...e, rank: i + 1 }));
+  }, [data, rankMetric]);
+
   if (loading) {
     return <div className="bg-white border border-stone-200 rounded-xl p-6 animate-pulse h-64 shadow-sm" />;
   }
 
-  if (data.length === 0) {
+  if (rankedData.length === 0) {
     return (
       <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-stone-900">Employee Leaderboard</h2>
@@ -60,23 +83,31 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
     );
   }
 
-  const topEmployee = data[0];
+  const topEmployee = rankedData[0];
+  const selectedMetricLabel = METRIC_OPTIONS.find((m) => m.value === rankMetric)?.label || "Productivity Score";
 
   return (
     <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-semibold text-stone-900">Employee Leaderboard</h2>
-          <p className="text-sm text-stone-500">Ranked by productivity (₹ per effective hour)</p>
+          <p className="text-sm text-stone-500">Ranked by {selectedMetricLabel}</p>
         </div>
-        {topEmployee && (
+        <div className="flex items-center gap-3">
+          <select
+            value={rankMetric}
+            onChange={(e) => setRankMetric(e.target.value as RankMetric)}
+            className="bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-sm text-stone-800 outline-none focus:border-stone-400"
+          >
+            {METRIC_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
             <Trophy className="w-4 h-4 text-amber-500" />
-            <span className="text-sm font-medium text-amber-600">
-              Top Performer: {topEmployee.name}
-            </span>
+            <span className="text-sm font-medium text-amber-600">Top Performer: {topEmployee.name}</span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Table */}
@@ -94,7 +125,7 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
             </tr>
           </thead>
           <tbody>
-            {data.map((e) => (
+            {rankedData.map((e) => (
               <tr key={e.name} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
                 <td className="py-3 px-2">
                   <span className={`font-bold ${RANK_STYLES[e.rank] || "text-stone-500"}`}>
@@ -113,11 +144,9 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
                   ₹{e.revenue.toLocaleString("en-IN")}
                 </td>
                 <td className="py-3 px-2 text-right text-stone-600">{e.hoursWorked}h</td>
-                {/* ₹/Hour: based on effective hours if duration data exists, else actual */}
                 <td className="py-3 px-2 text-right text-stone-600">
                   {e.revenuePerHour > 0 ? `₹${e.revenuePerHour.toLocaleString("en-IN")}` : "—"}
                 </td>
-                {/* Extra Time: net overrun/underrun beyond ±10 min tolerance */}
                 <td className="py-3 px-2 text-right">
                   {e.schedulableVisits === 0 ? (
                     <span className="text-stone-400 text-xs">no data</span>
@@ -145,14 +174,24 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
             <> at <span className="text-emerald-600 font-medium">₹{topEmployee.revenuePerHour.toLocaleString("en-IN")}/hr</span> effectiveness</>
           )}.
         </p>
-        {data.length > 1 && (
+        {rankedData.length > 1 && (
           <p className="text-sm text-stone-600">
-            Productivity gap (#1 vs last): ₹{(data[0].productivityScore - data[data.length - 1].productivityScore).toLocaleString("en-IN")}/hr effective
+            {rankMetric === "productivity" && (
+              <>Productivity gap (#1 vs last): ₹{(rankedData[0].productivityScore - rankedData[rankedData.length - 1].productivityScore).toLocaleString("en-IN")}/hr effective</>
+            )}
+            {rankMetric === "revenue" && (
+              <>Revenue gap (#1 vs last): ₹{(rankedData[0].revenue - rankedData[rankedData.length - 1].revenue).toLocaleString("en-IN")}</>
+            )}
+            {rankMetric === "customers" && (
+              <>Customer gap (#1 vs last): {(rankedData[0].customersServed - rankedData[rankedData.length - 1].customersServed).toLocaleString("en-IN")} visits</>
+            )}
+            {rankMetric === "revenuePerHour" && (
+              <>₹/Hour gap (#1 vs last): ₹{(rankedData[0].revenuePerHour - rankedData[rankedData.length - 1].revenuePerHour).toLocaleString("en-IN")}/hr</>
+            )}
           </p>
         )}
         {(() => {
-          // Highlight whoever finished earliest (most negative totalExtraMins)
-          const withData = data.filter((e) => e.schedulableVisits > 0);
+          const withData = rankedData.filter((e) => e.schedulableVisits > 0);
           if (withData.length === 0) return null;
           const mostEfficient = [...withData].sort((a, b) => a.totalExtraMins - b.totalExtraMins)[0];
           return mostEfficient.totalExtraMins < 0 ? (

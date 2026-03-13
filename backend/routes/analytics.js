@@ -70,6 +70,28 @@ function dateFilter(query) {
 }
 
 /**
+ * Build a finalized-visit analytics filter.
+ * - Excludes pending assignment drafts
+ * - Supports optional schema filter: all|legacy|v2
+ */
+function analyticsFilter(query) {
+  const filter = dateFilter(query);
+  const schema = String(query.schema || "all").toLowerCase();
+
+  if (schema === "legacy") filter.schemaVersion = 1;
+  if (schema === "v2") filter.schemaVersion = 2;
+
+  filter.paymentStatus = "success";
+  filter.$or = [
+    { assignmentStatus: { $exists: false } },
+    { assignmentStatus: "not_required" },
+    { assignmentStatus: "completed" },
+  ];
+
+  return filter;
+}
+
+/**
  * Calculate hours worked from "HH:mm" time strings.
  * @param {string} startTime — e.g. "09:30"
  * @param {string} endTime   — e.g. "11:00"
@@ -83,14 +105,169 @@ function calcHours(startTime, endTime) {
   return Math.max(diff / 60, 0);
 }
 
+function toMins(t) {
+  if (!t || !/^\d{2}:\d{2}$/.test(String(t))) return null;
+  const [h, m] = String(t).split(":").map(Number);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return (h * 60) + m;
+}
+
+function serviceNetRevenue(price, subtotal, finalTotal) {
+  const p = Number(price) || 0;
+  const sub = Number(subtotal) || 0;
+  const total = Number(finalTotal) || 0;
+  if (sub <= 0) return p;
+  return Math.max(0, Math.round((p / sub) * total));
+}
+
+/**
+ * Normalize mixed legacy + V2 visits into per-artist rows for analytics.
+ */
+function buildArtistRows(visits) {
+  const rows = [];
+
+  for (const v of visits) {
+    const visitId = String(v._id || "");
+    const services = Array.isArray(v.services) ? v.services : [];
+    const subtotal = Number(v.subtotal) || services.reduce((s, svc) => s + (Number(svc?.price) || 0), 0);
+    const finalTotal = Number(v.finalTotal) || 0;
+
+    if (v.schemaVersion === 2) {
+      for (const s of services) {
+        const artistName = String(s.artistName || "").trim();
+        if (!artistName) continue;
+
+        const startMins = toMins(s.startTime);
+        const endMins = toMins(s.endTime);
+        const timedDiff = startMins !== null && endMins !== null && endMins > startMins
+          ? endMins - startMins
+          : null;
+
+        const actualMins = Number.isFinite(Number(s.actualDurationMins)) && Number(s.actualDurationMins) > 0
+          ? Number(s.actualDurationMins)
+          : (timedDiff || 0);
+
+        const expectedMins = Number.isFinite(Number(s.duration)) && Number(s.duration) > 0
+          ? Number(s.duration)
+          : null;
+
+        const servicePrice = Number(s.price) || 0;
+        const netRevenue = serviceNetRevenue(servicePrice, subtotal, finalTotal);
+
+        rows.push({
+          visitId,
+          artist: artistName,
+          contact: v.contact || "",
+          revenue: netRevenue,
+          actualMins,
+          expectedMins,
+          services: [{ name: s.name || "", price: servicePrice, revenue: netRevenue }],
+        });
+      }
+      continue;
+    }
+
+    const legacyArtist = String(v.artist || "").trim();
+    if (!legacyArtist) continue;
+
+    const actualMins = Number.isFinite(Number(v.visitDurationMins)) && Number(v.visitDurationMins) > 0
+      ? Number(v.visitDurationMins)
+      : Math.round(calcHours(v.startTime, v.endTime) * 60);
+
+    const allHaveDuration = services.length > 0 && services.every((s) => s.duration !== null && s.duration !== undefined);
+    const expectedMins = allHaveDuration
+      ? services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0)
+      : null;
+
+    rows.push({
+      visitId,
+      artist: legacyArtist,
+      contact: v.contact || "",
+      revenue: finalTotal,
+      actualMins,
+      expectedMins,
+      services: services.map((s) => ({ name: s.name || "", price: Number(s.price) || 0, revenue: Number(s.price) || 0 })),
+    });
+  }
+
+  return rows;
+}
+
+function buildEmployeeLeaderboard(rows) {
+  const map = {};
+
+  rows.forEach((row) => {
+    const key = row.artist;
+    if (!map[key]) {
+      map[key] = {
+        name: key,
+        visitIds: new Set(),
+        contacts: new Set(),
+        revenue: 0,
+        totalMins: 0,
+        penaltyMins: 0,
+        bonusMins: 0,
+        totalExtraMins: 0,
+        schedulableVisits: 0,
+      };
+    }
+
+    const a = map[key];
+    a.visitIds.add(row.visitId);
+    if (row.contact) a.contacts.add(row.contact);
+    a.revenue += Number(row.revenue) || 0;
+    a.totalMins += Math.max(Number(row.actualMins) || 0, 0);
+
+    if (row.expectedMins !== null && row.expectedMins !== undefined && row.actualMins > 0) {
+      a.schedulableVisits += 1;
+      const diff = row.actualMins - row.expectedMins;
+      if (diff > 10) {
+        a.penaltyMins += diff - 10;
+        a.totalExtraMins += diff - 10;
+      } else if (diff < -10) {
+        a.bonusMins += Math.abs(diff) - 10;
+        a.totalExtraMins += diff + 10;
+      }
+    }
+  });
+
+  return Object.values(map)
+    .map((e) => {
+      const actualHours = e.totalMins / 60;
+      let effectiveHours = actualHours;
+
+      if (e.schedulableVisits > 0) {
+        effectiveHours = actualHours + (e.penaltyMins / 60) - (e.bonusMins / 60);
+      }
+
+      effectiveHours = Math.max(effectiveHours, 0.01);
+      const revenue = Math.round(e.revenue);
+      const productivityScore = revenue / effectiveHours;
+
+      return {
+        name: e.name,
+        customersServed: e.visitIds.size,
+        uniqueCustomers: e.contacts.size,
+        revenue,
+        hoursWorked: Math.round(actualHours * 10) / 10,
+        revenuePerHour: Math.round(revenue / effectiveHours),
+        totalExtraMins: Math.round(e.totalExtraMins),
+        schedulableVisits: e.schedulableVisits,
+        productivityScore: Math.round(productivityScore),
+      };
+    })
+    .sort((a, b) => b.productivityScore - a.productivityScore)
+    .map((e, i) => ({ rank: i + 1, ...e }));
+}
+
 // ────────────────────────────────────────────────────
 // 1. GET /api/analytics/summary
 //    Returns: totalRevenue, totalVisits, uniqueCustomers, avgTicket
 // ────────────────────────────────────────────────────
 router.get("/summary", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
-    const match = dateFilter(req.query);
-    const visits = await Visit.find(match);
+    const match = analyticsFilter(req.query);
+    const visits = await Visit.find(match).lean();
 
     const totalRevenue = visits.reduce((sum, v) => sum + (v.finalTotal || 0), 0);
     const totalVisits = visits.length;
@@ -117,7 +294,7 @@ router.get("/summary", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (r
 // ────────────────────────────────────────────────────
 router.get("/top-services", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
-    const match = dateFilter(req.query);
+    const match = analyticsFilter(req.query);
 
     const result = await Visit.aggregate([
       { $match: match },
@@ -165,92 +342,10 @@ router.get("/top-services", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), asy
 // ────────────────────────────────────────────────────
 router.get("/employees", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
-    const match = dateFilter(req.query);
-    const visits = await Visit.find(match);
-
-    // Build per-artist stats
-    const map = {};
-    visits.forEach((v) => {
-      const key = v.artist;
-      if (!map[key]) {
-        map[key] = {
-          name: key,
-          customers: 0,
-          revenue: 0,
-          totalHours: 0,
-          contacts: new Set(),
-          penaltyMins: 0,   // total overrun beyond +10 min
-          bonusMins: 0,     // total underrun beyond -10 min
-          totalExtraMins: 0,// net = penaltyMins - bonusMins
-          schedulableVisits: 0, // visits where all services have duration
-        };
-      }
-      const a = map[key];
-      a.customers += 1;
-      a.revenue += v.finalTotal || 0;
-      const actualMins = calcHours(v.startTime, v.endTime) * 60;
-      a.totalHours += actualMins / 60;
-      a.contacts.add(v.contact);
-
-      // Time performance calculation
-      // A visit is "schedulable" only if ALL its services have a duration snapshot
-      const allHaveDuration =
-        v.services.length > 0 &&
-        v.services.every((s) => s.duration !== null && s.duration !== undefined);
-
-      if (allHaveDuration) {
-        a.schedulableVisits++;
-        const expectedMins = v.services.reduce((s, svc) => s + (svc.duration || 0), 0);
-        const diff = actualMins - expectedMins;
-
-        // Only time BEYOND the ±10 min tolerance counts
-        if (diff > 10) {
-          a.penaltyMins += diff - 10;  // ran over
-        } else if (diff < -10) {
-          a.bonusMins += Math.abs(diff) - 10; // finished early
-        }
-        // Track net extra for display
-        a.totalExtraMins += diff > 10 ? (diff - 10) : diff < -10 ? (diff + 10) : 0;
-      }
-    });
-
-    const leaderboard = Object.values(map)
-      .map((e) => {
-        const actualHours = Math.round(e.totalHours * 10) / 10;
-        const revenue = Math.round(e.revenue);
-
-        // Effective hours: adjust actual by penalty/bonus
-        // If no duration data exists, fall back to actual hours (fair — missing data)
-        let effectiveHours;
-        if (e.schedulableVisits > 0) {
-          effectiveHours = e.totalHours + (e.penaltyMins / 60) - (e.bonusMins / 60);
-          effectiveHours = Math.max(effectiveHours, 0.01); // avoid div-by-zero
-        } else {
-          effectiveHours = e.totalHours || 0.01; // fallback
-        }
-
-        // Productivity score: revenue per effective hour (used for ranking)
-        const productivityScore = revenue / effectiveHours;
-
-        // ₹/Hour shown in UI: based on effective hours if we have duration data
-        const revenuePerHour = e.schedulableVisits > 0
-          ? Math.round(revenue / effectiveHours)
-          : (actualHours > 0 ? Math.round(revenue / actualHours) : 0);
-
-        return {
-          name: e.name,
-          customersServed: e.customers,
-          uniqueCustomers: e.contacts.size,
-          revenue,
-          hoursWorked: actualHours,
-          revenuePerHour,
-          totalExtraMins: Math.round(e.totalExtraMins),
-          schedulableVisits: e.schedulableVisits,
-          productivityScore: Math.round(productivityScore),
-        };
-      })
-      .sort((a, b) => b.productivityScore - a.productivityScore) // rank by productivity
-      .map((e, i) => ({ rank: i + 1, ...e }));
+    const match = analyticsFilter(req.query);
+    const visits = await Visit.find(match).lean();
+    const rows = buildArtistRows(visits);
+    const leaderboard = buildEmployeeLeaderboard(rows);
 
     res.json(leaderboard);
   } catch (err) {
@@ -265,15 +360,16 @@ router.get("/employees", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async 
 // ────────────────────────────────────────────────────
 router.get("/employee/:name", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
-    const match = dateFilter(req.query);
+    const match = analyticsFilter(req.query);
     const artistName = req.params.name;
 
-    // All visits in range
-    const allVisits = await Visit.find(match);
-    // This artist's visits
-    const artistVisits = allVisits.filter((v) => v.artist === artistName);
+    const allVisits = await Visit.find(match).lean();
+    const allRows = buildArtistRows(allVisits);
+    const artistRows = allRows.filter((r) => r.artist === artistName);
+    const leaderboard = buildEmployeeLeaderboard(allRows);
+    const artistEntry = leaderboard.find((e) => e.name === artistName);
 
-    if (artistVisits.length === 0) {
+    if (!artistEntry || artistRows.length === 0) {
       return res.json({
         name: artistName,
         customersServed: 0,
@@ -287,100 +383,39 @@ router.get("/employee/:name", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), a
       });
     }
 
-    // Artist stats
-    const revenue = artistVisits.reduce((s, v) => s + (v.finalTotal || 0), 0);
-    const totalHours = artistVisits.reduce((s, v) => s + calcHours(v.startTime, v.endTime), 0);
-    const uniqueCustomers = new Set(artistVisits.map((v) => v.contact)).size;
+    const revenue = artistRows.reduce((sum, r) => sum + (Number(r.revenue) || 0), 0);
+    const totalHours = artistRows.reduce((sum, r) => sum + ((Number(r.actualMins) || 0) / 60), 0);
+    const uniqueCustomers = new Set(artistRows.map((r) => r.contact).filter(Boolean)).size;
+    const uniqueVisits = new Set(artistRows.map((r) => r.visitId)).size;
 
-    // Top services for this artist
     const svcMap = {};
-    artistVisits.forEach((v) => {
-      v.services.forEach((s) => {
+    artistRows.forEach((row) => {
+      row.services.forEach((s) => {
         if (!svcMap[s.name]) svcMap[s.name] = { count: 0, revenue: 0 };
         svcMap[s.name].count += 1;
-        svcMap[s.name].revenue += s.price;
+        svcMap[s.name].revenue += Number(s.revenue) || Number(s.price) || 0;
       });
     });
     const topServices = Object.entries(svcMap)
       .map(([name, d]) => ({ service: name, count: d.count, revenue: d.revenue }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-
-    // Rank vs peers — must use the same productivityScore formula as the
-    // leaderboard so the rank shown in deep dive equals the leaderboard rank.
-    const peerMap = {};
-    allVisits.forEach((v) => {
-      if (!peerMap[v.artist]) {
-        peerMap[v.artist] = { revenue: 0, totalHours: 0, penaltyMins: 0, bonusMins: 0, schedulableVisits: 0 };
-      }
-      peerMap[v.artist].revenue += v.finalTotal || 0;
-      peerMap[v.artist].totalHours += calcHours(v.startTime, v.endTime);
-      const allHaveDuration =
-        v.services.length > 0 &&
-        v.services.every((s) => s.duration !== null && s.duration !== undefined);
-      if (allHaveDuration) {
-        peerMap[v.artist].schedulableVisits++;
-        const actualMins = calcHours(v.startTime, v.endTime) * 60;
-        const expectedMins = v.services.reduce((s2, svc) => s2 + (svc.duration || 0), 0);
-        const diff = actualMins - expectedMins;
-        if (diff > 10) peerMap[v.artist].penaltyMins += diff - 10;
-        else if (diff < -10) peerMap[v.artist].bonusMins += Math.abs(diff) - 10;
-      }
-    });
-    const sorted = Object.entries(peerMap)
-      .map(([name, p]) => {
-        let effectiveHours = p.totalHours;
-        if (p.schedulableVisits > 0) {
-          effectiveHours = p.totalHours + (p.penaltyMins / 60) - (p.bonusMins / 60);
-          effectiveHours = Math.max(effectiveHours, 0.01);
-        } else {
-          effectiveHours = p.totalHours || 0.01;
-        }
-        return { name, score: Math.round(p.revenue) / effectiveHours };
-      })
-      .sort((a, b) => b.score - a.score);
-    const rank = sorted.findIndex((e) => e.name === artistName) + 1;
-    const totalArtists = sorted.length;
+    const rank = artistEntry.rank;
+    const totalArtists = leaderboard.length;
 
     res.json({
       name: artistName,
-      customersServed: artistVisits.length,
+      customersServed: uniqueVisits,
       uniqueCustomers,
       revenue: Math.round(revenue),
       hoursWorked: Math.round(totalHours * 10) / 10,
-      avgRevenuePerVisit: Math.round(revenue / artistVisits.length),
+      avgRevenuePerVisit: uniqueVisits > 0 ? Math.round(revenue / uniqueVisits) : 0,
       topServices,
       rank,
       totalArtists,
-      // ─ Time performance fields ─
-      // Calculate the same penalty/bonus logic as the leaderboard endpoint
-      ...(() => {
-        let penaltyMins = 0, bonusMins = 0, totalExtraMinsVal = 0, schedVisits = 0;
-        artistVisits.forEach((v) => {
-          const allHaveDuration =
-            v.services.length > 0 &&
-            v.services.every((s) => s.duration !== null && s.duration !== undefined);
-          if (!allHaveDuration) return;
-          schedVisits++;
-          const actualMins = calcHours(v.startTime, v.endTime) * 60;
-          const expectedMins = v.services.reduce((s, svc) => s + (svc.duration || 0), 0);
-          const diff = actualMins - expectedMins;
-          if (diff > 10) { penaltyMins += diff - 10; totalExtraMinsVal += diff - 10; }
-          else if (diff < -10) { bonusMins += Math.abs(diff) - 10; totalExtraMinsVal += diff + 10; }
-        });
-        let effectiveHours = totalHours;
-        if (schedVisits > 0) {
-          effectiveHours = totalHours + (penaltyMins / 60) - (bonusMins / 60);
-          effectiveHours = Math.max(effectiveHours, 0.01);
-        }
-        return {
-          totalExtraMins: Math.round(totalExtraMinsVal),
-          schedulableVisits: schedVisits,
-          revenuePerHour: effectiveHours > 0
-            ? Math.round(Math.round(revenue) / effectiveHours)
-            : 0,
-        };
-      })(),
+      totalExtraMins: artistEntry.totalExtraMins,
+      schedulableVisits: artistEntry.schedulableVisits,
+      revenuePerHour: artistEntry.revenuePerHour,
     });
   } catch (err) {
     console.error("Employee detail error:", err);
@@ -394,7 +429,7 @@ router.get("/employee/:name", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), a
 // ────────────────────────────────────────────────────
 router.get("/repeat-customers", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
-    const match = dateFilter(req.query);
+    const match = analyticsFilter(req.query);
 
     const result = await Visit.aggregate([
       { $match: match },
@@ -437,7 +472,7 @@ router.get("/repeat-customers", authorizePermission(PERMISSIONS.ANALYTICS_VIEW),
 // ────────────────────────────────────────────────────
 router.get("/export", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
-    const match = dateFilter(req.query);
+    const match = analyticsFilter(req.query);
     const visits = await Visit.find(match).sort({ date: -1 }).lean();
 
     // Flatten for Excel
@@ -445,7 +480,6 @@ router.get("/export", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (re
       Date: v.date ? new Date(v.date).toLocaleDateString("en-IN") : "",
       Name: v.name,
       Contact: v.contact,
-      Age: v.age,
       Gender: v.gender,
       "Start Time": v.startTime,
       "End Time": v.endTime,
@@ -459,7 +493,10 @@ router.get("/export", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (re
       "Final Total": v.finalTotal,
       "Payment Method": v.paymentMethod || "online",
       "Cash Amount": Number(v.cashAmount) || 0,
+      "Card Amount": Number(v.cardAmount) || 0,
       "Online Amount": Number(v.onlineAmount) || 0,
+      "Schema Version": Number(v.schemaVersion) || 1,
+      "Assignment Status": v.assignmentStatus || "not_required",
       "Payment Status": v.paymentStatus,
       "Payment ID": v.razorpayPaymentId || "",
     }));

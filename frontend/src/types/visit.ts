@@ -55,7 +55,15 @@ export interface ApiFormData {
 }
 
 // ─── Payment mode ──────────────────────────────────────────────────────────
-export type PaymentMode = "online" | "cash" | "partial";
+export type PaymentMode = "online" | "cash" | "card" | "partial";
+
+export interface CustomerSuggestion {
+  name: string;
+  contact: string;
+  gender: "male" | "female" | "other" | "prefer_not";
+  lastVisitDate?: string;
+  lastSeenAt?: string;
+}
 
 // ─── Form state types ─────────────────────────────────────────────────────────
 
@@ -63,11 +71,7 @@ export interface VisitFormData {
   name: string;
   phone: string;
   amount: string;
-  age: string;
   gender: string;
-  startTime: string;
-  endTime: string;
-  artist: string;
   serviceType: string[];
   searchService: string[];
   discount: string;
@@ -80,12 +84,15 @@ export interface VisitFormErrors {
   name?: string;
   phone?: string;
   amount?: string;
-  age?: string;
   gender?: string;
   date?: string;
-  startTime?: string;
-  endTime?: string;
-  artist?: string;
   serviceType?: string;
   cashAmount?: string;
+}
+
+export interface AssignmentRow {
+  serviceEntryId: string;
+  artistId: string;
+  startTime: string;
+  endTime: string;
 }

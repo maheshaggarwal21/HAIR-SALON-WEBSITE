@@ -101,7 +101,18 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:5175",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
 ];
+
+/**
+ * Accept any local dev origin on localhost/127.0.0.1 regardless of Vite port.
+ */
+function isLocalDevOrigin(origin) {
+  if (!origin) return false;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+}
 
 /**
  * Check whether an origin is a Vercel preview/production URL.
@@ -127,13 +138,16 @@ app.set("trust proxy", 1);
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, Postman, same-origin)
-    if (!origin || ALLOWED_ORIGINS.includes(origin) || isVercelOrigin(origin)) {
+    if (!origin || ALLOWED_ORIGINS.includes(origin) || isVercelOrigin(origin) || isLocalDevOrigin(origin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: origin ${origin} not allowed`));
     }
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));

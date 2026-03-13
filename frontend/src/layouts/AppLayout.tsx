@@ -86,7 +86,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <div className="mx-auto max-w-7xl px-4 sm:px-8 h-16 flex items-center">
 
           {/* ── Left: logo (fixed width so center stays truly centered) ── */}
-          <Link to="/" className="shrink-0 flex items-center gap-3 group w-48">
+          <Link to="/" className="shrink-0 flex items-center gap-3 group w-40 lg:w-48">
             <div className="h-10 w-10 rounded-xl bg-amber-50 shadow-sm ring-1 ring-black/8 group-hover:ring-amber-300/60 transition-all duration-200 flex items-center justify-center">
               <Scissors className="w-5 h-5 text-amber-600" />
             </div>
@@ -116,7 +116,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </nav>
 
           {/* ── Right: role + avatar dropdown (desktop) — fixed width to balance logo ── */}
-          <div className="hidden md:flex shrink-0 items-center justify-end w-48">
+          <div className="hidden md:flex shrink-0 items-center justify-end w-40 lg:w-48">
             {user ? (
               <div ref={profileRef} className="relative">
                 {/* Clickable trigger: avatar + name + role badge + chevron */}
