@@ -9,7 +9,9 @@ This is a full-stack salon operations platform with:
 - Session-based staff authentication
 - Permission-based access control (PBAC)
 - Visit entry with payment-first flow
+- Duplicate service quantities per visit (for example, 2x Haircut)
 - Per-service assignment lock workflow (v2)
+- Live per-row duration preview in assignment step
 - Payment history and analytics dashboards
 - Artist, service, and team management
 
@@ -85,7 +87,7 @@ HAIR-SALON-WEBSITE/
 
 The active frontend flow is payment-first v2:
 
-1. Staff fills customer, date, services, payment mode.
+1. Staff fills customer, date, services, service quantities (`+` / `-`), and payment mode.
 2. Frontend creates paid draft via `POST /api/visits/v2`.
 3. App stores `pendingAssignmentVisitId` in localStorage.
 4. App redirects to `/visit-assignment/:visitId`.
@@ -97,6 +99,9 @@ Important:
 - Age is not collected for new submissions.
 - Legacy age data is still preserved in schema (`Visit.age` optional).
 - Assignment lock guard in frontend forces return to pending assignment route until completed.
+- Service search/select UX remains intact; quantity controls are applied after service selection.
+- Duplicate service quantities are expanded into separate service rows, so assignment requires details for each row.
+- Assignment page shows live "Time Taken" minutes for a row once start/end are valid.
 
 ## Authentication and Authorization
 
@@ -161,6 +166,11 @@ Base URL locally: `http://localhost:4000`
 - `POST /:id/confirm-assignment`
 - `GET /customers/search`
 - `GET /history`
+
+Behavior notes for pricing and drafts:
+
+- `POST /api/create-order` computes totals from backend-resolved service prices and preserves duplicate `serviceIds`.
+- `POST /api/visits/v2` preserves duplicate `serviceIds` and creates separate assignment rows for each service occurrence.
 
 ### Analytics routes (`/api/analytics`)
 

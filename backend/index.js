@@ -261,11 +261,24 @@ app.post("/api/create-order", authenticate, async (req, res) => {
     await connectDB();
 
     // ── Compute amount server-side (prevents client-side tampering) ─────────
-    const serviceDocs = await Service.find({ _id: { $in: serviceIds }, isActive: true }).lean();
+    const requestedIds = serviceIds.map((id) => String(id));
+    const uniqueIds = [...new Set(requestedIds)];
+
+    const serviceDocs = await Service.find({ _id: { $in: uniqueIds }, isActive: true }).lean();
     if (serviceDocs.length === 0) {
       return res.status(400).json({ error: "No valid active services found" });
     }
-    const subtotal = serviceDocs.reduce((sum, s) => sum + s.price, 0);
+
+    const serviceById = new Map(serviceDocs.map((s) => [String(s._id), s]));
+    const missingService = requestedIds.find((id) => !serviceById.has(id));
+    if (missingService) {
+      return res.status(400).json({ error: "One or more selected services are invalid or inactive" });
+    }
+
+    const subtotal = requestedIds.reduce((sum, id) => {
+      const service = serviceById.get(id);
+      return sum + (service?.price || 0);
+    }, 0);
     const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
     const discountAmt = Math.round(subtotal * (pct / 100));
     const finalTotal = Math.max(0, subtotal - discountAmt);

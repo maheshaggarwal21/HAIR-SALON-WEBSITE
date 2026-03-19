@@ -2,6 +2,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
   Phone,
+  Plus,
+  Minus,
   Calendar,
   Percent,
   Calculator,
@@ -34,6 +36,8 @@ export default function VisitEntryPage() {
     dropdownLoading,
     dropdownError,
     serviceDisplayItems,
+    selectedServiceRows,
+    selectedServiceIds,
     subtotal,
     discountPct,
     discountAmt,
@@ -45,6 +49,7 @@ export default function VisitEntryPage() {
     handleChange,
     handleSelect,
     handleMultiSelect,
+    handleServiceQuantityChange,
     applyCustomerSuggestion,
     handleSubmit,
     handleReset,
@@ -208,6 +213,48 @@ export default function VisitEntryPage() {
                       placeholder={dropdownLoading ? "Loading services..." : "Search and select services..."}
                       searchPlaceholder="Type to search (e.g. hair, beard, skin)..."
                     />
+                  )}
+
+                  {selectedServiceRows.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3 space-y-2">
+                      <p className="text-xs font-semibold tracking-wide uppercase text-stone-500">
+                        Service Quantities
+                      </p>
+                      {selectedServiceRows.map((row) => (
+                        <div
+                          key={row.id}
+                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-stone-800 wrap-break-word">{row.name}</p>
+                            <p className="text-xs text-stone-500">INR {row.price.toLocaleString("en-IN")} each</p>
+                          </div>
+
+                          <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleServiceQuantityChange(row.id, -1)}
+                              disabled={row.quantity <= 1}
+                              className="px-2.5 py-1.5 text-stone-600 hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                              aria-label={`Decrease ${row.name} quantity`}
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <span className="min-w-10 text-center text-sm font-semibold text-stone-800 border-x border-stone-300">
+                              {row.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleServiceQuantityChange(row.id, 1)}
+                              className="px-2.5 py-1.5 text-stone-600 hover:bg-stone-100"
+                              aria-label={`Increase ${row.name} quantity`}
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </Field>
                 </div>
@@ -376,7 +423,7 @@ export default function VisitEntryPage() {
                     className="mt-5 rounded-xl border border-stone-200 bg-stone-50 px-5 py-4"
                   >
                     <div className="flex items-center justify-between text-sm text-stone-500 mb-1">
-                      <span>Service total ({formData.searchService.length} item{formData.searchService.length !== 1 ? "s" : ""})</span>
+                      <span>Service total ({selectedServiceIds.length} item{selectedServiceIds.length !== 1 ? "s" : ""})</span>
                       <span>INR {subtotal.toLocaleString("en-IN")}</span>
                     </div>
                     {discountPct > 0 && (

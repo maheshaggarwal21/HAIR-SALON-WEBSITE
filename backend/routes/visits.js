@@ -50,6 +50,29 @@ function derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount = 0 }) {
   return { cashAmount: 0, cardAmount: 0, onlineAmount: total };
 }
 
+async function resolveRequestedServicesWithDuplicates(serviceIds) {
+  const requestedIds = serviceIds.map((id) => String(id));
+  const uniqueIds = [...new Set(requestedIds)];
+
+  const serviceDocs = await Service.find({
+    _id: { $in: uniqueIds },
+    isActive: true,
+  }).lean();
+
+  if (serviceDocs.length === 0) {
+    return { error: "No valid active services found" };
+  }
+
+  const serviceById = new Map(serviceDocs.map((doc) => [String(doc._id), doc]));
+  const missingService = requestedIds.find((id) => !serviceById.has(id));
+  if (missingService) {
+    return { error: "One or more selected services are invalid or inactive" };
+  }
+
+  const orderedServices = requestedIds.map((id) => serviceById.get(id));
+  return { orderedServices };
+}
+
 // ─── Validation rules ────────────────────────────────────────────────────────
 const createRules = [
   body("name").trim().notEmpty().withMessage("Name is required"),
@@ -129,18 +152,15 @@ router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, asy
     } = req.body;
 
     // ── Resolve services from DB (authoritative prices) ───────────────────
-    const serviceDocs = await Service.find({
-      _id: { $in: serviceIds },
-      isActive: true,
-    }).lean();
-
-    if (serviceDocs.length === 0) {
-      return res.status(400).json({ error: "No valid active services found" });
+    const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
+    if (error) {
+      return res.status(400).json({ error });
     }
 
-    const services = serviceDocs.map((s) => ({
+    const services = orderedServices.map((s) => ({
       name: s.name,
       price: s.price,
+      serviceId: s._id,
       // Snapshot the expected duration at visit creation time.
       // If this service has no durationMinutes set, store null — this visit
       // will be excluded from time-performance calculations (not penalised).
@@ -258,16 +278,12 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       return res.status(400).json({ error: "Invalid service ID in serviceIds" });
     }
 
-    const serviceDocs = await Service.find({
-      _id: { $in: serviceIds },
-      isActive: true,
-    }).lean();
-
-    if (serviceDocs.length === 0) {
-      return res.status(400).json({ error: "No valid active services found" });
+    const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
+    if (error) {
+      return res.status(400).json({ error });
     }
 
-    const services = serviceDocs.map((s) => ({
+    const services = orderedServices.map((s) => ({
       serviceId: s._id,
       name: s.name,
       price: s.price,

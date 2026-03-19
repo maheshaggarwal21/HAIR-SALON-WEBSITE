@@ -32,6 +32,13 @@ function isValidTimeRange(start: string, end: string): boolean {
   return endMins > startMins;
 }
 
+function getDurationMins(start: string, end: string): number | null {
+  if (!isValidTimeRange(start, end)) return null;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return eh * 60 + em - (sh * 60 + sm);
+}
+
 function isTerminalAssignmentError(message: string): boolean {
   const text = String(message || "").toLowerCase();
   return (
@@ -321,12 +328,13 @@ export default function VisitAssignmentPage() {
         <div className="space-y-4">
           {draftRows.map((row, index) => {
             const e = rowErrors[index];
+            const durationMins = getDurationMins(row.startTime, row.endTime);
             return (
               <div key={row.serviceEntryId} className="rounded-xl border border-stone-200 p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 text-stone-800">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                  <div className="flex items-start gap-2 text-stone-800 min-w-0">
                     <Scissors className="w-4 h-4" />
-                    <span className="font-semibold">{row.serviceName}</span>
+                    <span className="font-semibold wrap-break-word">{row.serviceName}</span>
                   </div>
                   <span className="text-sm text-stone-500">INR {row.servicePrice.toLocaleString("en-IN")}</span>
                 </div>
@@ -376,6 +384,17 @@ export default function VisitAssignmentPage() {
                 {e.range && (
                   <p className="text-xs text-red-600 mt-2">End time must be after start time.</p>
                 )}
+
+                {durationMins !== null && (
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                      Time Taken
+                    </p>
+                    <p className="text-sm font-semibold text-emerald-800">
+                      This service is scheduled for {durationMins} minute{durationMins !== 1 ? "s" : ""}.
+                    </p>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -386,7 +405,7 @@ export default function VisitAssignmentPage() {
             type="button"
             onClick={handleConfirm}
             disabled={saving || hasErrors}
-            className="inline-flex items-center gap-2 rounded-xl px-5 py-3 bg-stone-900 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex w-full sm:w-auto justify-center items-center gap-2 rounded-xl px-5 py-3 bg-stone-900 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <UserCheck className="w-4 h-4" />
             {saving ? "Saving Assignment..." : "Save All Assignments"}

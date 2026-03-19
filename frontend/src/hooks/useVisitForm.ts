@@ -25,6 +25,7 @@ const EMPTY_FORM: VisitFormData = {
   gender: "",
   serviceType: [],
   searchService: [],
+  serviceQuantities: {},
   discount: "50",
   date: today,
   paymentMode: "online",
@@ -70,12 +71,34 @@ export function useVisitForm() {
     [dropdownData.services]
   );
 
+  const selectedServiceIds = useMemo(() => {
+    return formData.searchService.flatMap((serviceId) => {
+      const qty = Math.max(1, Number(formData.serviceQuantities[serviceId] || 1));
+      return Array.from({ length: qty }, () => serviceId);
+    });
+  }, [formData.searchService, formData.serviceQuantities]);
+
+  const selectedServiceRows = useMemo(() => {
+    return formData.searchService
+      .map((serviceId) => {
+        const service = dropdownData.services.find((s) => s.id === serviceId);
+        if (!service) return null;
+        return {
+          id: serviceId,
+          name: service.name,
+          price: service.price,
+          quantity: Math.max(1, Number(formData.serviceQuantities[serviceId] || 1)),
+        };
+      })
+      .filter((row): row is { id: string; name: string; price: number; quantity: number } => !!row);
+  }, [formData.searchService, formData.serviceQuantities, dropdownData.services]);
+
   const subtotal = useMemo(() => {
-    return formData.searchService.reduce((sum, id) => {
+    return selectedServiceIds.reduce((sum, id) => {
       const svc = dropdownData.services.find((s) => s.id === id);
       return sum + (svc?.price ?? 0);
     }, 0);
-  }, [formData.searchService, dropdownData.services]);
+  }, [selectedServiceIds, dropdownData.services]);
 
   const discountPct = Math.min(100, Math.max(0, Number(formData.discount) || 0));
   const discountAmt = Math.round(subtotal * (discountPct / 100));
@@ -166,8 +189,41 @@ export function useVisitForm() {
   /** For multi-select fields (string[] values) — replaces the whole array. */
   const handleMultiSelect =
     (field: keyof VisitFormData) => (values: string[]) => {
-      setFormData((prev) => ({ ...prev, [field]: values }));
+      if (field !== "searchService") {
+        setFormData((prev) => ({ ...prev, [field]: values }));
+        return;
+      }
+
+      setFormData((prev) => {
+        const nextQuantities: Record<string, number> = {};
+        values.forEach((serviceId) => {
+          nextQuantities[serviceId] = Math.max(1, Number(prev.serviceQuantities[serviceId] || 1));
+        });
+
+        return {
+          ...prev,
+          searchService: values,
+          serviceQuantities: nextQuantities,
+        };
+      });
     };
+
+  const handleServiceQuantityChange = (serviceId: string, delta: 1 | -1) => {
+    setFormData((prev) => {
+      if (!prev.searchService.includes(serviceId)) return prev;
+
+      const current = Math.max(1, Number(prev.serviceQuantities[serviceId] || 1));
+      const next = Math.max(1, current + delta);
+
+      return {
+        ...prev,
+        serviceQuantities: {
+          ...prev.serviceQuantities,
+          [serviceId]: next,
+        },
+      };
+    });
+  };
 
   const applyCustomerSuggestion = (customer: CustomerSuggestion) => {
     setFormData((prev) => ({
@@ -211,7 +267,7 @@ export function useVisitForm() {
         gender: formData.gender,
         date: formData.date,
         serviceType: serviceTypeStr,
-        serviceIds: formData.searchService,
+        serviceIds: selectedServiceIds,
         discountPercent: discountPct,
         paymentMethod: opts.paymentMethod,
         razorpayPaymentId: opts.razorpayPaymentId,
@@ -255,7 +311,7 @@ export function useVisitForm() {
       const order = await createOrder({
         name: formData.name.trim(),
         phone: formData.phone.trim(),
-        serviceIds: formData.searchService,
+        serviceIds: selectedServiceIds,
         discountPercent: discountPct,
         paymentMode: formData.paymentMode as "online" | "partial",
         cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
@@ -330,6 +386,8 @@ export function useVisitForm() {
     dropdownLoading,
     dropdownError,
     serviceDisplayItems,
+    selectedServiceRows,
+    selectedServiceIds,
     subtotal,
     discountPct,
     discountAmt,
@@ -341,6 +399,7 @@ export function useVisitForm() {
     handleChange,
     handleSelect,
     handleMultiSelect,
+    handleServiceQuantityChange,
     applyCustomerSuggestion,
     handleSubmit,
     handleReset,

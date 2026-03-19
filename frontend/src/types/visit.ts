@@ -74,6 +74,7 @@ export interface VisitFormData {
   gender: string;
   serviceType: string[];
   searchService: string[];
+  serviceQuantities: Record<string, number>;
   discount: string;
   date: string;
   paymentMode: PaymentMode;
