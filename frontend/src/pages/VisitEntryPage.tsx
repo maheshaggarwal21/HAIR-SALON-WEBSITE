@@ -234,9 +234,8 @@ export default function VisitEntryPage() {
                             <button
                               type="button"
                               onClick={() => handleServiceQuantityChange(row.id, -1)}
-                              disabled={row.quantity <= 1}
-                              className="px-2.5 py-1.5 text-stone-600 hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                              aria-label={`Decrease ${row.name} quantity`}
+                              className="px-2.5 py-1.5 text-stone-600 hover:bg-stone-100"
+                              aria-label={row.quantity === 1 ? `Remove ${row.name}` : `Decrease ${row.name} quantity`}
                             >
                               <Minus className="w-4 h-4" />
                             </button>

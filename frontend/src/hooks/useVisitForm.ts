@@ -213,6 +213,18 @@ export function useVisitForm() {
       if (!prev.searchService.includes(serviceId)) return prev;
 
       const current = Math.max(1, Number(prev.serviceQuantities[serviceId] || 1));
+      if (delta === -1 && current === 1) {
+        const nextSearchService = prev.searchService.filter((id) => id !== serviceId);
+        const nextQuantities = { ...prev.serviceQuantities };
+        delete nextQuantities[serviceId];
+
+        return {
+          ...prev,
+          searchService: nextSearchService,
+          serviceQuantities: nextQuantities,
+        };
+      }
+
       const next = Math.max(1, current + delta);
 
       return {
