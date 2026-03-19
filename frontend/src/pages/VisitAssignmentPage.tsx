@@ -391,7 +391,7 @@ export default function VisitAssignmentPage() {
                       Time Taken
                     </p>
                     <p className="text-sm font-semibold text-emerald-800">
-                      This service is scheduled for {durationMins} minute{durationMins !== 1 ? "s" : ""}.
+                      This service is completed in {durationMins} minute{durationMins !== 1 ? "s" : ""}.
                     </p>
                   </div>
                 )}
