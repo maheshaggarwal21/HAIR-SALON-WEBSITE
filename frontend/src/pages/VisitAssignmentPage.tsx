@@ -39,6 +39,12 @@ function getDurationMins(start: string, end: string): number | null {
   return eh * 60 + em - (sh * 60 + sm);
 }
 
+function formatDurationAsHourMinute(totalMins: number): string {
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return `${hours} ${hours === 1 ? "hour" : "hours"} ${mins} ${mins === 1 ? "minute" : "minutes"}`;
+}
+
 function isTerminalAssignmentError(message: string): boolean {
   const text = String(message || "").toLowerCase();
   return (
@@ -387,11 +393,8 @@ export default function VisitAssignmentPage() {
 
                 {durationMins !== null && (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                      Time Taken
-                    </p>
                     <p className="text-sm font-semibold text-emerald-800">
-                      This service is completed in {durationMins} minute{durationMins !== 1 ? "s" : ""}.
+                      Time Taken: {formatDurationAsHourMinute(durationMins)}
                     </p>
                   </div>
                 )}
