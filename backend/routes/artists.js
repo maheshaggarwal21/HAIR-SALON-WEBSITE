@@ -51,8 +51,8 @@ router.get("/", async (_req, res) => {
 
 router.get("/all", authorizePermission(PERMISSIONS.ARTISTS_VIEW), async (_req, res) => {
   try {
-    // Populate the linked User's permissions so the frontend can render the permission editor
-    const artists = await Artist.find({}).populate("userId", "permissions").sort({ createdAt: -1 });
+    // Populate the linked User's permissions + isActive so the frontend can render the permission editor and login status
+    const artists = await Artist.find({}).populate("userId", "permissions isActive").sort({ createdAt: -1 });
     return res.json(artists);
   } catch (err) {
     console.error("[artists] List all error:", err);
@@ -209,7 +209,17 @@ router.patch(
         }
         updateObj.phone = req.body.phone.trim();
       }
-      if (req.body.isActive !== undefined) updateObj.isActive = req.body.isActive;
+      if (req.body.isActive !== undefined) {
+        updateObj.isActive = req.body.isActive;
+        // Also sync the linked User account's isActive so login works after reactivation
+        if (artist.userId) {
+          await User.findByIdAndUpdate(artist.userId, { isActive: req.body.isActive });
+          // If deactivating, invalidate sessions immediately
+          if (!req.body.isActive) {
+            await invalidateUserSessions(req.sessionStore, artist.userId.toString());
+          }
+        }
+      }
       const incomingEmail =
         req.body.email !== undefined
           ? req.body.email
@@ -301,7 +311,7 @@ router.patch(
       }
 
       // Re-fetch with populated userId so response matches GET /all shape
-      const populated = await Artist.findById(updated._id).populate("userId", "permissions");
+      const populated = await Artist.findById(updated._id).populate("userId", "permissions isActive");
       return res.json(populated);
     } catch (err) {
       console.error("[artists] Update error:", err);
