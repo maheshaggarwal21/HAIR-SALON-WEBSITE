@@ -42,7 +42,7 @@ interface ArtistRecord {
   commission: number;
   photo: string | null;
   /** Populated from linked User: null when no login account, object when one exists */
-  userId: { _id: string; permissions: string[] } | null;
+  userId: { _id: string; permissions: string[]; isActive: boolean } | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -639,9 +639,15 @@ export default function ArtistManagement() {
                       {/* Login enabled */}
                       <td className="px-6 py-4">
                         {a.userId ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                            ✓ Enabled
-                          </span>
+                          a.userId.isActive !== false ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                              ✓ Enabled
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">
+                              ✗ Disabled
+                            </span>
+                          )
                         ) : (
                           <span className="text-xs text-stone-400">—</span>
                         )}
