@@ -34,6 +34,7 @@ const API = import.meta.env.VITE_BACKEND_URL || "";
 interface ServiceSnapshot {
   name: string;
   price: number;
+  artistName?: string | null;
 }
 
 interface VisitRecord {
@@ -225,7 +226,10 @@ export default function PaymentHistory() {
       Date: fmtDate(v.date),
       Client: v.name,
       Contact: v.contact,
-      Artist: v.artist,
+      Artist: (() => {
+        const names = [...new Set(v.services.map((s) => s.artistName).filter(Boolean))];
+        return names.length > 0 ? names.join(", ") : v.artist;
+      })(),
       Services: v.services.map((s) => `${s.name} (₹${s.price})`).join(" | "),
       "Subtotal (₹)": v.subtotal,
       "Discount %": v.discountPercent,
@@ -526,7 +530,28 @@ export default function PaymentHistory() {
                     </td>
 
                     {/* Artist */}
-                    <td className="px-4 py-3.5 text-stone-700">{v.artist}</td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap gap-1">
+                        {(() => {
+                          const artistNames = [...new Set(
+                            v.services
+                              .map((s) => s.artistName)
+                              .filter((n): n is string => !!n)
+                          )];
+                          if (artistNames.length > 0) {
+                            return artistNames.map((name) => (
+                              <span
+                                key={name}
+                                className="inline-block px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium whitespace-nowrap"
+                              >
+                                {name}
+                              </span>
+                            ));
+                          }
+                          return <span className="text-stone-700">{v.artist || "—"}</span>;
+                        })()}
+                      </div>
+                    </td>
 
                     {/* Services */}
                     <td className="px-4 py-3.5 max-w-45">
