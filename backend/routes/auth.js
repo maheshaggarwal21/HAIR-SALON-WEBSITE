@@ -119,16 +119,21 @@ router.get("/me", async (req, res) => {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
-  // Fetch permissions from DB so they are always fresh
-  const user = await User.findById(req.session.userId, { permissions: 1 }).lean();
+  try {
+    // Fetch permissions from DB so they are always fresh
+    const user = await User.findById(req.session.userId, { permissions: 1 }).lean();
 
-  return res.json({
-    id: req.session.userId,
-    name: req.session.name,
-    email: req.session.email,
-    role: req.session.role,
-    permissions: user?.permissions ?? [],
-  });
+    return res.json({
+      id: req.session.userId,
+      name: req.session.name,
+      email: req.session.email,
+      role: req.session.role,
+      permissions: user?.permissions ?? [],
+    });
+  } catch (err) {
+    console.error("[auth] /me error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 module.exports = router;

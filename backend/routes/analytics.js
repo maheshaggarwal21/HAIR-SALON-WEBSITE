@@ -21,6 +21,11 @@ const Visit = require("../models/Visit");
 const connectDB = require("../db");
 const { authorizePermission } = require('../middleware/authMiddleware');
 const { PERMISSIONS } = require('../constants/permissions');
+const {
+  buildFinalizedVisitFilter,
+  buildArtistRows,
+  buildServiceBreakdown,
+} = require("../utils/artistAttribution");
 
 const router = express.Router();
 
@@ -38,159 +43,12 @@ router.use(async (_req, res, next) => {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build a Mongoose `{ date: { $gte, $lte } }` filter from query params.
- * Dates are parsed as local timezone to avoid off-by-one day issues.
- *
- * @param {object} query — Express req.query with optional `from` / `to` (YYYY-MM-DD)
- * @returns {object} Mongoose filter
- */
-function dateFilter(query) {
-  const filter = {};
-  const now = new Date();
-  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-
-  let from;
-  if (query.from && dateRe.test(query.from)) {
-    const [y, m, d] = query.from.split("-").map(Number);
-    from = new Date(y, m - 1, d, 0, 0, 0, 0); // local midnight start-of-day
-  } else {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-
-  let to;
-  if (query.to && dateRe.test(query.to)) {
-    const [y, m, d] = query.to.split("-").map(Number);
-    to = new Date(y, m - 1, d, 23, 59, 59, 999); // local end-of-day
-  } else {
-    to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  }
-
-  filter.date = { $gte: from, $lte: to };
-  return filter;
-}
-
-/**
  * Build a finalized-visit analytics filter.
  * - Excludes pending assignment drafts
  * - Supports optional schema filter: all|legacy|v2
  */
 function analyticsFilter(query) {
-  const filter = dateFilter(query);
-  const schema = String(query.schema || "all").toLowerCase();
-
-  if (schema === "legacy") filter.schemaVersion = 1;
-  if (schema === "v2") filter.schemaVersion = 2;
-
-  filter.paymentStatus = "success";
-  filter.$or = [
-    { assignmentStatus: { $exists: false } },
-    { assignmentStatus: "not_required" },
-    { assignmentStatus: "completed" },
-  ];
-
-  return filter;
-}
-
-/**
- * Calculate hours worked from "HH:mm" time strings.
- * @param {string} startTime — e.g. "09:30"
- * @param {string} endTime   — e.g. "11:00"
- * @returns {number} Duration in decimal hours (never negative)
- */
-function calcHours(startTime, endTime) {
-  if (!startTime || !endTime) return 0;
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  const diff = (eh * 60 + em) - (sh * 60 + sm);
-  return Math.max(diff / 60, 0);
-}
-
-function toMins(t) {
-  if (!t || !/^\d{2}:\d{2}$/.test(String(t))) return null;
-  const [h, m] = String(t).split(":").map(Number);
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-  return (h * 60) + m;
-}
-
-function serviceNetRevenue(price, subtotal, finalTotal) {
-  const p = Number(price) || 0;
-  const sub = Number(subtotal) || 0;
-  const total = Number(finalTotal) || 0;
-  if (sub <= 0) return p;
-  return Math.max(0, Math.round((p / sub) * total));
-}
-
-/**
- * Normalize mixed legacy + V2 visits into per-artist rows for analytics.
- */
-function buildArtistRows(visits) {
-  const rows = [];
-
-  for (const v of visits) {
-    const visitId = String(v._id || "");
-    const services = Array.isArray(v.services) ? v.services : [];
-    const subtotal = Number(v.subtotal) || services.reduce((s, svc) => s + (Number(svc?.price) || 0), 0);
-    const finalTotal = Number(v.finalTotal) || 0;
-
-    if (v.schemaVersion === 2) {
-      for (const s of services) {
-        const artistName = String(s.artistName || "").trim();
-        if (!artistName) continue;
-
-        const startMins = toMins(s.startTime);
-        const endMins = toMins(s.endTime);
-        const timedDiff = startMins !== null && endMins !== null && endMins > startMins
-          ? endMins - startMins
-          : null;
-
-        const actualMins = Number.isFinite(Number(s.actualDurationMins)) && Number(s.actualDurationMins) > 0
-          ? Number(s.actualDurationMins)
-          : (timedDiff || 0);
-
-        const expectedMins = Number.isFinite(Number(s.duration)) && Number(s.duration) > 0
-          ? Number(s.duration)
-          : null;
-
-        const servicePrice = Number(s.price) || 0;
-        const netRevenue = serviceNetRevenue(servicePrice, subtotal, finalTotal);
-
-        rows.push({
-          visitId,
-          artist: artistName,
-          contact: v.contact || "",
-          revenue: netRevenue,
-          actualMins,
-          expectedMins,
-          services: [{ name: s.name || "", price: servicePrice, revenue: netRevenue }],
-        });
-      }
-      continue;
-    }
-
-    const legacyArtist = String(v.artist || "").trim();
-    if (!legacyArtist) continue;
-
-    const actualMins = Number.isFinite(Number(v.visitDurationMins)) && Number(v.visitDurationMins) > 0
-      ? Number(v.visitDurationMins)
-      : Math.round(calcHours(v.startTime, v.endTime) * 60);
-
-    const allHaveDuration = services.length > 0 && services.every((s) => s.duration !== null && s.duration !== undefined);
-    const expectedMins = allHaveDuration
-      ? services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0)
-      : null;
-
-    rows.push({
-      visitId,
-      artist: legacyArtist,
-      contact: v.contact || "",
-      revenue: finalTotal,
-      actualMins,
-      expectedMins,
-      services: services.map((s) => ({ name: s.name || "", price: Number(s.price) || 0, revenue: Number(s.price) || 0 })),
-    });
-  }
-
-  return rows;
+  return buildFinalizedVisitFilter(query);
 }
 
 function buildEmployeeLeaderboard(rows) {
@@ -295,27 +153,9 @@ router.get("/summary", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (r
 router.get("/top-services", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = analyticsFilter(req.query);
-
-    const result = await Visit.aggregate([
-      { $match: match },
-      { $unwind: "$services" },
-      {
-        $group: {
-          _id: "$services.name",
-          count: { $sum: 1 },
-          revenue: { $sum: "$services.price" },
-        },
-      },
-      { $sort: { count: -1 } },
-      {
-        $project: {
-          _id: 0,
-          service: "$_id",
-          count: 1,
-          revenue: 1,
-        },
-      },
-    ]);
+    const visits = await Visit.find(match).lean();
+    const rows = buildArtistRows(visits);
+    const result = buildServiceBreakdown(rows);
 
     res.json(result);
   } catch (err) {

@@ -262,10 +262,7 @@ router.patch(
         if (updateObj.name) userUpdate.name = updateObj.name;
 
         if (incomingEmail !== undefined && incomingEmail) {
-          const dup = await User.findOne({ email: incomingEmail, _id: { $ne: artist.userId } });
-          if (dup) {
-            return res.status(409).json({ error: "A user with this email already exists" });
-          }
+          // Email uniqueness already validated above — just sync to linked user
           userUpdate.email = incomingEmail;
         }
 
@@ -294,7 +291,7 @@ router.patch(
         updateObj.userId = createdUser._id;
       }
 
-      const updated = await Artist.findByIdAndUpdate(id, updateObj, { new: true });
+      const updated = await Artist.findByIdAndUpdate(id, updateObj, { new: true, runValidators: true });
 
       // If linked user credentials changed, log out all active sessions for that user
       if (shouldInvalidateSessions && (artist.userId || updateObj.userId)) {

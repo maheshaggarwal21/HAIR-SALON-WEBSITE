@@ -24,13 +24,15 @@ interface Props {
 export default function SummaryCards({ api, qs }: Props) {
   const [data, setData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(false);
     fetch(`${api}/api/analytics/summary?${qs}`, { credentials: "include" })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
-      .catch((err) => { console.error(err); setData(null); })
+      .catch(() => { setData(null); setFetchError(true); })
       .finally(() => setLoading(false));
   }, [api, qs]);
 
@@ -49,6 +51,14 @@ export default function SummaryCards({ api, qs }: Props) {
         {[...Array(4)].map((_, i) => (
           <div key={i} className="bg-white border border-stone-200 rounded-xl p-5 animate-pulse h-28" />
         ))}
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-600">
+        Failed to load summary. Please check your connection and try again.
       </div>
     );
   }

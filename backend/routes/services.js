@@ -190,7 +190,7 @@ router.patch(
       if (req.body.durationMinutes !== undefined)
         updateObj.durationMinutes = req.body.durationMinutes === null ? null : Number(req.body.durationMinutes);
 
-      const updated = await Service.findByIdAndUpdate(id, updateObj, { new: true });
+      const updated = await Service.findByIdAndUpdate(id, updateObj, { new: true, runValidators: true });
       return res.json(updated);
     } catch (err) {
       console.error("[services] Update error:", err);

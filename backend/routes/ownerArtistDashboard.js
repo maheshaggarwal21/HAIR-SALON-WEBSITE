@@ -18,10 +18,15 @@
 const express = require("express");
 const connectDB = require("../db");
 const Artist = require("../models/Artist");
-const Visit = require("../models/Visit");
-const validateId = require("../middleware/validateId");
 const { authorizePermission } = require('../middleware/authMiddleware');
 const { PERMISSIONS } = require('../constants/permissions');
+const {
+  buildServiceBreakdown,
+  buildArtistDashboardSummary,
+  buildDailyTrend,
+  buildTimePerformanceFromRows,
+} = require("../utils/artistAttribution");
+const { fetchArtistScopedRows } = require("../utils/artistDashboardData");
 
 const router = express.Router();
 
@@ -55,40 +60,6 @@ router.param("artistId", async (req, res, next, id) => {
   }
 });
 
-// ── Helper: build date filter from query params ─────────────────────────────
-function dateFilter(query) {
-  const filter = {};
-  const now = new Date();
-  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-
-  let from;
-  if (query.from && dateRe.test(query.from)) {
-    const [y, m, d] = query.from.split("-").map(Number);
-    from = new Date(y, m - 1, d, 0, 0, 0, 0);
-  } else {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-
-  let to;
-  if (query.to && dateRe.test(query.to)) {
-    const [y, m, d] = query.to.split("-").map(Number);
-    to = new Date(y, m - 1, d, 23, 59, 59, 999);
-  } else {
-    to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  }
-
-  filter.date = { $gte: from, $lte: to };
-  return filter;
-}
-
-function calcHours(startTime, endTime) {
-  if (!startTime || !endTime) return 0;
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  const diff = (eh * 60 + em) - (sh * 60 + sm);
-  return Math.max(diff / 60, 0);
-}
-
 // ────────────────────────────────────────────────────
 // 1. GET /:artistId/profile
 // ────────────────────────────────────────────────────
@@ -119,29 +90,13 @@ router.get("/:artistId/summary", authorizePermission(PERMISSIONS.ARTIST_DASHBOAR
   try {
     const artistName = req.artistRecord.name;
     const commissionPct = req.artistRecord.commission || 0;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const visits = await Visit.find(match);
-
-    const totalRevenue = visits.reduce((sum, v) => sum + (v.finalTotal || 0), 0);
-    const totalVisits = visits.length;
-    const uniqueCustomers = new Set(visits.map((v) => v.contact)).size;
-    const totalHours = visits.reduce((s, v) => s + calcHours(v.startTime, v.endTime), 0);
-    const totalServices = visits.reduce((s, v) => s + (v.services?.length || 0), 0);
-    const commissionEarned = Math.round(totalRevenue * (commissionPct / 100) * 100) / 100;
-    const avgTicket = totalVisits > 0 ? Math.round((totalRevenue / totalVisits) * 100) / 100 : 0;
+    const { artistRows, from, to } = await fetchArtistScopedRows(req.query, artistName);
+    const summary = buildArtistDashboardSummary(artistRows, commissionPct);
 
     return res.json({
-      totalRevenue,
-      commissionPct,
-      commissionEarned,
-      totalVisits,
-      uniqueCustomers,
-      totalServices,
-      hoursWorked: Math.round(totalHours * 10) / 10,
-      avgTicket,
-      from: match.date.$gte,
-      to: match.date.$lte,
+      ...summary,
+      from,
+      to,
     });
   } catch (err) {
     console.error("[owner-artist-dashboard] Summary error:", err);
@@ -155,28 +110,8 @@ router.get("/:artistId/summary", authorizePermission(PERMISSIONS.ARTIST_DASHBOAR
 router.get("/:artistId/services", authorizePermission(PERMISSIONS.ARTIST_DASHBOARD_VIEW), async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const result = await Visit.aggregate([
-      { $match: match },
-      { $unwind: "$services" },
-      {
-        $group: {
-          _id: "$services.name",
-          count: { $sum: 1 },
-          revenue: { $sum: "$services.price" },
-        },
-      },
-      { $sort: { count: -1 } },
-      {
-        $project: {
-          _id: 0,
-          service: "$_id",
-          count: 1,
-          revenue: 1,
-        },
-      },
-    ]);
+    const { artistRows } = await fetchArtistScopedRows(req.query, artistName);
+    const result = buildServiceBreakdown(artistRows);
 
     return res.json(result);
   } catch (err) {
@@ -192,37 +127,28 @@ router.get("/:artistId/daily-trend", authorizePermission(PERMISSIONS.ARTIST_DASH
   try {
     const artistName = req.artistRecord.name;
     const commissionPct = req.artistRecord.commission || 0;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const result = await Visit.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$date" },
-          },
-          revenue: { $sum: "$finalTotal" },
-          visits: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
-      {
-        $project: {
-          _id: 0,
-          date: "$_id",
-          revenue: 1,
-          commission: {
-            $round: [{ $multiply: ["$revenue", commissionPct / 100] }, 2],
-          },
-          visits: 1,
-        },
-      },
-    ]);
+    const { artistRows } = await fetchArtistScopedRows(req.query, artistName);
+    const result = buildDailyTrend(artistRows, commissionPct);
 
     return res.json(result);
   } catch (err) {
     console.error("[owner-artist-dashboard] Daily trend error:", err);
     return res.status(500).json({ error: "Failed to fetch daily trend" });
+  }
+});
+
+// ────────────────────────────────────────────────────
+// 5. GET /:artistId/time-performance
+// ────────────────────────────────────────────────────
+router.get("/:artistId/time-performance", authorizePermission(PERMISSIONS.ARTIST_DASHBOARD_VIEW), async (req, res) => {
+  try {
+    const artistName = req.artistRecord.name;
+    const { artistRows } = await fetchArtistScopedRows(req.query, artistName);
+    const result = buildTimePerformanceFromRows(artistRows);
+    return res.json(result);
+  } catch (err) {
+    console.error("[owner-artist-dashboard] Time performance error:", err);
+    return res.status(500).json({ error: "Failed to fetch time performance" });
   }
 });
 

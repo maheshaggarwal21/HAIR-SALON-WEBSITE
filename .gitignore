@@ -5,28 +5,19 @@ node_modules/
 .env
 .env.local
 .env.*.local
-.env.example
-.env.production
 
 # Build output
 dist/
-dist-ssr/
 
 # Logs
 *.log
 npm-debug.log*
-yarn-debug.log*
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Editor files
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# AI/Copilot context files (not needed in repo)
 copilot-instructions.md
 context.md
+project-context.md

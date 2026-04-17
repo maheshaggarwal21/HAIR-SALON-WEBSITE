@@ -30,13 +30,15 @@ function shortLabel(label: string, maxLen = 22): string {
 export default function TopServices({ api, qs }: Props) {
   const [data, setData] = useState<ServiceData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(false);
     fetch(`${api}/api/analytics/top-services?${qs}`, { credentials: "include" })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
-      .catch((err) => { console.error(err); setData([]); })
+      .catch(() => { setData([]); setFetchError(true); })
       .finally(() => setLoading(false));
   }, [api, qs]);
 
@@ -53,7 +55,9 @@ export default function TopServices({ api, qs }: Props) {
       <h2 className="text-lg font-semibold text-stone-900 mb-1">Top Services</h2>
       <p className="text-sm text-stone-500 mb-4">Most popular services by bookings</p>
 
-      {top10.length === 0 ? (
+      {fetchError ? (
+        <p className="text-red-500 text-center py-12">Failed to load services data. Please try again.</p>
+      ) : top10.length === 0 ? (
         <p className="text-stone-400 text-center py-12">No data available</p>
       ) : (
         <>

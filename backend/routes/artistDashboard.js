@@ -18,7 +18,13 @@
 const express = require("express");
 const connectDB = require("../db");
 const Artist = require("../models/Artist");
-const Visit = require("../models/Visit");
+const {
+  buildServiceBreakdown,
+  buildArtistDashboardSummary,
+  buildDailyTrend,
+  buildTimePerformanceFromRows,
+} = require("../utils/artistAttribution");
+const { fetchArtistScopedRows } = require("../utils/artistDashboardData");
 
 const router = express.Router();
 
@@ -47,40 +53,6 @@ router.use(async (req, res, next) => {
     return res.status(500).json({ error: "Failed to load artist profile" });
   }
 });
-
-// ── Helper: build date filter from query params ─────────────────────────────
-function dateFilter(query) {
-  const filter = {};
-  const now = new Date();
-  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-
-  let from;
-  if (query.from && dateRe.test(query.from)) {
-    const [y, m, d] = query.from.split("-").map(Number);
-    from = new Date(y, m - 1, d, 0, 0, 0, 0);
-  } else {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-
-  let to;
-  if (query.to && dateRe.test(query.to)) {
-    const [y, m, d] = query.to.split("-").map(Number);
-    to = new Date(y, m - 1, d, 23, 59, 59, 999);
-  } else {
-    to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  }
-
-  filter.date = { $gte: from, $lte: to };
-  return filter;
-}
-
-function calcHours(startTime, endTime) {
-  if (!startTime || !endTime) return 0;
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  const diff = (eh * 60 + em) - (sh * 60 + sm);
-  return Math.max(diff / 60, 0);
-}
 
 // ────────────────────────────────────────────────────
 // 1. GET /profile — Artist profile + commission info
@@ -113,35 +85,13 @@ router.get("/summary", async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
     const commissionPct = req.artistRecord.commission || 0;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const visits = await Visit.find(match);
-
-    const totalRevenue = visits.reduce((sum, v) => sum + (v.finalTotal || 0), 0);
-    const totalVisits = visits.length;
-    const uniqueCustomers = new Set(visits.map((v) => v.contact)).size;
-    const totalHours = visits.reduce((s, v) => s + calcHours(v.startTime, v.endTime), 0);
-
-    // Count total services performed
-    const totalServices = visits.reduce((s, v) => s + (v.services?.length || 0), 0);
-
-    // Commission earned
-    const commissionEarned = Math.round(totalRevenue * (commissionPct / 100) * 100) / 100;
-
-    // Average ticket size
-    const avgTicket = totalVisits > 0 ? Math.round((totalRevenue / totalVisits) * 100) / 100 : 0;
+    const { artistRows, from, to } = await fetchArtistScopedRows(req.query, artistName);
+    const summary = buildArtistDashboardSummary(artistRows, commissionPct);
 
     return res.json({
-      totalRevenue,
-      commissionPct,
-      commissionEarned,
-      totalVisits,
-      uniqueCustomers,
-      totalServices,
-      hoursWorked: Math.round(totalHours * 10) / 10,
-      avgTicket,
-      from: match.date.$gte,
-      to: match.date.$lte,
+      ...summary,
+      from,
+      to,
     });
   } catch (err) {
     console.error("[artist-dashboard] Summary error:", err);
@@ -155,28 +105,8 @@ router.get("/summary", async (req, res) => {
 router.get("/services", async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const result = await Visit.aggregate([
-      { $match: match },
-      { $unwind: "$services" },
-      {
-        $group: {
-          _id: "$services.name",
-          count: { $sum: 1 },
-          revenue: { $sum: "$services.price" },
-        },
-      },
-      { $sort: { count: -1 } },
-      {
-        $project: {
-          _id: 0,
-          service: "$_id",
-          count: 1,
-          revenue: 1,
-        },
-      },
-    ]);
+    const { artistRows } = await fetchArtistScopedRows(req.query, artistName);
+    const result = buildServiceBreakdown(artistRows);
 
     return res.json(result);
   } catch (err) {
@@ -192,32 +122,8 @@ router.get("/daily-trend", async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
     const commissionPct = req.artistRecord.commission || 0;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const result = await Visit.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$date" },
-          },
-          revenue: { $sum: "$finalTotal" },
-          visits: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
-      {
-        $project: {
-          _id: 0,
-          date: "$_id",
-          revenue: 1,
-          commission: {
-            $round: [{ $multiply: ["$revenue", commissionPct / 100] }, 2],
-          },
-          visits: 1,
-        },
-      },
-    ]);
+    const { artistRows } = await fetchArtistScopedRows(req.query, artistName);
+    const result = buildDailyTrend(artistRows, commissionPct);
 
     return res.json(result);
   } catch (err) {
@@ -248,54 +154,9 @@ router.get("/daily-trend", async (req, res) => {
 router.get("/time-performance", async (req, res) => {
   try {
     const artistName = req.artistRecord.name;
-    const match = { ...dateFilter(req.query), artist: artistName };
-
-    const visits = await Visit.find(match).sort({ date: 1 });
-
-    const perVisit = [];
-    let totalExtraMins = 0;
-    let schedulableVisits = 0;
-    let nonSchedulableVisits = 0;
-
-    visits.forEach((v) => {
-      // Actual duration from stored time strings
-      const actualMins = calcHours(v.startTime, v.endTime) * 60;
-
-      // Check if ALL services have a duration snapshot
-      const allHaveDuration =
-        v.services.length > 0 &&
-        v.services.every((s) => s.duration !== null && s.duration !== undefined);
-
-      if (!allHaveDuration) {
-        nonSchedulableVisits++;
-        return; // skip this visit from time calculations
-      }
-
-      schedulableVisits++;
-      const expectedMins = v.services.reduce((sum, s) => sum + (s.duration || 0), 0);
-      const diff = actualMins - expectedMins;
-
-      // Apply ±10 min tolerance — only count excess beyond threshold
-      let extraMins = 0;
-      if (diff > 10) extraMins = diff - 10;        // ran over
-      else if (diff < -10) extraMins = diff + 10;  // finished early (negative)
-
-      totalExtraMins += extraMins;
-
-      perVisit.push({
-        date: v.date,
-        actualMins: Math.round(actualMins),
-        expectedMins,
-        extraMins: Math.round(extraMins),
-      });
-    });
-
-    return res.json({
-      schedulableVisits,
-      nonSchedulableVisits,
-      totalExtraMins: Math.round(totalExtraMins),
-      perVisit,
-    });
+    const { artistRows } = await fetchArtistScopedRows(req.query, artistName);
+    const result = buildTimePerformanceFromRows(artistRows);
+    return res.json(result);
   } catch (err) {
     console.error("[artist-dashboard] Time performance error:", err);
     return res.status(500).json({ error: "Failed to fetch time performance" });

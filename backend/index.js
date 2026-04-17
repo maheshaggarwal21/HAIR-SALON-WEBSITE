@@ -116,7 +116,7 @@ function isLocalDevOrigin(origin) {
 
 /**
  * Check whether an origin is a Vercel preview/production URL.
- * Accepts any *.vercel.app origin — real security is handled by JWT auth.
+ * Accepts any *.vercel.app origin — real security is handled by session auth.
  */
 function isVercelOrigin(origin) {
   if (!origin) return false;
@@ -172,7 +172,7 @@ app.use(session({
   saveUninitialized: false,
   store: MongoStore.create({
     mongoUrl: process.env.MONGODB_URI,
-    touchAfter: 24 * 3600, // only update session once per day unless data changes
+    touchAfter: 3600, // renew session TTL every hour so 8h maxAge resets on activity
   }),
   cookie: {
     httpOnly: true,
@@ -351,7 +351,7 @@ app.post("/api/verify-order-payment", authenticate, async (req, res) => {
     success: true,
     payment_id: razorpay_payment_id,
     order_id: razorpay_order_id,
-    amount: Number(amount) / 100,
+    amount: amount != null ? Number(amount) / 100 : 0,
     name: name || "",
     phone: phone || "",
   });

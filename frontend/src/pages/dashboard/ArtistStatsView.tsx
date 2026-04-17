@@ -208,7 +208,7 @@ export default function ArtistStatsView() {
       setError("");
       setLastRefresh(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setError("Failed to load dashboard data. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }

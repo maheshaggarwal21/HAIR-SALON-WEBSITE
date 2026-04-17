@@ -164,21 +164,31 @@ export default function ServiceManagement() {
 
   // ── Deactivate / Reactivate ────────────────────────────────────────────────
   const handleDeactivate = async (id: string) => {
-    const res = await fetch(`${API}/api/services/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) fetchServices();
+    try {
+      const res = await fetch(`${API}/api/services/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) fetchServices();
+      else setFetchError(true);
+    } catch {
+      setFetchError(true);
+    }
   };
 
   const handleReactivate = async (id: string) => {
-    const res = await fetch(`${API}/api/services/${id}`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: true }),
-    });
-    if (res.ok) fetchServices();
+    try {
+      const res = await fetch(`${API}/api/services/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true }),
+      });
+      if (res.ok) fetchServices();
+      else setFetchError(true);
+    } catch {
+      setFetchError(true);
+    }
   };
 
   // ── Permanent Delete ─────────────────────────────────────────────────
@@ -194,8 +204,9 @@ export default function ServiceManagement() {
         credentials: "include",
       });
       if (res.ok) fetchServices();
+      else setFetchError(true);
     } catch {
-      // silently fail; user can retry
+      setFetchError(true);
     }
   };
 

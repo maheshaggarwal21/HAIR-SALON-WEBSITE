@@ -46,14 +46,16 @@ const RANK_STYLES: Record<number, string> = {
 export default function EmployeeLeaderboard({ api, qs }: Props) {
   const [data, setData] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [rankMetric, setRankMetric] = useState<RankMetric>("productivity");
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(false);
     fetch(`${api}/api/analytics/employees?${qs}`, { credentials: "include" })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
-      .catch((err) => { console.error(err); setData([]); })
+      .catch(() => { setData([]); setFetchError(true); })
       .finally(() => setLoading(false));
   }, [api, qs]);
 
@@ -72,6 +74,15 @@ export default function EmployeeLeaderboard({ api, qs }: Props) {
 
   if (loading) {
     return <div className="bg-white border border-stone-200 rounded-xl p-6 animate-pulse h-64 shadow-sm" />;
+  }
+
+  if (fetchError) {
+    return (
+      <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-stone-900">Employee Leaderboard</h2>
+        <p className="text-red-500 text-center py-12">Failed to load leaderboard. Please try again.</p>
+      </div>
+    );
   }
 
   if (rankedData.length === 0) {

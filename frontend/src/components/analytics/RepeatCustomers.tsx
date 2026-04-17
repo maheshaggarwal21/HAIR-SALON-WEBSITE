@@ -25,18 +25,29 @@ const COLORS = ["#a78bfa", "#34d399"];
 export default function RepeatCustomers({ api, qs }: Props) {
   const [data, setData] = useState<RepeatData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(false);
     fetch(`${api}/api/analytics/repeat-customers?${qs}`, { credentials: "include" })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
-      .catch((err) => { console.error(err); setData(null); })
+      .catch(() => { setData(null); setFetchError(true); })
       .finally(() => setLoading(false));
   }, [api, qs]);
 
   if (loading) {
     return <div className="bg-white border border-stone-200 rounded-xl p-6 animate-pulse h-96 shadow-sm" />;
+  }
+
+  if (fetchError) {
+    return (
+      <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-stone-900">Repeat Customers</h2>
+        <p className="text-red-500 text-center py-12">Failed to load data. Please try again.</p>
+      </div>
+    );
   }
 
   if (!data || data.totalCustomers === 0) {

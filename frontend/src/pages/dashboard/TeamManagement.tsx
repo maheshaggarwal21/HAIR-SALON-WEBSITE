@@ -183,21 +183,31 @@ export default function TeamManagement() {
 
   // ── Deactivate / Reactivate ────────────────────────────────────────────────
   const handleDeactivate = async (id: string) => {
-    const res = await fetch(`${API}/api/admin/users/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) fetchUsers();
+    try {
+      const res = await fetch(`${API}/api/admin/users/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) fetchUsers();
+      else setFetchError(true);
+    } catch {
+      setFetchError(true);
+    }
   };
 
   const handleReactivate = async (id: string) => {
-    const res = await fetch(`${API}/api/admin/users/${id}`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: true }),
-    });
-    if (res.ok) fetchUsers();
+    try {
+      const res = await fetch(`${API}/api/admin/users/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true }),
+      });
+      if (res.ok) fetchUsers();
+      else setFetchError(true);
+    } catch {
+      setFetchError(true);
+    }
   };
 
   // ── Permanent Delete ─────────────────────────────────────────────────
@@ -213,8 +223,9 @@ export default function TeamManagement() {
         credentials: "include",
       });
       if (res.ok) fetchUsers();
+      else setFetchError(true);
     } catch {
-      // silently fail; user can retry
+      setFetchError(true);
     }
   };
 

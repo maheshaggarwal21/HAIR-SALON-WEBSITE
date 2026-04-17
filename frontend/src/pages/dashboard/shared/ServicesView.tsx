@@ -27,8 +27,10 @@ interface ViewData {
 export default function ServicesView() {
   const [data, setData] = useState<ViewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
+    setFetchError(false);
     Promise.all([
       fetch(`${API}/api/services`, { credentials: "include" }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -42,7 +44,7 @@ export default function ServicesView() {
       .then(([services, categories]) =>
         setData({ services, categories })
       )
-      .catch(() => setData(null))
+      .catch(() => { setData(null); setFetchError(true); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -62,7 +64,9 @@ export default function ServicesView() {
   if (!data) {
     return (
       <p className="text-stone-400 text-center py-16">
-        Failed to load services. Check your connection.
+        {fetchError
+          ? "Failed to load services. Please check your connection and try again."
+          : "No services found."}
       </p>
     );
   }

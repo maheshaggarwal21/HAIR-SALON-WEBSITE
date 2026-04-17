@@ -201,7 +201,7 @@ export default function PaymentHistory() {
       setPagination(data.pagination);
       setSummary(data.summary);
     } catch (err: unknown) {
-      setFetchError(err instanceof Error ? err.message : "Failed to load payment history.");
+      setFetchError("Failed to load payment history. Please check your connection and try again.");
       setVisits([]);
     } finally {
       setLoading(false);

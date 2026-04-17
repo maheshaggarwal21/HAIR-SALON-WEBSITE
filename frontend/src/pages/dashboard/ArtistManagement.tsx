@@ -202,21 +202,31 @@ export default function ArtistManagement() {
 
   // ── Deactivate / Reactivate ────────────────────────────────────────────────
   const handleDeactivate = async (id: string) => {
-    const res = await fetch(`${API}/api/artists/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) fetchArtists();
+    try {
+      const res = await fetch(`${API}/api/artists/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) fetchArtists();
+      else setFetchError(true);
+    } catch {
+      setFetchError(true);
+    }
   };
 
   const handleReactivate = async (id: string) => {
-    const res = await fetch(`${API}/api/artists/${id}`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: true }),
-    });
-    if (res.ok) fetchArtists();
+    try {
+      const res = await fetch(`${API}/api/artists/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true }),
+      });
+      if (res.ok) fetchArtists();
+      else setFetchError(true);
+    } catch {
+      setFetchError(true);
+    }
   };
 
   // ── Permanent Delete ─────────────────────────────────────────────────
@@ -232,8 +242,9 @@ export default function ArtistManagement() {
         credentials: "include",
       });
       if (res.ok) fetchArtists();
+      else setFetchError(true);
     } catch {
-      // silently fail; user can retry
+      setFetchError(true);
     }
   };
 

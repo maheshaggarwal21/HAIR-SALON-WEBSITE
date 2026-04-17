@@ -65,6 +65,20 @@ interface DailyTrend {
   visits: number;
 }
 
+interface VisitTimeStat {
+  date: string;
+  actualMins: number;
+  expectedMins: number;
+  extraMins: number;
+}
+
+interface TimePerformance {
+  schedulableVisits: number;
+  nonSchedulableVisits: number;
+  totalExtraMins: number;
+  perVisit: VisitTimeStat[];
+}
+
 type DatePreset = "today" | "month" | "3months" | "year" | "custom";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -130,6 +144,7 @@ export default function ArtistDashboardView() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [services, setServices] = useState<ServiceBreakdown[]>([]);
   const [trend, setTrend] = useState<DailyTrend[]>([]);
+  const [timePerf, setTimePerf] = useState<TimePerformance | null>(null);
 
   // UI
   const [loading, setLoading] = useState(true);
@@ -149,11 +164,12 @@ export default function ArtistDashboardView() {
       const qs = `from=${from}&to=${to}`;
       const base = `${API}/api/owner/artist-dashboard/${artistId}`;
 
-      const [profileRes, summaryRes, servicesRes, trendRes] = await Promise.all([
+      const [profileRes, summaryRes, servicesRes, trendRes, timePerfRes] = await Promise.all([
         fetch(`${base}/profile`, { credentials: "include", cache: "no-store" }),
         fetch(`${base}/summary?${qs}`, { credentials: "include", cache: "no-store" }),
         fetch(`${base}/services?${qs}`, { credentials: "include", cache: "no-store" }),
         fetch(`${base}/daily-trend?${qs}`, { credentials: "include", cache: "no-store" }),
+        fetch(`${base}/time-performance?${qs}`, { credentials: "include", cache: "no-store" }),
       ]);
 
       if (!profileRes.ok || !summaryRes.ok || !servicesRes.ok || !trendRes.ok) {
@@ -167,13 +183,16 @@ export default function ArtistDashboardView() {
         trendRes.json(),
       ]);
 
+      const tp = timePerfRes.ok ? await timePerfRes.json() : null;
+
       setProfile(p);
       setSummary(s);
       setServices(sv);
       setTrend(t);
+      setTimePerf(tp);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setError("Failed to load artist dashboard. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -558,6 +577,149 @@ export default function ArtistDashboardView() {
           </div>
         </motion.div>
       )}
+
+      {/* ── Time Performance ── */}
+      {timePerf &&
+        timePerf.schedulableVisits > 0 &&
+        (() => {
+          const over = timePerf.totalExtraMins > 5;
+          const early = timePerf.totalExtraMins < -5;
+          const onTime = !over && !early;
+          const absMin = Math.abs(timePerf.totalExtraMins);
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 }}
+              className="mt-4 bg-white rounded-2xl border border-stone-200/80 shadow-sm p-6"
+            >
+              <h3 className="text-base font-bold text-stone-900 flex items-center gap-2 mb-4">
+                <Clock className="w-4 h-4 text-amber-500" />
+                Time Performance
+              </h3>
+
+              <div className="flex flex-wrap items-center gap-6 mb-4">
+                <div className="text-center">
+                  <p
+                    className={`text-3xl font-black ${
+                      over
+                        ? "text-red-600"
+                        : early
+                          ? "text-emerald-600"
+                          : "text-stone-900"
+                    }`}
+                  >
+                    {over
+                      ? `+${absMin}`
+                      : early
+                        ? `-${absMin}`
+                        : "On Time"}
+                    {!onTime && (
+                      <span className="text-base font-semibold ml-1">
+                        min
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-stone-500 uppercase tracking-wider font-semibold mt-0.5">
+                    Net extra time
+                  </p>
+                </div>
+
+                <div className="flex-1 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 text-center">
+                    <p className="text-lg font-bold text-stone-900">
+                      {timePerf.schedulableVisits}
+                    </p>
+                    <p className="text-xs text-stone-500">
+                      Visits with duration data
+                    </p>
+                  </div>
+                  {timePerf.nonSchedulableVisits > 0 && (
+                    <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 text-center">
+                      <p className="text-lg font-bold text-stone-400">
+                        {timePerf.nonSchedulableVisits}
+                      </p>
+                      <p className="text-xs text-stone-400">
+                        Without duration (skipped)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs text-stone-400 mb-4">
+                Tolerance +/-10 min. Only time beyond that counts as over/under.
+              </p>
+
+              {timePerf.perVisit.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-200">
+                        <th className="text-left py-2 px-2 text-stone-500 font-medium text-xs">
+                          Date
+                        </th>
+                        <th className="text-right py-2 px-2 text-stone-500 font-medium text-xs">
+                          Expected
+                        </th>
+                        <th className="text-right py-2 px-2 text-stone-500 font-medium text-xs">
+                          Actual
+                        </th>
+                        <th className="text-right py-2 px-2 text-stone-500 font-medium text-xs">
+                          Extra
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timePerf.perVisit
+                        .slice(-10)
+                        .reverse()
+                        .map((v, i) => (
+                          <tr
+                            key={i}
+                            className="border-b border-stone-100 hover:bg-stone-50"
+                          >
+                            <td className="py-2 px-2 text-stone-600 text-xs">
+                              {new Date(v.date).toLocaleDateString("en-IN", {
+                                day: "numeric",
+                                month: "short",
+                              })}
+                            </td>
+                            <td className="py-2 px-2 text-right text-stone-600 text-xs">
+                              {v.expectedMins}m
+                            </td>
+                            <td className="py-2 px-2 text-right text-stone-600 text-xs">
+                              {v.actualMins}m
+                            </td>
+                            <td
+                              className={`py-2 px-2 text-right font-semibold text-xs ${
+                                v.extraMins > 0
+                                  ? "text-red-600"
+                                  : v.extraMins < 0
+                                    ? "text-emerald-600"
+                                    : "text-stone-400"
+                              }`}
+                            >
+                              {v.extraMins === 0
+                                ? "OK"
+                                : v.extraMins > 0
+                                  ? `+${v.extraMins}m`
+                                  : `-${Math.abs(v.extraMins)}m`}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  {timePerf.perVisit.length > 10 && (
+                    <p className="text-xs text-stone-400 text-center mt-2">
+                      Showing last 10 visits
+                    </p>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
     </motion.div>
   );
 }

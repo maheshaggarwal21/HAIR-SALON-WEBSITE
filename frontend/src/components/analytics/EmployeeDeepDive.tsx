@@ -41,9 +41,11 @@ export default function EmployeeDeepDive({ api, qs }: Props) {
   const [selected, setSelected] = useState("");
   const [data, setData] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState("");
 
   // Fetch employee list
   useEffect(() => {
+    setFetchError("");
     fetch(`${api}/api/analytics/employees?${qs}`, { credentials: "include" })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((list: EmployeeName[]) => {
@@ -55,7 +57,7 @@ export default function EmployeeDeepDive({ api, qs }: Props) {
           setData(null);
         }
       })
-      .catch((err) => { console.error(err); setEmployees([]); setSelected(""); setData(null); });
+      .catch(() => { setEmployees([]); setSelected(""); setData(null); setFetchError("Failed to load employee list. Please try again."); });
   }, [api, qs]);
 
   // Fetch selected employee detail
@@ -65,13 +67,14 @@ export default function EmployeeDeepDive({ api, qs }: Props) {
       return;
     }
     setLoading(true);
+    setFetchError("");
     fetch(`${api}/api/analytics/employee/${encodeURIComponent(selected)}?${qs}`, { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
       .then(setData)
-      .catch(() => setData(null))
+      .catch(() => { setData(null); setFetchError("Failed to load employee details. Please try again."); })
       .finally(() => setLoading(false));
   }, [api, qs, selected]);
 
@@ -97,7 +100,9 @@ export default function EmployeeDeepDive({ api, qs }: Props) {
         )}
       </div>
 
-      {employees.length === 0 && !loading ? (
+      {fetchError ? (
+        <p className="text-red-500 text-center py-12">{fetchError}</p>
+      ) : employees.length === 0 && !loading ? (
         <p className="text-stone-400 text-center py-12">No employee data available for this period</p>
       ) : loading ? (
         <div className="animate-pulse space-y-4">
