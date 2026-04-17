@@ -475,18 +475,18 @@ export default function PaymentHistory() {
 
       {/* ── Table ── */}
       <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm overflow-x-auto">
-        <table className="w-full text-sm min-w-225">
+        <table className="w-full text-sm" style={{ minWidth: "1100px" }}>
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Date</th>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Client</th>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Artist</th>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Services</th>
-              <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Subtotal</th>
-              <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Discount</th>
-              <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Total</th>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Method</th>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Status</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "110px" }}>Date</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "130px" }}>Client</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ minWidth: "140px" }}>Artist</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ minWidth: "180px" }}>Services</th>
+              <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "90px" }}>Subtotal</th>
+              <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "100px" }}>Discount</th>
+              <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "100px" }}>Total</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "80px" }}>Method</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500" style={{ width: "80px" }}>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -525,13 +525,13 @@ export default function PaymentHistory() {
 
                     {/* Client */}
                     <td className="px-4 py-3.5">
-                      <p className="font-medium text-stone-800">{v.name}</p>
+                      <p className="font-medium text-stone-800 truncate max-w-[120px]" title={v.name}>{v.name}</p>
                       <p className="text-[11px] text-stone-400">{v.contact}</p>
                     </td>
 
                     {/* Artist */}
                     <td className="px-4 py-3.5">
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 max-w-[160px]">
                         {(() => {
                           const artistNames = [...new Set(
                             v.services
@@ -554,8 +554,8 @@ export default function PaymentHistory() {
                     </td>
 
                     {/* Services */}
-                    <td className="px-4 py-3.5 max-w-45">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap gap-1 max-w-[220px]">
                         {v.services.map((s, i) => (
                           <span
                             key={i}
