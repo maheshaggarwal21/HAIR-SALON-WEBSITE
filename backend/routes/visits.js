@@ -663,7 +663,14 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
       if (artist.length > 80) {
         return res.status(400).json({ error: "Artist filter is too long" });
       }
-      filter.artist = { $regex: escapeRegex(artist), $options: "i" };
+      // Search both visit-level artist (legacy) and per-service artistName (V2)
+      const artistRegex = { $regex: escapeRegex(artist), $options: "i" };
+      const existingOr = filter.$or;
+      delete filter.$or;
+      filter.$and = [
+        { $or: existingOr },
+        { $or: [{ artist: artistRegex }, { "services.artistName": artistRegex }] },
+      ];
     }
     if (method) {
       filter.paymentMethod = method;
