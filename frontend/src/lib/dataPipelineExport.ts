@@ -158,13 +158,162 @@ function fileStamp(range: { from: string; to: string }): string {
   return `${range.from}_to_${range.to}`;
 }
 
+// ── CSV ──────────────────────────────────────────────────────────────────────
+
+/** Quote a value per RFC 4180 — commas, quotes and newlines all need it. */
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function csvRow(cells: unknown[]): string {
+  return cells.map(csvCell).join(",");
+}
+
+/**
+ * One CSV holding every section, because a CSV cannot carry sheets the way the
+ * workbook does. Sections are separated by a blank line and a title row, which
+ * Excel, Numbers and Sheets all open cleanly, and which `pandas.read_csv` can be
+ * pointed at with `skiprows`.
+ *
+ * Depth follows the same toggle as the PDF: summary omits the per-visit rows.
+ */
+export function exportPipelineCsv(payload: ExportPayload, options: { mode: "summary" | "full" } = { mode: "full" }): void {
+  const { summary, rows, artistPerformance, customerSummary, serviceSummary, totals, range, filterSummary } = payload;
+  const lines: string[] = [];
+
+  lines.push(csvRow([`${SALON_NAME} — Data Pipeline Report`]));
+  lines.push(csvRow(["Range", `${fmtDate(range.from)} to ${fmtDate(range.to)}`]));
+  lines.push(csvRow(["Generated", new Date().toLocaleString("en-IN")]));
+  lines.push(csvRow(["Report depth", options.mode === "summary" ? "Summary (no per-visit rows)" : "Full detail"]));
+  filterSummary.forEach((f, i) => lines.push(csvRow([i === 0 ? "Filters" : "", f])));
+
+  lines.push("");
+  lines.push(csvRow(["TOTALS"]));
+  lines.push(csvRow(["Metric", "Value"]));
+  lines.push(csvRow(["Total revenue", rupees(summary.totalRevenue)]));
+  lines.push(csvRow(["Total visits", summary.totalVisits]));
+  lines.push(csvRow(["Unique customers", summary.uniqueCustomers]));
+  lines.push(csvRow(["Average ticket", rupees(summary.avgTicket)]));
+  lines.push(csvRow(["Discounts given", rupees(summary.totalDiscount)]));
+  lines.push(csvRow(["Cash collected", rupees(summary.cash)]));
+  lines.push(csvRow(["Card collected", rupees(summary.card)]));
+  lines.push(csvRow(["Online collected", rupees(summary.online)]));
+  lines.push(csvRow(["Split payment visits", summary.splitVisits]));
+  lines.push(csvRow(["Split payment revenue", rupees(summary.splitRevenue)]));
+  lines.push(csvRow(["Commission owed to artists", rupees(totals?.commissionOwed ?? 0)]));
+  if (summary.attributedRevenue != null) {
+    lines.push(csvRow([`Revenue attributed to ${summary.attributedTo}`, rupees(summary.attributedRevenue)]));
+  }
+
+  lines.push("");
+  lines.push(csvRow(["ARTISTS"]));
+  lines.push(
+    csvRow(["Artist", "Revenue (INR)", "Commission %", "Commission Owed (INR)", "Visits", "Services", "Customers", "Avg per Visit (INR)", "Contributed To"])
+  );
+  artistPerformance.forEach((a) =>
+    lines.push(
+      csvRow([
+        a.artist,
+        rupees(a.revenue),
+        a.commissionPct ?? "",
+        a.commissionEarned ?? "",
+        a.visits,
+        a.services,
+        a.uniqueCustomers ?? "",
+        a.avgPerVisit ?? "",
+        a.topServices ?? "",
+      ])
+    )
+  );
+
+  lines.push("");
+  lines.push(csvRow(["CUSTOMERS"]));
+  lines.push(
+    csvRow(["Customer", "Contact", "Gender", "Visits", "Total Paid (INR)", "Avg Ticket (INR)", "Discount (INR)", "Services Taken", "Service Breakdown", "Artists", "Methods", "First Visit", "Last Visit"])
+  );
+  (customerSummary ?? []).forEach((c) =>
+    lines.push(
+      csvRow([
+        c.name,
+        c.contact,
+        GENDER_LABEL[c.gender] ?? c.gender,
+        c.visits,
+        rupees(c.totalSpent),
+        rupees(c.avgTicket),
+        rupees(c.totalDiscount),
+        c.serviceCount,
+        c.topServices,
+        c.artistLabel,
+        c.methodLabel,
+        fmtDate(c.firstVisit),
+        fmtDate(c.lastVisit),
+      ])
+    )
+  );
+
+  lines.push("");
+  lines.push(csvRow(["SERVICES"]));
+  lines.push(csvRow(["Service", "Times Sold", "Revenue (INR)", "At List Price (INR)", "Avg Price (INR)", "Customers", "Artists"]));
+  (serviceSummary ?? []).forEach((s) =>
+    lines.push(csvRow([s.service, s.count, rupees(s.revenue), rupees(s.listRevenue), rupees(s.avgPrice), s.uniqueCustomers, s.artistCount]))
+  );
+
+  if (options.mode === "full") {
+    lines.push("");
+    lines.push(csvRow(["VISITS"]));
+    lines.push(
+      csvRow(["Date", "Client", "Contact", "Gender", "Artist", "Services", "Subtotal (INR)", "Discount %", "Discount (INR)", "Total (INR)", "Method", "Breakdown", "Cash (INR)", "Card (INR)", "Online (INR)", "Filled By"])
+    );
+    rows.forEach((r) =>
+      lines.push(
+        csvRow([
+          fmtDate(r.date),
+          r.name,
+          r.contact,
+          GENDER_LABEL[r.gender] ?? r.gender,
+          r.artistLabel,
+          r.serviceLabel,
+          rupees(r.subtotal),
+          r.discountPercent,
+          rupees(r.discountAmount),
+          rupees(r.finalTotal),
+          r.isSplit ? "Split" : r.methodLabel,
+          lineBreakdown(r.paymentLines),
+          rupees(r.paymentLines.find((l) => l.method === "cash")?.amount ?? 0),
+          rupees(r.paymentLines.find((l) => l.method === "card")?.amount ?? 0),
+          rupees(r.paymentLines.find((l) => l.method === "online")?.amount ?? 0),
+          r.filledBy,
+        ])
+      )
+    );
+  }
+
+  // A BOM makes Excel read the file as UTF-8; without it the ₹ signs in the
+  // payment breakdown column arrive as mojibake.
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${options.mode === "summary" ? "salon_summary" : "data_pipeline"}_${fileStamp(range)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // ── Excel ────────────────────────────────────────────────────────────────────
 
 /**
- * Workbook with three sheets: Summary (totals + active filters), Visits (the
- * filtered rows), and Artist Performance (per-artist revenue for the range).
+ * Workbook with a sheet per view: Summary, Artists, Customers, Services, and —
+ * in full mode only — every individual visit. Summary mode drops that last
+ * sheet, matching what the PDF and CSV toggles do.
  */
-export function exportPipelineExcel(payload: ExportPayload): void {
+export function exportPipelineExcel(
+  payload: ExportPayload,
+  options: { mode: "summary" | "full" } = { mode: "full" }
+): void {
   const { summary, rows, artistPerformance, customerSummary, serviceSummary, totals, range, filterSummary } = payload;
   const workbook = XLSX.utils.book_new();
 
@@ -203,47 +352,51 @@ export function exportPipelineExcel(payload: ExportPayload): void {
     ["Split payments (revenue)", rupees(summary.splitRevenue)],
     [],
     ["Commission owed to artists", rupees(totals?.commissionOwed ?? 0)],
+    [],
+    ["Report depth", options.mode === "summary" ? "Summary (no per-visit rows)" : "Full detail"],
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
   summarySheet["!cols"] = [{ wch: 28 }, { wch: 34 }];
   XLSX.utils.book_append_sheet(workbook, summarySheet, "Summary");
 
-  // ── Sheet 2: the filtered visit rows ──
-  const visitRows = rows.map((r) => ({
-    Date: fmtDate(r.date),
-    Client: r.name,
-    Contact: r.contact,
-    Gender: GENDER_LABEL[r.gender] ?? r.gender,
-    Artist: r.artistLabel,
-    Services: r.serviceLabel,
-    "Subtotal (INR)": rupees(r.subtotal),
-    "Discount %": r.discountPercent,
-    "Discount (INR)": rupees(r.discountAmount),
-    "Total (INR)": rupees(r.finalTotal),
-    Method: r.isSplit ? "Split" : r.methodLabel,
-    Breakdown: lineBreakdown(r.paymentLines),
-    "Cash (INR)": rupees(r.paymentLines.find((l) => l.method === "cash")?.amount ?? 0),
-    "Card (INR)": rupees(r.paymentLines.find((l) => l.method === "card")?.amount ?? 0),
-    "Online (INR)": rupees(r.paymentLines.find((l) => l.method === "online")?.amount ?? 0),
-    "Filled By": r.filledBy,
-  }));
-
-  const visitSheet = XLSX.utils.json_to_sheet(
-    visitRows.length > 0 ? visitRows : [{ Note: "No visits matched the active filters" }]
-  );
-  if (visitRows.length > 0) {
-    visitSheet["!cols"] = Object.keys(visitRows[0]).map((key) => ({
-      wch:
-        Math.min(
-          46,
-          Math.max(
-            key.length,
-            ...visitRows.map((r) => String((r as Record<string, unknown>)[key] ?? "").length)
-          )
-        ) + 2,
+  // ── Sheet 2: the filtered visit rows (full mode only) ──
+  if (options.mode === "full") {
+    const visitRows = rows.map((r) => ({
+      Date: fmtDate(r.date),
+      Client: r.name,
+      Contact: r.contact,
+      Gender: GENDER_LABEL[r.gender] ?? r.gender,
+      Artist: r.artistLabel,
+      Services: r.serviceLabel,
+      "Subtotal (INR)": rupees(r.subtotal),
+      "Discount %": r.discountPercent,
+      "Discount (INR)": rupees(r.discountAmount),
+      "Total (INR)": rupees(r.finalTotal),
+      Method: r.isSplit ? "Split" : r.methodLabel,
+      Breakdown: lineBreakdown(r.paymentLines),
+      "Cash (INR)": rupees(r.paymentLines.find((l) => l.method === "cash")?.amount ?? 0),
+      "Card (INR)": rupees(r.paymentLines.find((l) => l.method === "card")?.amount ?? 0),
+      "Online (INR)": rupees(r.paymentLines.find((l) => l.method === "online")?.amount ?? 0),
+      "Filled By": r.filledBy,
     }));
+
+    const visitSheet = XLSX.utils.json_to_sheet(
+      visitRows.length > 0 ? visitRows : [{ Note: "No visits matched the active filters" }]
+    );
+    if (visitRows.length > 0) {
+      visitSheet["!cols"] = Object.keys(visitRows[0]).map((key) => ({
+        wch:
+          Math.min(
+            46,
+            Math.max(
+              key.length,
+              ...visitRows.map((r) => String((r as Record<string, unknown>)[key] ?? "").length)
+            )
+          ) + 2,
+      }));
+    }
+    XLSX.utils.book_append_sheet(workbook, visitSheet, "Visits");
   }
-  XLSX.utils.book_append_sheet(workbook, visitSheet, "Visits");
 
   // ── Sheet 3: artist performance, including commission owed ──
   const artistRows =
@@ -304,7 +457,10 @@ export function exportPipelineExcel(payload: ExportPayload): void {
   serviceSheet["!cols"] = [{ wch: 40 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 11 }, { wch: 9 }];
   XLSX.utils.book_append_sheet(workbook, serviceSheet, "Services");
 
-  XLSX.writeFile(workbook, `data_pipeline_${fileStamp(range)}.xlsx`);
+  XLSX.writeFile(
+    workbook,
+    `${options.mode === "summary" ? "salon_summary" : "data_pipeline"}_${fileStamp(range)}.xlsx`
+  );
 }
 
 // ── PDF ──────────────────────────────────────────────────────────────────────

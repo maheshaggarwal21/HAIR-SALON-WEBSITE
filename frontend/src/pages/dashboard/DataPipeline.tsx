@@ -44,10 +44,12 @@ import {
   Receipt,
   Palette,
   Scissors,
+  Table,
 } from "lucide-react";
 import {
   exportPipelineExcel,
   exportPipelinePdf,
+  exportPipelineCsv,
   type ExportPayload,
   type PipelineRow,
   type PipelineSummary,
@@ -474,7 +476,7 @@ export default function DataPipeline() {
   const [artistOptions, setArtistOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState<"" | "excel" | "pdf">("");
+  const [exporting, setExporting] = useState<"" | "excel" | "pdf" | "csv">("");
   // "Summary report" collapses the PDF to totals + charts + rollups, dropping
   // the per-visit table that made a full-year export 155 pages.
   const [summaryPdf, setSummaryPdf] = useState(true);
@@ -543,7 +545,7 @@ export default function DataPipeline() {
   }, []);
 
   /** Fetch the FULL filtered set (not just this page) and hand it to an exporter. */
-  const runExport = async (kind: "excel" | "pdf") => {
+  const runExport = async (kind: "excel" | "pdf" | "csv") => {
     setExporting(kind);
     try {
       const res = await fetch(`${API}/api/data-pipeline/export?${queryString}`, {
@@ -563,8 +565,12 @@ export default function DataPipeline() {
         range: json.range,
         filterSummary,
       };
+      const mode = summaryPdf ? "summary" : "full";
+
       if (kind === "excel") {
-        exportPipelineExcel(payload);
+        exportPipelineExcel(payload, { mode });
+      } else if (kind === "csv") {
+        exportPipelineCsv(payload, { mode });
       } else {
         // Charts are rasterised from the live DOM, so the PDF shows exactly
         // the plots on screen for the current filters.
@@ -591,11 +597,7 @@ export default function DataPipeline() {
         const charts = summaryPdf
           ? (await captureCharts()).map((c) => ({ ...c, caption: captions[c.title] }))
           : [];
-        exportPipelinePdf(payload, {
-          mode: summaryPdf ? "summary" : "full",
-          colored: colorPdf,
-          charts,
-        });
+        exportPipelinePdf(payload, { mode, colored: colorPdf, charts });
       }
     } catch {
       setError("Export failed. Please try again.");
@@ -830,6 +832,13 @@ export default function DataPipeline() {
             <Download className="w-4 h-4" /> {exporting === "excel" ? "Preparing…" : "Excel"}
           </button>
           <button
+            onClick={() => runExport("csv")}
+            disabled={!!exporting || loading}
+            className="flex items-center gap-2 bg-stone-700 text-white text-sm rounded-xl px-4 py-2.5 hover:bg-stone-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            <Table className="w-4 h-4" /> {exporting === "csv" ? "Preparing…" : "CSV"}
+          </button>
+          <button
             onClick={() => runExport("pdf")}
             disabled={!!exporting || loading}
             className="flex items-center gap-2 bg-amber-600 text-white text-sm rounded-xl px-4 py-2.5 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
@@ -838,8 +847,8 @@ export default function DataPipeline() {
           </button>
           </div>
 
-          {/* Report depth — a full year of visit rows is ~155 pages, so the
-              condensed report is the default. */}
+          {/* Report depth — governs PDF, Excel and CSV alike. A full year of
+              visit rows is ~155 PDF pages, so condensed is the default. */}
           <label className="flex items-center gap-2 cursor-pointer select-none self-end">
             <span className={`text-xs ${summaryPdf ? "text-stone-400" : "text-stone-600 font-medium"}`}>
               Full detail
