@@ -331,6 +331,12 @@ export interface PdfOptions {
    * "full" — the summary, followed by every individual visit.
    */
   mode: "summary" | "full";
+  /**
+   * Colour treatment. Mono keeps the report cheap to print on a black-and-white
+   * office printer; colour tints the header bands and money columns so revenue,
+   * commission and discounts are legible at a glance.
+   */
+  colored?: boolean;
   charts?: ChartImage[];
   /** How many rows to keep in each ranked table for summary mode. */
   topN?: number;
@@ -338,15 +344,70 @@ export interface PdfOptions {
 
 const PAGE_MARGIN = 36;
 
+type RGB = [number, number, number];
+
+/** The two colour treatments the report can be rendered in. */
+interface Palette {
+  head: RGB;
+  headText: RGB;
+  altRow: RGB;
+  accent: RGB;
+  money: RGB;
+  positive: RGB;
+  negative: RGB;
+  muted: RGB;
+  cardFill: RGB;
+  cardBorder: RGB;
+}
+
+const MONO: Palette = {
+  head: [41, 37, 36],
+  headText: [255, 255, 255],
+  altRow: [250, 248, 244],
+  accent: [180, 83, 9],
+  money: [41, 37, 36],
+  positive: [41, 37, 36],
+  negative: [41, 37, 36],
+  muted: [120, 113, 108],
+  cardFill: [250, 248, 244],
+  cardBorder: [231, 229, 228],
+};
+
+const COLOUR: Palette = {
+  head: [180, 83, 9],       // amber-700, matching the app's brand band
+  headText: [255, 255, 255],
+  altRow: [254, 247, 237],  // warm tint
+  accent: [180, 83, 9],
+  money: [180, 83, 9],      // revenue
+  positive: [5, 150, 105],  // commission owed
+  negative: [220, 38, 38],  // discounts
+  muted: [120, 113, 108],
+  cardFill: [255, 251, 245],
+  cardBorder: [253, 230, 195],
+};
+
 /** Shared table styling so every table in the report reads as one document. */
-function tableTheme(extra: Record<string, unknown> = {}) {
+function tableTheme(pal: Palette, extra: Record<string, unknown> = {}) {
   return {
     theme: "grid" as const,
-    styles: { fontSize: 7.5, cellPadding: 3.5, textColor: [41, 37, 36] as [number, number, number], overflow: "linebreak" as const },
-    headStyles: { fillColor: [41, 37, 36] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontSize: 8 },
-    alternateRowStyles: { fillColor: [250, 248, 244] as [number, number, number] },
+    styles: { fontSize: 7.5, cellPadding: 3.5, textColor: [41, 37, 36] as RGB, overflow: "linebreak" as const },
+    headStyles: { fillColor: pal.head, textColor: pal.headText, fontSize: 8 },
+    alternateRowStyles: { fillColor: pal.altRow },
     margin: { left: PAGE_MARGIN, right: PAGE_MARGIN, bottom: 34 },
     ...extra,
+  };
+}
+
+/**
+ * Tint whole columns of a table body. Used for the money columns so revenue,
+ * commission and discount read differently without needing a legend.
+ */
+function tintColumns(map: Record<number, RGB>, bold: number[] = []) {
+  return (data: { section: string; column: { index: number }; cell: { styles: Record<string, unknown> } }) => {
+    if (data.section !== "body") return;
+    const colour = map[data.column.index];
+    if (colour) data.cell.styles.textColor = colour;
+    if (bold.includes(data.column.index)) data.cell.styles.fontStyle = "bold";
   };
 }
 
@@ -384,6 +445,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
   const mode = options.mode ?? "full";
   const topN = options.topN ?? 25;
   const charts = options.charts ?? [];
+  const pal = options.colored ? COLOUR : MONO;
 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -408,7 +470,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
   const rangeText = `${fmtDate(range.from)} — ${fmtDate(range.to)}`;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.setTextColor(180, 83, 9);
+  doc.setTextColor(...pal.accent);
   doc.text(rangeText, pageWidth - margin - doc.getTextWidth(rangeText), y + 22);
 
   y += 34;
@@ -452,12 +514,12 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
     const cardW = (pageWidth - margin * 2 - gap * (items.length - 1)) / items.length;
     items.forEach(([label, value], i) => {
       const x = margin + i * (cardW + gap);
-      doc.setFillColor(250, 248, 244);
-      doc.setDrawColor(231, 229, 228);
+      doc.setFillColor(...pal.cardFill);
+      doc.setDrawColor(...pal.cardBorder);
       doc.roundedRect(x, top, cardW, 42, 4, 4, "FD");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.setTextColor(28, 25, 23);
+      doc.setTextColor(...(options.colored ? pal.accent : ([28, 25, 23] as RGB)));
       doc.text(value, x + 10, top + 20, { maxWidth: cardW - 20 });
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7);
@@ -561,8 +623,13 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
         },
         "", "", "", "", "",
       ]],
-      footStyles: { fillColor: [245, 243, 240], textColor: [28, 25, 23], fontStyle: "bold", fontSize: 8 },
-      ...tableTheme({
+      footStyles: {
+        fillColor: options.colored ? ([253, 237, 213] as RGB) : ([245, 243, 240] as RGB),
+        textColor: [28, 25, 23] as RGB,
+        fontStyle: "bold",
+        fontSize: 8,
+      },
+      ...tableTheme(pal, {
         columnStyles: {
           0: { cellWidth: 96 },
           1: { halign: "right", cellWidth: 76 },
@@ -574,6 +641,8 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
           7: { halign: "right", cellWidth: 52 },
           8: { cellWidth: 280 },
         },
+        // revenue amber, commission green
+        didParseCell: options.colored ? tintColumns({ 1: pal.money, 3: pal.positive }, [1, 3]) : undefined,
       }),
     });
     y = afterTable(doc, y);
@@ -605,7 +674,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
         c.topServices,
         fmtDate(c.lastVisit),
       ]),
-      ...tableTheme({
+      ...tableTheme(pal, {
         columnStyles: {
           0: { cellWidth: 92 },
           1: { cellWidth: 64 },
@@ -617,6 +686,8 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
           7: { cellWidth: 216 },
           8: { cellWidth: 62 },
         },
+        // total paid amber, discount red
+        didParseCell: options.colored ? tintColumns({ 4: pal.money, 6: pal.negative }, [4]) : undefined,
       }),
     });
     y = afterTable(doc, y);
@@ -646,7 +717,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
         String(s.uniqueCustomers),
         String(s.artistCount),
       ]),
-      ...tableTheme({
+      ...tableTheme(pal, {
         columnStyles: {
           0: { cellWidth: 180 },
           1: { halign: "right", cellWidth: 62 },
@@ -656,6 +727,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
           5: { halign: "right", cellWidth: 62 },
           6: { halign: "right", cellWidth: 50 },
         },
+        didParseCell: options.colored ? tintColumns({ 2: pal.money }, [2]) : undefined,
       }),
     });
     y = afterTable(doc, y);
@@ -682,7 +754,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
               r.isSplit ? `Split\n${lineBreakdown(r.paymentLines, "")}` : r.methodLabel,
             ])
           : [["—", "No visits matched the active filters", "", "", "", "", "", ""]],
-      ...tableTheme({
+      ...tableTheme(pal, {
         styles: { fontSize: 7.5, cellPadding: 3.5, textColor: [41, 37, 36], valign: "middle", overflow: "linebreak" },
         columnStyles: {
           0: { cellWidth: 56 },
@@ -693,6 +765,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
           6: { halign: "right", cellWidth: 54, fontStyle: "bold" },
           7: { cellWidth: 132 },
         },
+        didParseCell: options.colored ? tintColumns({ 5: pal.negative, 6: pal.money }) : undefined,
       }),
     });
   }
@@ -709,5 +782,7 @@ export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = 
     doc.text(`${SALON_NAME} — ${mode === "summary" ? "Salon Summary" : "Data Pipeline"}`, margin, pageHeight - 18);
   }
 
-  doc.save(`${mode === "summary" ? "salon_summary" : "data_pipeline"}_${fileStamp(range)}.pdf`);
+  doc.save(
+    `${mode === "summary" ? "salon_summary" : "data_pipeline"}${options.colored ? "_colour" : ""}_${fileStamp(range)}.pdf`
+  );
 }

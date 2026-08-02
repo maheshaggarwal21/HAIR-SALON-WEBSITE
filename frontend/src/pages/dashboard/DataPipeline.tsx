@@ -325,7 +325,11 @@ function ChartFrame({
 }
 
 /** One payment line → plain badge. Several → "Split" badge with a breakdown. */
-function PaymentCell({ lines, isSplit }: { lines: PaymentLine[]; isSplit: boolean }) {
+function PaymentCell({ lines, isSplit }: { lines?: PaymentLine[]; isSplit?: boolean }) {
+  // Defensive: a missing array here used to throw and blank the whole page.
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return <span className="text-stone-400">—</span>;
+  }
   const breakdown = lines
     .map((l) => `${l.method[0].toUpperCase() + l.method.slice(1)} ${inr(l.amount)}`)
     .join(" + ");
@@ -474,6 +478,9 @@ export default function DataPipeline() {
   // "Summary report" collapses the PDF to totals + charts + rollups, dropping
   // the per-visit table that made a full-year export 155 pages.
   const [summaryPdf, setSummaryPdf] = useState(true);
+  // Colour vs mono. Mono is friendlier to a black-and-white office printer,
+  // so it stays the default; colour tints headers and the money columns.
+  const [colorPdf, setColorPdf] = useState(false);
 
   const LIMIT = 50;
 
@@ -584,7 +591,11 @@ export default function DataPipeline() {
         const charts = summaryPdf
           ? (await captureCharts()).map((c) => ({ ...c, caption: captions[c.title] }))
           : [];
-        exportPipelinePdf(payload, { mode: summaryPdf ? "summary" : "full", charts });
+        exportPipelinePdf(payload, {
+          mode: summaryPdf ? "summary" : "full",
+          colored: colorPdf,
+          charts,
+        });
       }
     } catch {
       setError("Export failed. Please try again.");
@@ -607,7 +618,14 @@ export default function DataPipeline() {
   const hasFilters = !!customer || !!artist || gender !== "all" || method !== "all" || preset !== "month";
 
   const summary = data?.summary;
-  const rows = data?.rows ?? [];
+  // Each mode returns a different row shape, and the refetch is async — so
+  // between clicking a mode and its data arriving, the new column set would be
+  // handed the previous mode's rows and blow up (a visit column reading
+  // `paymentLines` off an artist row, for example). The backend echoes the
+  // groupBy it actually served, so hold the skeleton until the two agree.
+  const rowsMatchMode = data?.groupBy === tableMode;
+  const rows = rowsMatchMode ? (data?.rows ?? []) : [];
+  const tableLoading = loading || !rowsMatchMode;
   const pagination = data?.pagination;
 
   const revenueChartData = (data?.revenueSeries.series ?? []).map((p) => ({
@@ -850,6 +868,35 @@ export default function DataPipeline() {
               Summary report
             </span>
           </label>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none self-end">
+            <span className={`text-xs ${colorPdf ? "text-stone-400" : "text-stone-600 font-medium"}`}>
+              Mono
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={colorPdf}
+              onClick={() => setColorPdf((v) => !v)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                colorPdf ? "bg-emerald-500" : "bg-stone-300"
+              }`}
+              title={
+                colorPdf
+                  ? "Coloured headers, and revenue / commission / discount tinted apart"
+                  : "Black and white — cheaper on an office printer"
+              }
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+                  colorPdf ? "left-[1.125rem]" : "left-0.5"
+                }`}
+              />
+            </button>
+            <span className={`text-xs ${colorPdf ? "text-stone-800 font-medium" : "text-stone-400"}`}>
+              Colour
+            </span>
+          </label>
         </div>
       </div>
 
@@ -988,6 +1035,58 @@ export default function DataPipeline() {
             other artists on shared visits.
           </p>
         )}
+      </Card>
+
+      {/* ── Breakdown selector ──
+          These are the report's primary views, so they sit with the filters
+          rather than buried under the charts. */}
+      <Card className="p-4 mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider shrink-0">
+            Break down by
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(MODE_META) as TableMode[]).map((mode) => {
+              const Icon = MODE_META[mode].icon;
+              const count =
+                mode === "visit"
+                  ? data?.totals?.visits
+                  : mode === "customer"
+                    ? data?.totals?.customers
+                    : mode === "artist"
+                      ? data?.totals?.artists
+                      : data?.totals?.services;
+              const active = tableMode === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    setTableMode(mode);
+                    document.getElementById("dp-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
+                    active
+                      ? "bg-stone-900 text-white border-stone-900 shadow-sm"
+                      : "bg-white text-stone-600 border-stone-200 hover:border-stone-400"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {MODE_META[mode].label}
+                  {count != null && (
+                    <span
+                      className={`text-[11px] px-1.5 py-0.5 rounded-md ${
+                        active ? "bg-white/20 text-white" : "bg-stone-100 text-stone-500"
+                      }`}
+                    >
+                      {count.toLocaleString("en-IN")}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-stone-500 lg:ml-auto">{MODE_META[tableMode].blurb}</p>
+        </div>
       </Card>
 
       {error && (
@@ -1171,7 +1270,7 @@ export default function DataPipeline() {
       </div>
 
       {/* ── Table ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+      <div id="dp-table" className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-3">
         <div>
           <h3 className="text-lg font-semibold text-stone-900">
             {MODE_META[tableMode].title}
@@ -1180,22 +1279,6 @@ export default function DataPipeline() {
             )}
           </h3>
           <p className="text-xs text-stone-500 mt-0.5">{MODE_META[tableMode].blurb}</p>
-        </div>
-        <div className="flex items-center gap-1 bg-stone-100 rounded-xl p-1">
-          {(Object.keys(MODE_META) as TableMode[]).map((mode) => {
-            const Icon = MODE_META[mode].icon;
-            return (
-              <button
-                key={mode}
-                onClick={() => setTableMode(mode)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  tableMode === mode ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" /> {MODE_META[mode].label}
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -1217,7 +1300,7 @@ export default function DataPipeline() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {tableLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-stone-100">
                   {columns.map((c) => (
