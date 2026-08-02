@@ -15,10 +15,11 @@
  */
 
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users } from "lucide-react";
+import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users , Database} from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import { useAuth } from "@/context/AuthContext";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
+import DataPipeline from "@/pages/dashboard/DataPipeline";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
@@ -29,6 +30,7 @@ import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const receptionistLinks: SidebarLink[] = [
   { to: "/dashboard/receptionist/payments", label: "Payment History", icon: Receipt, requiredPermission: "payments.view" },
+  { to: "/dashboard/receptionist/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/receptionist/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/receptionist/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/receptionist/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
@@ -66,6 +68,7 @@ export default function ReceptionistDashboard() {
       <Routes>
         <Route index element={<DefaultRedirect />} />
         <Route path="payments" element={<PaymentHistory />} />
+        <Route path="data-pipeline" element={<DataPipeline />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
         <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />

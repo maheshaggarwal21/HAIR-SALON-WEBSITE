@@ -11,7 +11,7 @@
  */
 
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
@@ -19,6 +19,7 @@ import ServiceManagement from "@/pages/dashboard/ServiceManagement";
 import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
+import DataPipeline from "@/pages/dashboard/DataPipeline";
 import TeamManagement from "@/pages/dashboard/TeamManagement";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
@@ -27,6 +28,7 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
+  { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
   { to: "/dashboard/manager/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
@@ -40,6 +42,7 @@ export default function ManagerDashboard() {
         <Route index element={<DashboardOverview />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
         <Route path="payments" element={<PaymentHistory />} />
+        <Route path="data-pipeline" element={<DataPipeline />} />
         <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />

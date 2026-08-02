@@ -8,6 +8,7 @@ import type {
   CustomerSuggestion,
 } from "@/types/visit";
 import { loadRazorpayScript } from "@/services/razorpay";
+import { toLocalDateKey } from "@/lib/utils";
 import {
   fetchFormData,
   createOrder,
@@ -16,7 +17,9 @@ import {
   searchCustomersByPhone,
 } from "@/services/api";
 
-const today = new Date().toISOString().split("T")[0];
+// Local date, not UTC — `toISOString()` would date a visit logged before
+// 05:30 IST to the previous day.
+const today = toLocalDateKey(new Date());
 
 const EMPTY_FORM: VisitFormData = {
   name: "",

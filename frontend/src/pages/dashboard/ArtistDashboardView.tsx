@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { toLocalDateKey } from "@/lib/utils";
 import {
   ArrowLeft,
   DollarSign,
@@ -82,9 +83,14 @@ interface TimePerformance {
 type DatePreset = "today" | "month" | "3months" | "year" | "custom";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+/**
+ * Local-timezone date key for the range presets.
+ *
+ * Previously `d.toISOString().slice(0, 10)`, which converts to UTC and so
+ * rolled local midnight back a day in IST — every preset queried from one day
+ * earlier than it claimed, pulling in an extra day of visits.
+ */
+const formatDate = toLocalDateKey;
 
 function getPresetDates(preset: DatePreset): { from: string; to: string } {
   const now = new Date();

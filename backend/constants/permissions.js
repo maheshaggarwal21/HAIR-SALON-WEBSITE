@@ -6,6 +6,7 @@
 const PERMISSIONS = Object.freeze({
   ANALYTICS_VIEW:        'analytics.view',
   PAYMENTS_VIEW:         'payments.view',
+  DATAPIPELINE_VIEW:     'datapipeline.view',
   SERVICES_VIEW:         'services.view',
   SERVICES_CRUD:         'services.crud',
   ARTISTS_VIEW:          'artists.view',
@@ -44,6 +45,7 @@ const ROLE_DEFAULTS = {
 const PERMISSION_LABELS = {
   'analytics.view':        'View Analytics Dashboard',
   'payments.view':         'View Payment History',
+  'datapipeline.view':     'View Data Pipeline (includes per-artist revenue)',
   'services.view':         'View Services List',
   'services.crud':         'Manage Services (Create / Edit / Delete)',
   'artists.view':          'View Artist Directory',
@@ -62,7 +64,7 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Financials',
-    keys:  ['payments.view'],
+    keys:  ['payments.view', 'datapipeline.view'],
   },
   {
     label: 'Analytics',

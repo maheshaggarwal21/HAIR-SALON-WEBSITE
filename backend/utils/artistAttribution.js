@@ -421,6 +421,7 @@ function buildTimePerformanceFromRows(rows) {
 }
 
 module.exports = {
+  allocateServiceRevenues,
   buildDateRangeFilter,
   buildFinalizedVisitFilter,
   buildArtistScopedVisitFilter,

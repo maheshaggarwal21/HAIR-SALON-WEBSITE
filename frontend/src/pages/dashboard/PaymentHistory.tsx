@@ -17,6 +17,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import * as XLSX from "xlsx";
+import { toLocalDateKey } from "@/lib/utils";
 import {
   Receipt,
   Filter,
@@ -81,9 +82,14 @@ type MethodFilter = "all" | "cash" | "card" | "online" | "partial";
 type SchemaFilter = "all" | "legacy" | "v2";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+/**
+ * Local-timezone date key for the range presets.
+ *
+ * Previously `d.toISOString().slice(0, 10)`, which converts to UTC and so
+ * rolled local midnight back a day in IST — "This Month" queried from the 31st
+ * of the previous month, inflating every total by one extra day of visits.
+ */
+const formatDate = toLocalDateKey;
 
 function getPresetDates(preset: DatePreset): { from: string; to: string } {
   const now = new Date();
