@@ -65,12 +65,56 @@ export interface ArtistPerf {
   revenue: number;
   visits: number;
   services: number;
+  uniqueCustomers?: number;
+  avgPerVisit?: number;
+  /** Null when the artist has no Artist record, so no rate is configured. */
+  commissionPct?: number | null;
+  /** Attributed revenue × commissionPct. Null when the rate is unknown. */
+  commissionEarned?: number | null;
+  /** "Beard Trim ×12, Haircut ×4, +3 more" */
+  topServices?: string;
+}
+
+export interface CustomerSummaryRow {
+  id: string;
+  name: string;
+  contact: string;
+  gender: "male" | "female" | "not_specified";
+  visits: number;
+  totalSpent: number;
+  totalDiscount: number;
+  avgTicket: number;
+  firstVisit: string;
+  lastVisit: string;
+  serviceCount: number;
+  topServices: string;
+  artistLabel: string;
+  methodLabel: string;
+}
+
+export interface ServiceSummaryRow {
+  service: string;
+  count: number;
+  revenue: number;
+  listRevenue: number;
+  avgPrice: number;
+  uniqueCustomers: number;
+  artistCount: number;
 }
 
 export interface ExportPayload {
   summary: PipelineSummary;
   artistPerformance: ArtistPerf[];
+  customerSummary: CustomerSummaryRow[];
+  serviceSummary: ServiceSummaryRow[];
   rows: PipelineRow[];
+  totals?: {
+    customers: number;
+    artists: number;
+    services: number;
+    visits: number;
+    commissionOwed: number;
+  };
   range: { from: string; to: string };
   /** Human-readable description of every active filter. */
   filterSummary: string[];
@@ -121,7 +165,7 @@ function fileStamp(range: { from: string; to: string }): string {
  * filtered rows), and Artist Performance (per-artist revenue for the range).
  */
 export function exportPipelineExcel(payload: ExportPayload): void {
-  const { summary, rows, artistPerformance, range, filterSummary } = payload;
+  const { summary, rows, artistPerformance, customerSummary, serviceSummary, totals, range, filterSummary } = payload;
   const workbook = XLSX.utils.book_new();
 
   // ── Sheet 1: summary ──
@@ -157,6 +201,8 @@ export function exportPipelineExcel(payload: ExportPayload): void {
     [],
     ["Split payments (visits)", summary.splitVisits],
     ["Split payments (revenue)", rupees(summary.splitRevenue)],
+    [],
+    ["Commission owed to artists", rupees(totals?.commissionOwed ?? 0)],
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
   summarySheet["!cols"] = [{ wch: 28 }, { wch: 34 }];
@@ -199,36 +245,150 @@ export function exportPipelineExcel(payload: ExportPayload): void {
   }
   XLSX.utils.book_append_sheet(workbook, visitSheet, "Visits");
 
-  // ── Sheet 3: artist performance ──
+  // ── Sheet 3: artist performance, including commission owed ──
   const artistRows =
     artistPerformance.length > 0
       ? artistPerformance.map((a) => ({
           Artist: a.artist,
           "Revenue (INR)": rupees(a.revenue),
+          "Commission %": a.commissionPct ?? "",
+          "Commission Owed (INR)": a.commissionEarned ?? "",
           Visits: a.visits,
           Services: a.services,
-          "Avg per visit (INR)": a.visits > 0 ? Math.round(a.revenue / a.visits) : 0,
+          Customers: a.uniqueCustomers ?? "",
+          "Avg per visit (INR)": a.avgPerVisit ?? (a.visits > 0 ? Math.round(a.revenue / a.visits) : 0),
+          "Contributed To": a.topServices ?? "",
         }))
       : [{ Note: "No artist activity in this range" }];
   const artistSheet = XLSX.utils.json_to_sheet(artistRows);
-  artistSheet["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 20 }];
-  XLSX.utils.book_append_sheet(workbook, artistSheet, "Artist Performance");
+  artistSheet["!cols"] = [{ wch: 22 }, { wch: 15 }, { wch: 13 }, { wch: 21 }, { wch: 9 }, { wch: 9 }, { wch: 11 }, { wch: 18 }, { wch: 52 }];
+  XLSX.utils.book_append_sheet(workbook, artistSheet, "Artists");
+
+  // ── Sheet 4: per-customer totals ──
+  const customerRows =
+    customerSummary && customerSummary.length > 0
+      ? customerSummary.map((c) => ({
+          Customer: c.name,
+          Contact: c.contact,
+          Gender: GENDER_LABEL[c.gender] ?? c.gender,
+          Visits: c.visits,
+          "Total Paid (INR)": rupees(c.totalSpent),
+          "Avg Ticket (INR)": rupees(c.avgTicket),
+          "Discount (INR)": rupees(c.totalDiscount),
+          "Services Taken": c.serviceCount,
+          "Service Breakdown": c.topServices,
+          Artists: c.artistLabel,
+          Methods: c.methodLabel,
+          "First Visit": fmtDate(c.firstVisit),
+          "Last Visit": fmtDate(c.lastVisit),
+        }))
+      : [{ Note: "No customers matched the active filters" }];
+  const customerSheet = XLSX.utils.json_to_sheet(customerRows);
+  customerSheet["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 17 }, { wch: 17 }, { wch: 15 }, { wch: 15 }, { wch: 46 }, { wch: 30 }, { wch: 18 }, { wch: 14 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(workbook, customerSheet, "Customers");
+
+  // ── Sheet 5: per-service totals ──
+  const serviceRows =
+    serviceSummary && serviceSummary.length > 0
+      ? serviceSummary.map((s2) => ({
+          Service: s2.service,
+          "Times Sold": s2.count,
+          "Revenue (INR)": rupees(s2.revenue),
+          "At List Price (INR)": rupees(s2.listRevenue),
+          "Avg Price (INR)": rupees(s2.avgPrice),
+          Customers: s2.uniqueCustomers,
+          Artists: s2.artistCount,
+        }))
+      : [{ Note: "No services matched the active filters" }];
+  const serviceSheet = XLSX.utils.json_to_sheet(serviceRows);
+  serviceSheet["!cols"] = [{ wch: 40 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 11 }, { wch: 9 }];
+  XLSX.utils.book_append_sheet(workbook, serviceSheet, "Services");
 
   XLSX.writeFile(workbook, `data_pipeline_${fileStamp(range)}.xlsx`);
 }
 
 // ── PDF ──────────────────────────────────────────────────────────────────────
 
+/** A chart rasterised from the page, ready to embed. */
+export interface ChartImage {
+  title: string;
+  dataUrl: string;
+  width: number;
+  height: number;
+  /**
+   * Values spelled out under the plot. Recharts draws its legend as HTML, not
+   * SVG, so it is lost when the plot is serialised — without this the donut
+   * slices would be unlabelled colours.
+   */
+  caption?: string;
+}
+
+export interface PdfOptions {
+  /**
+   * "summary" — a compressed report: totals, charts, and ranked rollups of
+   *   customers, artists and services. No per-visit rows, so a full year fits
+   *   in a handful of pages instead of 155.
+   * "full" — the summary, followed by every individual visit.
+   */
+  mode: "summary" | "full";
+  charts?: ChartImage[];
+  /** How many rows to keep in each ranked table for summary mode. */
+  topN?: number;
+}
+
+const PAGE_MARGIN = 36;
+
+/** Shared table styling so every table in the report reads as one document. */
+function tableTheme(extra: Record<string, unknown> = {}) {
+  return {
+    theme: "grid" as const,
+    styles: { fontSize: 7.5, cellPadding: 3.5, textColor: [41, 37, 36] as [number, number, number], overflow: "linebreak" as const },
+    headStyles: { fillColor: [41, 37, 36] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontSize: 8 },
+    alternateRowStyles: { fillColor: [250, 248, 244] as [number, number, number] },
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN, bottom: 34 },
+    ...extra,
+  };
+}
+
+/** Y position just below the last table autoTable drew. */
+function afterTable(doc: jsPDF, fallback: number): number {
+  // @ts-expect-error — lastAutoTable is attached at runtime by jspdf-autotable
+  return (doc.lastAutoTable?.finalY ?? fallback) + 18;
+}
+
+function drawSectionTitle(doc: jsPDF, text: string, y: number, sub?: string): number {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(28, 25, 23);
+  doc.text(text, PAGE_MARGIN, y);
+  // Measure the title while its own font is still active — measuring after
+  // switching to the smaller subtitle font under-reports the width and the two
+  // strings overlap.
+  const titleWidth = doc.getTextWidth(text);
+  if (sub) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text(sub, PAGE_MARGIN + titleWidth + 10, y);
+  }
+  return y + 12;
+}
+
 /**
- * A formatted landscape report: title block, filter summary, totals grid,
- * artist table, then the visit table — every page numbered.
+ * A formatted report. Summary mode is the compressed view: header, filters,
+ * totals, charts, then ranked customer / artist / service tables. Full mode
+ * appends the per-visit table on top of that.
  */
-export function exportPipelinePdf(payload: ExportPayload): void {
-  const { summary, rows, artistPerformance, range, filterSummary } = payload;
+export function exportPipelinePdf(payload: ExportPayload, options: PdfOptions = { mode: "full" }): void {
+  const { summary, rows, artistPerformance, customerSummary, serviceSummary, range, filterSummary, totals } = payload;
+  const mode = options.mode ?? "full";
+  const topN = options.topN ?? 25;
+  const charts = options.charts ?? [];
 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 36;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = PAGE_MARGIN;
   let y = margin;
 
   // ── Header ──
@@ -240,7 +400,7 @@ export function exportPipelinePdf(payload: ExportPayload): void {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.setTextColor(120, 113, 108);
-  doc.text("Data Pipeline Report", margin, y + 22);
+  doc.text(mode === "summary" ? "Salon Summary Report" : "Data Pipeline Report", margin, y + 22);
 
   doc.setFontSize(9);
   const generated = `Generated ${new Date().toLocaleString("en-IN")}`;
@@ -268,7 +428,7 @@ export function exportPipelinePdf(payload: ExportPayload): void {
   doc.text(wrapped, margin + 56, y);
   y += Math.max(14, wrapped.length * 11) + 8;
 
-  // ── Summary totals grid ──
+  // ── Totals ──
   const cards: [string, string][] = [
     ["Total Revenue", `INR ${summary.totalRevenue.toLocaleString("en-IN")}`],
     ["Visits", String(summary.totalVisits)],
@@ -276,7 +436,7 @@ export function exportPipelinePdf(payload: ExportPayload): void {
     ["Avg Ticket", `INR ${summary.avgTicket.toLocaleString("en-IN")}`],
     ["Discounts", `INR ${summary.totalDiscount.toLocaleString("en-IN")}`],
   ];
-  if (summary.attributedRevenue !== null) {
+  if (summary.attributedRevenue !== null && summary.attributedRevenue !== undefined) {
     cards.push([`Earned by ${summary.attributedTo}`, `INR ${summary.attributedRevenue.toLocaleString("en-IN")}`]);
   }
   const methodCards: [string, string][] = [
@@ -284,6 +444,7 @@ export function exportPipelinePdf(payload: ExportPayload): void {
     ["Card", `INR ${summary.card.toLocaleString("en-IN")}`],
     ["Online", `INR ${summary.online.toLocaleString("en-IN")}`],
     ["Split visits", `${summary.splitVisits} (INR ${summary.splitRevenue.toLocaleString("en-IN")})`],
+    ["Commission Owed", `INR ${(totals?.commissionOwed ?? 0).toLocaleString("en-IN")}`],
   ];
 
   const drawCards = (items: [string, string][], top: number): number => {
@@ -295,96 +456,246 @@ export function exportPipelinePdf(payload: ExportPayload): void {
       doc.setDrawColor(231, 229, 228);
       doc.roundedRect(x, top, cardW, 42, 4, 4, "FD");
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setTextColor(28, 25, 23);
       doc.text(value, x + 10, top + 20, { maxWidth: cardW - 20 });
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       doc.setTextColor(120, 113, 108);
-      doc.text(label.toUpperCase(), x + 10, top + 33);
+      doc.text(label.toUpperCase(), x + 10, top + 33, { maxWidth: cardW - 20 });
     });
     return top + 42 + 10;
   };
 
   y = drawCards(cards, y);
   y = drawCards(methodCards, y);
-  y += 4;
+  y += 6;
 
-  // ── Artist performance ──
+  // ── Charts ──
+  if (charts.length > 0) {
+    y = drawSectionTitle(doc, "Overview", y, "charts as shown on screen");
+    const gap = 16;
+    const perRow = 2;
+    const slotW = (pageWidth - margin * 2 - gap * (perRow - 1)) / perRow;
+    // A fixed slot height keeps a wide line chart and a square donut on the
+    // same baseline; each image is fitted inside and centred rather than
+    // stretched, so nothing is distorted and no dead space is left behind.
+    // Sized so both rows of a four-chart overview land on the first page
+    // together with the totals, rather than one row spilling over by a few points.
+    const slotH = 112;
+
+    for (let i = 0; i < charts.length; i += perRow) {
+      const slice = charts.slice(i, i + perRow);
+      const rowH = slotH + 13 + (slice.some((c) => c.caption) ? 11 : 0);
+
+      if (y + rowH > pageHeight - 44) {
+        doc.addPage();
+        y = margin;
+      }
+
+      slice.forEach((chart, j) => {
+        const slotX = margin + j * (slotW + gap);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(68, 64, 60);
+        doc.text(chart.title, slotX, y + 8);
+
+        // Contain: scale down to fit the slot, never up past natural size.
+        const scale = Math.min(slotW / chart.width, slotH / chart.height);
+        const drawW = chart.width * scale;
+        const drawH = chart.height * scale;
+        const drawX = slotX + (slotW - drawW) / 2;
+
+        try {
+          doc.addImage(chart.dataUrl, "PNG", drawX, y + 13, drawW, drawH, undefined, "FAST");
+        } catch {
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(168, 162, 158);
+          doc.text("(chart unavailable)", slotX, y + 28);
+        }
+
+        if (chart.caption) {
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+          doc.setTextColor(120, 113, 108);
+          const capLines = doc.splitTextToSize(chart.caption, slotW);
+          doc.text(capLines.slice(0, 2), slotX, y + 13 + slotH + 9);
+        }
+      });
+      y += rowH + 8;
+    }
+    y += 4;
+  }
+
+  // ── Artists, with commission owed ──
   if (artistPerformance.length > 0) {
+    if (y > pageHeight - 150) { doc.addPage(); y = margin; }
+    y = drawSectionTitle(doc, "Artists", y, "revenue credited per service; commission at each artist's rate");
     autoTable(doc, {
       startY: y,
-      head: [["Artist", "Revenue (INR)", "Visits", "Services", "Avg / Visit (INR)"]],
+      head: [["Artist", "Revenue (INR)", "Rate", "Commission (INR)", "Visits", "Services", "Customers", "Avg/Visit", "Contributed To"]],
       body: artistPerformance.map((a) => [
         a.artist,
         a.revenue.toLocaleString("en-IN"),
+        a.commissionPct == null ? "n/a" : `${a.commissionPct}%`,
+        a.commissionEarned == null ? "—" : a.commissionEarned.toLocaleString("en-IN"),
         String(a.visits),
         String(a.services),
-        (a.visits > 0 ? Math.round(a.revenue / a.visits) : 0).toLocaleString("en-IN"),
+        String(a.uniqueCustomers ?? "—"),
+        (a.avgPerVisit ?? 0).toLocaleString("en-IN"),
+        a.topServices ?? "",
       ]),
-      theme: "grid",
-      styles: { fontSize: 8, cellPadding: 4, textColor: [41, 37, 36] },
-      headStyles: { fillColor: [41, 37, 36], textColor: [255, 255, 255], fontSize: 8 },
-      alternateRowStyles: { fillColor: [250, 248, 244] },
-      // Narrow, left-anchored table — 5 short columns stretched across a full
-      // landscape page leaves the numbers stranded from their labels.
-      tableWidth: 430,
-      columnStyles: {
-        0: { cellWidth: 130 },
-        1: { halign: "right", cellWidth: 90 },
-        2: { halign: "right", cellWidth: 60 },
-        3: { halign: "right", cellWidth: 60 },
-        4: { halign: "right", cellWidth: 90 },
-      },
-      margin: { left: margin, right: margin },
-      didDrawPage: () => {
-        /* page numbers are stamped in a final pass below */
-      },
+      // Foot cells carry their own alignment — autoTable does not apply
+      // columnStyles.halign to the footer row.
+      foot: [[
+        { content: "TOTAL", styles: { halign: "left" as const } },
+        {
+          content: artistPerformance.reduce((s, a) => s + a.revenue, 0).toLocaleString("en-IN"),
+          styles: { halign: "right" as const },
+        },
+        "",
+        {
+          content: (totals?.commissionOwed ?? 0).toLocaleString("en-IN"),
+          styles: { halign: "right" as const },
+        },
+        "", "", "", "", "",
+      ]],
+      footStyles: { fillColor: [245, 243, 240], textColor: [28, 25, 23], fontStyle: "bold", fontSize: 8 },
+      ...tableTheme({
+        columnStyles: {
+          0: { cellWidth: 96 },
+          1: { halign: "right", cellWidth: 76 },
+          2: { halign: "right", cellWidth: 36 },
+          3: { halign: "right", cellWidth: 84, fontStyle: "bold" },
+          4: { halign: "right", cellWidth: 42 },
+          5: { halign: "right", cellWidth: 48 },
+          6: { halign: "right", cellWidth: 56 },
+          7: { halign: "right", cellWidth: 52 },
+          8: { cellWidth: 280 },
+        },
+      }),
     });
-    // @ts-expect-error — lastAutoTable is attached at runtime by jspdf-autotable
-    y = (doc.lastAutoTable?.finalY ?? y) + 18;
+    y = afterTable(doc, y);
   }
 
-  // ── Visit table ──
-  autoTable(doc, {
-    startY: y,
-    head: [["Date", "Client", "Artist", "Services", "Subtotal", "Discount", "Total", "Payment"]],
-    body:
-      rows.length > 0
-        ? rows.map((r) => [
-            fmtDate(r.date),
-            `${r.name}\n${r.contact}`,
-            r.artistLabel,
-            r.serviceLabel,
-            r.subtotal.toLocaleString("en-IN"),
-            r.discountAmount > 0 ? `-${r.discountAmount.toLocaleString("en-IN")} (${r.discountPercent}%)` : "—",
-            r.finalTotal.toLocaleString("en-IN"),
-            r.isSplit ? `Split\n${lineBreakdown(r.paymentLines, "")}` : r.methodLabel,
-          ])
-        : [["—", "No visits matched the active filters", "", "", "", "", "", ""]],
-    theme: "grid",
-    styles: {
-      fontSize: 7.5,
-      cellPadding: 3.5,
-      textColor: [41, 37, 36],
-      valign: "middle",
-      overflow: "linebreak",
-    },
-    headStyles: { fillColor: [41, 37, 36], textColor: [255, 255, 255], fontSize: 8 },
-    alternateRowStyles: { fillColor: [250, 248, 244] },
-    columnStyles: {
-      0: { cellWidth: 56 },
-      1: { cellWidth: 88 },
-      2: { cellWidth: 92 },
-      // Services is the only auto-width column — it absorbs the remainder.
-      4: { halign: "right", cellWidth: 50 },
-      5: { halign: "right", cellWidth: 68 },
-      6: { halign: "right", cellWidth: 54, fontStyle: "bold" },
-      // Wide enough for "Cash 1,050 + Online 100" on one line.
-      7: { cellWidth: 132 },
-    },
-    margin: { left: margin, right: margin, bottom: 34 },
-  });
+  // ── Customers ──
+  if (customerSummary && customerSummary.length > 0) {
+    const list = mode === "summary" ? customerSummary.slice(0, topN) : customerSummary;
+    if (y > pageHeight - 150) { doc.addPage(); y = margin; }
+    y = drawSectionTitle(
+      doc,
+      "Customers",
+      y,
+      mode === "summary" && customerSummary.length > topN
+        ? `top ${topN} by spend of ${customerSummary.length}`
+        : `${customerSummary.length} total`
+    );
+    autoTable(doc, {
+      startY: y,
+      head: [["Customer", "Contact", "Gender", "Visits", "Total Paid (INR)", "Avg Ticket", "Discount", "Services Taken", "Last Visit"]],
+      body: list.map((c) => [
+        c.name,
+        c.contact,
+        GENDER_LABEL[c.gender] ?? c.gender,
+        String(c.visits),
+        c.totalSpent.toLocaleString("en-IN"),
+        c.avgTicket.toLocaleString("en-IN"),
+        c.totalDiscount.toLocaleString("en-IN"),
+        c.topServices,
+        fmtDate(c.lastVisit),
+      ]),
+      ...tableTheme({
+        columnStyles: {
+          0: { cellWidth: 92 },
+          1: { cellWidth: 64 },
+          2: { cellWidth: 50 },
+          3: { halign: "right", cellWidth: 38 },
+          4: { halign: "right", cellWidth: 78, fontStyle: "bold" },
+          5: { halign: "right", cellWidth: 56 },
+          6: { halign: "right", cellWidth: 52 },
+          7: { cellWidth: 216 },
+          8: { cellWidth: 62 },
+        },
+      }),
+    });
+    y = afterTable(doc, y);
+  }
+
+  // ── Services ──
+  if (serviceSummary && serviceSummary.length > 0) {
+    const list = mode === "summary" ? serviceSummary.slice(0, topN) : serviceSummary;
+    if (y > pageHeight - 150) { doc.addPage(); y = margin; }
+    y = drawSectionTitle(
+      doc,
+      "Services",
+      y,
+      mode === "summary" && serviceSummary.length > topN
+        ? `top ${topN} by revenue of ${serviceSummary.length}`
+        : `${serviceSummary.length} total`
+    );
+    autoTable(doc, {
+      startY: y,
+      head: [["Service", "Times Sold", "Revenue (INR)", "At List Price", "Avg Price", "Customers", "Artists"]],
+      body: list.map((s) => [
+        s.service,
+        String(s.count),
+        s.revenue.toLocaleString("en-IN"),
+        s.listRevenue.toLocaleString("en-IN"),
+        s.avgPrice.toLocaleString("en-IN"),
+        String(s.uniqueCustomers),
+        String(s.artistCount),
+      ]),
+      ...tableTheme({
+        columnStyles: {
+          0: { cellWidth: 180 },
+          1: { halign: "right", cellWidth: 62 },
+          2: { halign: "right", cellWidth: 84, fontStyle: "bold" },
+          3: { halign: "right", cellWidth: 72 },
+          4: { halign: "right", cellWidth: 62 },
+          5: { halign: "right", cellWidth: 62 },
+          6: { halign: "right", cellWidth: 50 },
+        },
+      }),
+    });
+    y = afterTable(doc, y);
+  }
+
+  // ── Per-visit detail (full mode only) ──
+  if (mode === "full") {
+    doc.addPage();
+    y = margin;
+    y = drawSectionTitle(doc, "Visits", y, `${rows.length} rows`);
+    autoTable(doc, {
+      startY: y,
+      head: [["Date", "Client", "Artist", "Services", "Subtotal", "Discount", "Total", "Payment"]],
+      body:
+        rows.length > 0
+          ? rows.map((r) => [
+              fmtDate(r.date),
+              `${r.name}\n${r.contact}`,
+              r.artistLabel,
+              r.serviceLabel,
+              r.subtotal.toLocaleString("en-IN"),
+              r.discountAmount > 0 ? `-${r.discountAmount.toLocaleString("en-IN")} (${r.discountPercent}%)` : "—",
+              r.finalTotal.toLocaleString("en-IN"),
+              r.isSplit ? `Split\n${lineBreakdown(r.paymentLines, "")}` : r.methodLabel,
+            ])
+          : [["—", "No visits matched the active filters", "", "", "", "", "", ""]],
+      ...tableTheme({
+        styles: { fontSize: 7.5, cellPadding: 3.5, textColor: [41, 37, 36], valign: "middle", overflow: "linebreak" },
+        columnStyles: {
+          0: { cellWidth: 56 },
+          1: { cellWidth: 88 },
+          2: { cellWidth: 92 },
+          4: { halign: "right", cellWidth: 50 },
+          5: { halign: "right", cellWidth: 68 },
+          6: { halign: "right", cellWidth: 54, fontStyle: "bold" },
+          7: { cellWidth: 132 },
+        },
+      }),
+    });
+  }
 
   // ── Page numbers (final pass, so the total count is known) ──
   const pageCount = doc.getNumberOfPages();
@@ -394,13 +705,9 @@ export function exportPipelinePdf(payload: ExportPayload): void {
     doc.setFontSize(8);
     doc.setTextColor(146, 138, 133);
     const label = `Page ${i} of ${pageCount}`;
-    doc.text(
-      label,
-      pageWidth - margin - doc.getTextWidth(label),
-      doc.internal.pageSize.getHeight() - 18
-    );
-    doc.text(`${SALON_NAME} — Data Pipeline`, margin, doc.internal.pageSize.getHeight() - 18);
+    doc.text(label, pageWidth - margin - doc.getTextWidth(label), pageHeight - 18);
+    doc.text(`${SALON_NAME} — ${mode === "summary" ? "Salon Summary" : "Data Pipeline"}`, margin, pageHeight - 18);
   }
 
-  doc.save(`data_pipeline_${fileStamp(range)}.pdf`);
+  doc.save(`${mode === "summary" ? "salon_summary" : "data_pipeline"}_${fileStamp(range)}.pdf`);
 }

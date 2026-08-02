@@ -42,6 +42,8 @@ import {
   X,
   Users,
   Receipt,
+  Palette,
+  Scissors,
 } from "lucide-react";
 import {
   exportPipelineExcel,
@@ -51,6 +53,7 @@ import {
   type PipelineSummary,
   type ArtistPerf,
   type PaymentLine,
+  type ChartImage,
 } from "@/lib/dataPipelineExport";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
@@ -60,7 +63,7 @@ const API = import.meta.env.VITE_BACKEND_URL || "";
 type DatePreset = "today" | "yesterday" | "month" | "3months" | "6months" | "year" | "custom";
 type MethodFilter = "all" | "cash" | "card" | "online" | "split";
 type GenderFilter = "all" | "male" | "female" | "not_specified";
-type TableMode = "visit" | "customer";
+type TableMode = "visit" | "customer" | "artist" | "service";
 
 interface CustomerRow {
   id: string;
@@ -75,6 +78,29 @@ interface CustomerRow {
   firstVisit: string;
   artistLabel: string;
   methodLabel: string;
+  serviceCount: number;
+  topServices: string;
+}
+
+interface ServiceRow {
+  service: string;
+  count: number;
+  revenue: number;
+  listRevenue: number;
+  avgPrice: number;
+  uniqueCustomers: number;
+  artistCount: number;
+}
+
+type AnyRow = PipelineRow | CustomerRow | ArtistPerf | ServiceRow;
+
+/** One table column: how to label it, align it, and render a cell from a row. */
+interface Column {
+  key: string;
+  label: string;
+  align?: "left" | "right";
+  width?: string;
+  render: (row: AnyRow) => React.ReactNode;
 }
 
 interface GenderSplit {
@@ -89,7 +115,16 @@ interface PipelineResponse {
   methodMix: { method: string; amount: number }[];
   artistPerformance: ArtistPerf[];
   genderSplit: GenderSplit;
-  rows: PipelineRow[] | CustomerRow[];
+  customerSummary: CustomerRow[];
+  serviceSummary: ServiceRow[];
+  totals: {
+    customers: number;
+    artists: number;
+    services: number;
+    visits: number;
+    commissionOwed: number;
+  };
+  rows: AnyRow[];
   groupBy: TableMode;
   pagination: { page: number; limit: number; total: number; pages: number };
   range: { from: string; to: string };
@@ -202,15 +237,65 @@ function periodLabel(period: string, granularity: string): string {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
-function isCustomerRow(row: PipelineRow | CustomerRow): row is CustomerRow {
-  return (row as CustomerRow).visits !== undefined;
+const MODE_META: Record<
+  TableMode,
+  { label: string; title: string; noun: string; blurb: string; icon: React.ElementType; minWidth: string }
+> = {
+  visit: {
+    label: "Per visit",
+    title: "Visits",
+    noun: "visits",
+    blurb: "Every visit in the filtered range, one row each",
+    icon: Receipt,
+    minWidth: "1180px",
+  },
+  customer: {
+    label: "Customers",
+    title: "Customers",
+    noun: "customers",
+    blurb: "One row per client — total spent and services taken across the range",
+    icon: Users,
+    minWidth: "1080px",
+  },
+  artist: {
+    label: "Artists",
+    title: "Artists",
+    noun: "artists",
+    blurb: "Revenue credited per service, plus commission owed at each artist's rate",
+    icon: Palette,
+    minWidth: "1120px",
+  },
+  service: {
+    label: "Services",
+    title: "Services",
+    noun: "services",
+    blurb: "How often each service sold and what it brought in",
+    icon: Scissors,
+    minWidth: "900px",
+  },
+};
+
+/** Small helper so long comma lists (services, artists) stay readable in a cell. */
+function Muted({ text, max = 60 }: { text: string; max?: number }) {
+  if (!text || text === "—") return <span className="text-stone-400">—</span>;
+  return (
+    <span className="text-stone-600 text-xs" title={text}>
+      {text.length > max ? `${text.slice(0, max - 1)}…` : text}
+    </span>
+  );
 }
 
 // ── Small presentational pieces ──────────────────────────────────────────────
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Card({
+  children,
+  className = "",
+  ...rest
+}: { children: React.ReactNode; className?: string } & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={`bg-white rounded-2xl border border-stone-200/80 shadow-sm ${className}`}>{children}</div>
+    <div className={`bg-white rounded-2xl border border-stone-200/80 shadow-sm ${className}`} {...rest}>
+      {children}
+    </div>
   );
 }
 
@@ -226,7 +311,8 @@ function ChartFrame({
   empty: boolean;
 }) {
   return (
-    <Card className="p-6">
+    // data-chart lets the PDF exporter find and label this plot.
+    <Card className="p-6" data-chart={empty ? undefined : title}>
       <h3 className="text-lg font-semibold text-stone-900">{title}</h3>
       <p className="text-sm text-stone-500 mb-4">{subtitle}</p>
       {empty ? (
@@ -271,6 +357,95 @@ function PaymentCell({ lines, isSplit }: { lines: PaymentLine[]; isSplit: boolea
   );
 }
 
+
+/**
+ * Rasterise a Recharts SVG so it can be embedded in the PDF.
+ *
+ * Recharts draws to inline SVG; jsPDF needs bitmap data. The clone is given an
+ * explicit size and a font rule, because a detached SVG loses the page's
+ * inherited CSS and would otherwise fall back to a serif default.
+ */
+async function svgToPng(svg: SVGSVGElement, scale = 2): Promise<ChartImage | null> {
+  try {
+    const box = svg.getBoundingClientRect();
+    if (!box.width || !box.height) return null;
+
+    // A full-width chart on a wide monitor is ~1200px; 2x that is more pixels
+    // than a landscape A4 column can use, and bloats the PDF. Cap the effective
+    // scale so the embedded image stays near print resolution.
+    const effectiveScale = Math.min(scale, Math.max(1, 1600 / box.width));
+
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", String(box.width));
+    clone.setAttribute("height", String(box.height));
+
+    const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    style.textContent =
+      "text{font-family:Helvetica,Arial,sans-serif;} .recharts-cartesian-axis-tick text{font-size:11px;}";
+    clone.insertBefore(style, clone.firstChild);
+
+    const svgText = new XMLSerializer().serializeToString(clone);
+    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+
+    const img = new Image();
+    img.decoding = "sync";
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("svg load failed"));
+      img.src = url;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(box.width * effectiveScale);
+    canvas.height = Math.round(box.height * effectiveScale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    return {
+      title: "",
+      dataUrl: canvas.toDataURL("image/png"),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Grab every chart on the page, in display order, for the PDF.
+ *
+ * A chart card can contain several SVGs — Recharts draws each legend swatch as
+ * its own 14px `<svg>`, and those come first in document order for the donuts.
+ * Picking the largest by area reliably selects the plot itself.
+ */
+async function captureCharts(): Promise<ChartImage[]> {
+  const holders = [...document.querySelectorAll<HTMLElement>("[data-chart]")];
+  const out: ChartImage[] = [];
+
+  for (const holder of holders) {
+    const svgs = [...holder.querySelectorAll("svg")];
+    if (svgs.length === 0) continue;
+
+    const plot = svgs.reduce((biggest, candidate) => {
+      const a = candidate.getBoundingClientRect();
+      const b = biggest.getBoundingClientRect();
+      return a.width * a.height > b.width * b.height ? candidate : biggest;
+    });
+
+    const box = plot.getBoundingClientRect();
+    if (box.width < 80 || box.height < 80) continue; // still a swatch, not a plot
+
+    const shot = await svgToPng(plot as SVGSVGElement);
+    if (shot) out.push({ ...shot, title: holder.dataset.chart ?? "" });
+  }
+  return out;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function DataPipeline() {
@@ -296,6 +471,9 @@ export default function DataPipeline() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState<"" | "excel" | "pdf">("");
+  // "Summary report" collapses the PDF to totals + charts + rollups, dropping
+  // the per-visit table that made a full-year export 155 pages.
+  const [summaryPdf, setSummaryPdf] = useState(true);
 
   const LIMIT = 50;
 
@@ -371,12 +549,43 @@ export default function DataPipeline() {
       const payload: ExportPayload = {
         summary: json.summary,
         artistPerformance: json.artistPerformance,
+        customerSummary: json.customerSummary ?? [],
+        serviceSummary: json.serviceSummary ?? [],
+        totals: json.totals,
         rows: json.rows,
         range: json.range,
         filterSummary,
       };
-      if (kind === "excel") exportPipelineExcel(payload);
-      else exportPipelinePdf(payload);
+      if (kind === "excel") {
+        exportPipelineExcel(payload);
+      } else {
+        // Charts are rasterised from the live DOM, so the PDF shows exactly
+        // the plots on screen for the current filters.
+        // Captions restore the information Recharts keeps in its HTML legend,
+        // which is lost when only the SVG plot is rasterised.
+        const captions: Record<string, string> = {
+          "Payment Method Mix": (json.methodMix ?? [])
+            .map((m: { method: string; amount: number }) =>
+              `${m.method[0].toUpperCase() + m.method.slice(1)} ${inr(m.amount)}`)
+            .join("  ·  "),
+          "Gender Split": (json.genderSplit?.byCustomer ?? [])
+            .filter((g: { count: number }) => g.count > 0)
+            .map((g: { gender: string; count: number }) =>
+              `${GENDER_LABEL[g.gender] ?? g.gender} ${g.count}`)
+            .join("  ·  "),
+          "Artist Performance": (json.artistPerformance ?? [])
+            .slice(0, 3)
+            .map((a: ArtistPerf, i: number) => `#${i + 1} ${a.artist} ${inr(a.revenue)}`)
+            .join("  ·  "),
+          "Revenue Over Time": `${json.revenueSeries?.granularity ?? "day"} buckets  ·  peak ${inr(
+            Math.max(0, ...(json.revenueSeries?.series ?? []).map((x: { revenue: number }) => x.revenue))
+          )}`,
+        };
+        const charts = summaryPdf
+          ? (await captureCharts()).map((c) => ({ ...c, caption: captions[c.title] }))
+          : [];
+        exportPipelinePdf(payload, { mode: summaryPdf ? "summary" : "full", charts });
+      }
     } catch {
       setError("Export failed. Please try again.");
     } finally {
@@ -417,6 +626,130 @@ export default function DataPipeline() {
 
   const artistChartData = (data?.artistPerformance ?? []).slice(0, 12);
 
+  // ── Table columns per mode ────────────────────────────────────────────────
+  // Declaring columns as data keeps four very different table shapes readable,
+  // and lets the header, skeleton and body all derive from one definition.
+  const columns: Column[] = useMemo(() => {
+    if (tableMode === "customer") {
+      return [
+        { key: "name", label: "Customer", render: (r) => {
+          const c = r as CustomerRow;
+          return (<><p className="font-medium text-stone-800">{c.name}</p>
+            <p className="text-[11px] text-stone-400">{c.contact}</p></>);
+        }},
+        { key: "gender", label: "Gender", render: (r) => (
+          <span className="text-stone-600">{GENDER_LABEL[(r as CustomerRow).gender] ?? "—"}</span>) },
+        { key: "visits", label: "Visits", align: "right", render: (r) => (
+          <span className="text-stone-700 font-medium">{(r as CustomerRow).visits}</span>) },
+        { key: "spent", label: "Total Paid", align: "right", render: (r) => (
+          <span className="font-bold text-amber-600">{inr((r as CustomerRow).totalSpent)}</span>) },
+        { key: "avg", label: "Avg Ticket", align: "right", render: (r) => (
+          <span className="text-stone-600">{inr((r as CustomerRow).avgTicket)}</span>) },
+        { key: "disc", label: "Discount", align: "right", render: (r) => (
+          <span className="text-red-500">−{inr((r as CustomerRow).totalDiscount)}</span>) },
+        { key: "svc", label: "Services Taken", render: (r) => (
+          <Muted text={(r as CustomerRow).topServices} max={54} />) },
+        { key: "artists", label: "Artists Seen", render: (r) => (
+          <Muted text={(r as CustomerRow).artistLabel} max={34} />) },
+        { key: "last", label: "Last Visit", align: "right", render: (r) => (
+          <span className="text-stone-600">{fmtDate((r as CustomerRow).lastVisit)}</span>) },
+      ];
+    }
+
+    if (tableMode === "artist") {
+      return [
+        { key: "artist", label: "Artist", render: (r) => (
+          <span className="font-medium text-stone-800">{(r as ArtistPerf).artist}</span>) },
+        { key: "revenue", label: "Revenue", align: "right", render: (r) => (
+          <span className="font-bold text-amber-600">{inr((r as ArtistPerf).revenue)}</span>) },
+        { key: "rate", label: "Rate", align: "right", render: (r) => {
+          const a = r as ArtistPerf;
+          return a.commissionPct == null
+            ? <span className="text-stone-400" title="No artist record — commission rate unknown">n/a</span>
+            : <span className="text-stone-600">{a.commissionPct}%</span>;
+        }},
+        { key: "commission", label: "Commission Owed", align: "right", render: (r) => {
+          const a = r as ArtistPerf;
+          return a.commissionEarned == null
+            ? <span className="text-stone-400">—</span>
+            : <span className="font-semibold text-emerald-600">{inr(a.commissionEarned)}</span>;
+        }},
+        { key: "visits", label: "Visits", align: "right", render: (r) => (
+          <span className="text-stone-700">{(r as ArtistPerf).visits}</span>) },
+        { key: "services", label: "Services", align: "right", render: (r) => (
+          <span className="text-stone-700">{(r as ArtistPerf).services}</span>) },
+        { key: "customers", label: "Customers", align: "right", render: (r) => (
+          <span className="text-stone-700">{(r as ArtistPerf).uniqueCustomers ?? "—"}</span>) },
+        { key: "avg", label: "Avg / Visit", align: "right", render: (r) => (
+          <span className="text-stone-600">{inr((r as ArtistPerf).avgPerVisit ?? 0)}</span>) },
+        { key: "top", label: "Contributed To", render: (r) => (
+          <Muted text={(r as ArtistPerf).topServices ?? ""} max={56} />) },
+      ];
+    }
+
+    if (tableMode === "service") {
+      return [
+        { key: "service", label: "Service", render: (r) => (
+          <span className="font-medium text-stone-800">{(r as ServiceRow).service}</span>) },
+        { key: "count", label: "Times Sold", align: "right", render: (r) => (
+          <span className="text-stone-700 font-medium">{(r as ServiceRow).count}</span>) },
+        { key: "revenue", label: "Revenue", align: "right", render: (r) => (
+          <span className="font-bold text-amber-600">{inr((r as ServiceRow).revenue)}</span>) },
+        { key: "list", label: "At List Price", align: "right", render: (r) => (
+          <span className="text-stone-500">{inr((r as ServiceRow).listRevenue)}</span>) },
+        { key: "avg", label: "Avg Price", align: "right", render: (r) => (
+          <span className="text-stone-600">{inr((r as ServiceRow).avgPrice)}</span>) },
+        { key: "cust", label: "Customers", align: "right", render: (r) => (
+          <span className="text-stone-700">{(r as ServiceRow).uniqueCustomers}</span>) },
+        { key: "artists", label: "Artists", align: "right", render: (r) => (
+          <span className="text-stone-700">{(r as ServiceRow).artistCount}</span>) },
+      ];
+    }
+
+    // Default: per-visit rows.
+    return [
+      { key: "date", label: "Date", width: "110px", render: (r) => {
+        const v = r as PipelineRow;
+        return (<><p className="font-medium text-stone-800 whitespace-nowrap">{fmtDate(v.date)}</p>
+          {v.startTime && <p className="text-[11px] text-stone-400 mt-0.5 whitespace-nowrap">{v.startTime}–{v.endTime}</p>}</>);
+      }},
+      { key: "client", label: "Client", render: (r) => {
+        const v = r as PipelineRow;
+        return (<><p className="font-medium text-stone-800 truncate max-w-[130px]" title={v.name}>{v.name}</p>
+          <p className="text-[11px] text-stone-400">{v.contact}</p></>);
+      }},
+      { key: "artist", label: "Artist", render: (r) => {
+        const v = r as PipelineRow;
+        return (
+          <div className="flex flex-wrap gap-1 max-w-[170px]">
+            {v.artists.length > 0 ? v.artists.map((a) => (
+              <span key={a} className="inline-block px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium whitespace-nowrap">{a}</span>
+            )) : <span className="text-stone-500">{v.artistLabel}</span>}
+          </div>);
+      }},
+      { key: "services", label: "Services", render: (r) => (
+        <div className="flex flex-wrap gap-1 max-w-[220px]">
+          {(r as PipelineRow).services.map((s, i) => (
+            <span key={i} className="inline-block px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 text-[11px] font-medium whitespace-nowrap">{s.name}</span>
+          ))}
+        </div>) },
+      { key: "subtotal", label: "Subtotal", align: "right", render: (r) => (
+        <span className="text-stone-600">{inr((r as PipelineRow).subtotal)}</span>) },
+      { key: "discount", label: "Discount", align: "right", render: (r) => {
+        const v = r as PipelineRow;
+        return v.discountAmount > 0
+          ? (<span className="text-red-500">−{inr(v.discountAmount)}<span className="text-[10px] text-stone-400 ml-1">({v.discountPercent}%)</span></span>)
+          : <span className="text-stone-400">—</span>;
+      }},
+      { key: "total", label: "Total", align: "right", render: (r) => (
+        <span className="font-bold text-amber-600">{inr((r as PipelineRow).finalTotal)}</span>) },
+      { key: "payment", label: "Payment", render: (r) => {
+        const v = r as PipelineRow;
+        return <PaymentCell lines={v.paymentLines} isSplit={v.isSplit} />;
+      }},
+    ];
+  }, [tableMode]);
+
   const summaryCards = summary
     ? [
         { label: "Total Revenue", value: inr(summary.totalRevenue), sub: `${summary.totalVisits} visits` },
@@ -444,6 +777,12 @@ export default function DataPipeline() {
           sub: summary.splitVisits > 0 ? inr(summary.splitRevenue) : "none in range",
           tone: "text-amber-600",
         },
+        {
+          label: "Commission Owed",
+          value: inr(data?.totals?.commissionOwed ?? 0),
+          sub: `${data?.totals?.artists ?? 0} artists`,
+          tone: "text-stone-900",
+        },
       ]
     : [];
 
@@ -463,7 +802,8 @@ export default function DataPipeline() {
             Filter across date, customer, artist, gender and payment method — then export exactly what you see
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col items-stretch sm:items-end gap-2">
+          <div className="flex gap-2">
           <button
             onClick={() => runExport("excel")}
             disabled={!!exporting || loading}
@@ -478,6 +818,38 @@ export default function DataPipeline() {
           >
             <FileText className="w-4 h-4" /> {exporting === "pdf" ? "Preparing…" : "PDF"}
           </button>
+          </div>
+
+          {/* Report depth — a full year of visit rows is ~155 pages, so the
+              condensed report is the default. */}
+          <label className="flex items-center gap-2 cursor-pointer select-none self-end">
+            <span className={`text-xs ${summaryPdf ? "text-stone-400" : "text-stone-600 font-medium"}`}>
+              Full detail
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={summaryPdf}
+              onClick={() => setSummaryPdf((v) => !v)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                summaryPdf ? "bg-amber-500" : "bg-stone-300"
+              }`}
+              title={
+                summaryPdf
+                  ? "PDF shows totals, charts and ranked customer / artist / service tables"
+                  : "PDF also appends every individual visit — long for wide date ranges"
+              }
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+                  summaryPdf ? "left-[1.125rem]" : "left-0.5"
+                }`}
+              />
+            </button>
+            <span className={`text-xs ${summaryPdf ? "text-stone-800 font-medium" : "text-stone-400"}`}>
+              Summary report
+            </span>
+          </label>
         </div>
       </div>
 
@@ -640,7 +1012,7 @@ export default function DataPipeline() {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             {methodCards.map((c) => (
               <Card key={c.label} className="p-5">
                 <p className={`text-2xl font-black ${c.tone}`}>{c.value}</p>
@@ -800,64 +1172,56 @@ export default function DataPipeline() {
 
       {/* ── Table ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-        <h3 className="text-lg font-semibold text-stone-900">
-          {tableMode === "visit" ? "Visits" : "Customers"}
-          {pagination && <span className="text-sm font-normal text-stone-500 ml-2">{pagination.total} rows</span>}
-        </h3>
+        <div>
+          <h3 className="text-lg font-semibold text-stone-900">
+            {MODE_META[tableMode].title}
+            {pagination && (
+              <span className="text-sm font-normal text-stone-500 ml-2">{pagination.total} rows</span>
+            )}
+          </h3>
+          <p className="text-xs text-stone-500 mt-0.5">{MODE_META[tableMode].blurb}</p>
+        </div>
         <div className="flex items-center gap-1 bg-stone-100 rounded-xl p-1">
-          <button
-            onClick={() => setTableMode("visit")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              tableMode === "visit" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"
-            }`}
-          >
-            <Receipt className="w-3.5 h-3.5" /> Per visit
-          </button>
-          <button
-            onClick={() => setTableMode("customer")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              tableMode === "customer" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" /> Unique customers
-          </button>
+          {(Object.keys(MODE_META) as TableMode[]).map((mode) => {
+            const Icon = MODE_META[mode].icon;
+            return (
+              <button
+                key={mode}
+                onClick={() => setTableMode(mode)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  tableMode === mode ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" /> {MODE_META[mode].label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <Card className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: tableMode === "visit" ? "1180px" : "900px" }}>
+        <table className="w-full text-sm" style={{ minWidth: MODE_META[tableMode].minWidth }}>
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
-              {tableMode === "visit" ? (
-                <>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Date</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Client</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Artist</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Services</th>
-                  <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Subtotal</th>
-                  <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Discount</th>
-                  <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Total</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Payment</th>
-                </>
-              ) : (
-                <>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Customer</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Gender</th>
-                  <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Visits</th>
-                  <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Total Spent</th>
-                  <th className="text-right px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Avg Ticket</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Artists Seen</th>
-                  <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500">Last Visit</th>
-                </>
-              )}
+              {columns.map((c) => (
+                <th
+                  key={c.key}
+                  className={`px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-stone-500 ${
+                    c.align === "right" ? "text-right" : "text-left"
+                  }`}
+                  style={c.width ? { width: c.width } : undefined}
+                >
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-stone-100">
-                  {Array.from({ length: tableMode === "visit" ? 8 : 7 }).map((__, j) => (
-                    <td key={j} className="px-4 py-3.5">
+                  {columns.map((c) => (
+                    <td key={c.key} className="px-4 py-3.5">
                       <div className="h-4 bg-stone-100 rounded animate-pulse" />
                     </td>
                   ))}
@@ -865,93 +1229,31 @@ export default function DataPipeline() {
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-16 text-center text-stone-400 text-sm">
-                  No {tableMode === "visit" ? "visits" : "customers"} matched the active filters.
+                <td colSpan={columns.length} className="px-6 py-16 text-center text-stone-400 text-sm">
+                  No {MODE_META[tableMode].noun} matched the active filters.
                 </td>
               </tr>
             ) : (
-              rows.map((row) =>
-                isCustomerRow(row) ? (
-                  <tr key={row.id} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
-                    <td className="px-4 py-3.5">
-                      <p className="font-medium text-stone-800">{row.name}</p>
-                      <p className="text-[11px] text-stone-400">{row.contact}</p>
+              rows.map((row, i) => (
+                <tr
+                  key={(row as { id?: string }).id ?? i}
+                  className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors"
+                >
+                  {columns.map((c) => (
+                    <td
+                      key={c.key}
+                      className={`px-4 py-3.5 ${c.align === "right" ? "text-right whitespace-nowrap" : ""}`}
+                    >
+                      {c.render(row)}
                     </td>
-                    <td className="px-4 py-3.5 text-stone-600">{GENDER_LABEL[row.gender] ?? row.gender}</td>
-                    <td className="px-4 py-3.5 text-right text-stone-700 font-medium">{row.visits}</td>
-                    <td className="px-4 py-3.5 text-right font-bold text-amber-600">{inr(row.totalSpent)}</td>
-                    <td className="px-4 py-3.5 text-right text-stone-600">{inr(row.avgTicket)}</td>
-                    <td className="px-4 py-3.5 text-stone-600 text-xs">{row.artistLabel}</td>
-                    <td className="px-4 py-3.5 text-stone-600 whitespace-nowrap">{fmtDate(row.lastVisit)}</td>
-                  </tr>
-                ) : (
-                  <tr key={row.id} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
-                    <td className="px-4 py-3.5">
-                      <p className="font-medium text-stone-800 whitespace-nowrap">{fmtDate(row.date)}</p>
-                      {row.startTime && (
-                        <p className="text-[11px] text-stone-400 mt-0.5 whitespace-nowrap">
-                          {row.startTime}–{row.endTime}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <p className="font-medium text-stone-800 truncate max-w-[130px]" title={row.name}>
-                        {row.name}
-                      </p>
-                      <p className="text-[11px] text-stone-400">{row.contact}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex flex-wrap gap-1 max-w-[170px]">
-                        {row.artists.length > 0 ? (
-                          row.artists.map((a) => (
-                            <span
-                              key={a}
-                              className="inline-block px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium whitespace-nowrap"
-                            >
-                              {a}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-stone-500">{row.artistLabel}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex flex-wrap gap-1 max-w-[220px]">
-                        {row.services.map((s, i) => (
-                          <span
-                            key={i}
-                            className="inline-block px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 text-[11px] font-medium whitespace-nowrap"
-                          >
-                            {s.name}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-stone-600 whitespace-nowrap">{inr(row.subtotal)}</td>
-                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                      {row.discountAmount > 0 ? (
-                        <span className="text-red-500">
-                          −{inr(row.discountAmount)}
-                          <span className="text-[10px] text-stone-400 ml-1">({row.discountPercent}%)</span>
-                        </span>
-                      ) : (
-                        <span className="text-stone-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-right whitespace-nowrap font-bold text-amber-600">
-                      {inr(row.finalTotal)}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <PaymentCell lines={row.paymentLines} isSplit={row.isSplit} />
-                    </td>
-                  </tr>
-                )
-              )
+                  ))}
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </Card>
+
 
       {/* ── Pagination ── */}
       {pagination && pagination.pages > 1 && (

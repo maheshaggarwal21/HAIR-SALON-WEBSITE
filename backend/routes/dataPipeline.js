@@ -17,6 +17,7 @@
 const express = require("express");
 const connectDB = require("../db");
 const Visit = require("../models/Visit");
+const Artist = require("../models/Artist");
 const { authorizePermission } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require("../constants/permissions");
 const { derivePaymentLines, describePaymentLines, buildMethodMatch } = require("../utils/paymentLines");
@@ -164,9 +165,11 @@ function buildRow(visit, artistFilter) {
   services.forEach((service, index) => {
     const name = String(service.artistName || "").trim() || String(visit.artist || "").trim();
     if (!name || name === MULTI_ARTIST_MARKER) return;
-    const prev = perArtist.get(name) || { revenue: 0, services: 0 };
+    const prev = perArtist.get(name) || { revenue: 0, services: 0, serviceNames: [] };
     prev.revenue += allocations[index] ?? 0;
     prev.services += 1;
+    // Kept so the artist rollup can report which services each artist performed.
+    prev.serviceNames.push({ name: service.name, revenue: allocations[index] ?? 0 });
     perArtist.set(name, prev);
   });
 
@@ -177,6 +180,7 @@ function buildRow(visit, artistFilter) {
       perArtist.set(legacy, {
         revenue: Math.round(Number(visit.finalTotal) || 0),
         services: services.length,
+        serviceNames: services.map((s, i) => ({ name: s.name, revenue: allocations[i] ?? 0 })),
       });
     }
   }
@@ -211,6 +215,23 @@ function buildRow(visit, artistFilter) {
         )?.revenue ?? null)
       : null,
   };
+}
+
+/**
+ * Commission rate per artist, keyed by lower-cased name.
+ *
+ * Keyed by name rather than id because ~10% of visits are legacy rows that only
+ * ever stored the artist's name. A name with no Artist record (e.g. "Dilpreet")
+ * is simply absent, and reports a null rate rather than a misleading ₹0.
+ */
+async function loadCommissionRates() {
+  const artists = await Artist.find({}, { name: 1, commission: 1 }).lean();
+  const map = new Map();
+  for (const a of artists) {
+    const key = String(a.name || "").trim().toLowerCase();
+    if (key) map.set(key, Number(a.commission) || 0);
+  }
+  return map;
 }
 
 /** Fetch and normalise every visit matching the filters. */
@@ -325,24 +346,181 @@ function buildMethodMix(rows) {
     .filter((d) => d.amount > 0);
 }
 
-/** Bar data: revenue + visit count per artist, credited per service. */
-function buildArtistPerformance(rows) {
+/** Top-N service names by count, as a compact "Beard Trim ×12, Haircut ×4" label. */
+function topServiceLabel(counts, limit = 4) {
+  const sorted = [...counts.entries()].sort((a, b) => b[1].count - a[1].count);
+  const head = sorted.slice(0, limit).map(([name, v]) => `${name} ×${v.count}`);
+  const rest = sorted.length - head.length;
+  return head.join(", ") + (rest > 0 ? `, +${rest} more` : "");
+}
+
+/**
+ * Bar data + artist rollup: revenue, visits, services and commission owed.
+ *
+ * `commissionEarned` is what the artist is due — their attributed revenue times
+ * their commission rate from the Artist record. Artists on 0% (and legacy names
+ * with no Artist record at all) report 0 with a null rate, so a blank column
+ * reads as "no rate configured" rather than "earned nothing".
+ */
+function buildArtistPerformance(rows, commissionByName = new Map()) {
   const byArtist = new Map();
   for (const row of rows) {
     for (const entry of row.perArtist) {
-      const acc = byArtist.get(entry.artist) || { artist: entry.artist, revenue: 0, visitIds: new Set(), services: 0 };
+      const acc = byArtist.get(entry.artist) || {
+        artist: entry.artist,
+        revenue: 0,
+        visitIds: new Set(),
+        services: 0,
+        customers: new Set(),
+        serviceCounts: new Map(),
+      };
       acc.revenue += entry.revenue;
       acc.services += entry.services;
       acc.visitIds.add(row.id);
+      if (row.contact) acc.customers.add(row.contact);
+      for (const svc of entry.serviceNames || []) {
+        const key = svc.name || "Unnamed";
+        const prev = acc.serviceCounts.get(key) || { count: 0, revenue: 0 };
+        prev.count += 1;
+        prev.revenue += svc.revenue || 0;
+        acc.serviceCounts.set(key, prev);
+      }
       byArtist.set(entry.artist, acc);
     }
   }
+
   return [...byArtist.values()]
-    .map((a) => ({
-      artist: a.artist,
-      revenue: Math.round(a.revenue),
-      visits: a.visitIds.size,
-      services: a.services,
+    .map((a) => {
+      const revenue = Math.round(a.revenue);
+      const pct = commissionByName.has(a.artist.toLowerCase())
+        ? Number(commissionByName.get(a.artist.toLowerCase()))
+        : null;
+      return {
+        artist: a.artist,
+        revenue,
+        visits: a.visitIds.size,
+        services: a.services,
+        uniqueCustomers: a.customers.size,
+        avgPerVisit: a.visitIds.size > 0 ? Math.round(revenue / a.visitIds.size) : 0,
+        commissionPct: pct,
+        commissionEarned: pct != null ? Math.round((revenue * pct) / 100) : null,
+        topServices: topServiceLabel(a.serviceCounts),
+        serviceBreakdown: [...a.serviceCounts.entries()]
+          .map(([name, v]) => ({ name, count: v.count, revenue: Math.round(v.revenue) }))
+          .sort((x, y) => y.revenue - x.revenue),
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+/**
+ * Per-customer rollup: what each client has spent across the filtered range,
+ * and which services they took. One row per contact — never repeated.
+ */
+function buildCustomerSummary(rows) {
+  const byContact = new Map();
+
+  for (const row of rows) {
+    const key = row.contact || row.name;
+    if (!key) continue;
+    const acc = byContact.get(key) || {
+      contact: row.contact,
+      name: row.name,
+      gender: row.gender,
+      visits: 0,
+      totalSpent: 0,
+      totalDiscount: 0,
+      firstVisit: row.date,
+      lastVisit: row.date,
+      serviceCounts: new Map(),
+      artists: new Set(),
+      methods: new Set(),
+    };
+
+    acc.visits += 1;
+    acc.totalSpent += row.finalTotal;
+    acc.totalDiscount += row.discountAmount;
+    if (new Date(row.date) > new Date(acc.lastVisit)) {
+      acc.lastVisit = row.date;
+      acc.name = row.name;      // most recent spelling of the name
+      acc.gender = row.gender;  // gender is per-visit; take the latest
+    }
+    if (new Date(row.date) < new Date(acc.firstVisit)) acc.firstVisit = row.date;
+    for (const svc of row.services) {
+      const prev = acc.serviceCounts.get(svc.name) || { count: 0 };
+      prev.count += 1;
+      acc.serviceCounts.set(svc.name, prev);
+    }
+    row.artists.forEach((a) => acc.artists.add(a));
+    row.paymentLines.forEach((l) => acc.methods.add(l.method));
+    byContact.set(key, acc);
+  }
+
+  return [...byContact.values()]
+    .map((c) => ({
+      id: c.contact || c.name,
+      contact: c.contact,
+      name: c.name,
+      gender: c.gender,
+      visits: c.visits,
+      totalSpent: Math.round(c.totalSpent),
+      totalDiscount: Math.round(c.totalDiscount),
+      avgTicket: c.visits > 0 ? Math.round(c.totalSpent / c.visits) : 0,
+      firstVisit: c.firstVisit,
+      lastVisit: c.lastVisit,
+      serviceCount: [...c.serviceCounts.values()].reduce((s, v) => s + v.count, 0),
+      topServices: topServiceLabel(c.serviceCounts),
+      serviceBreakdown: [...c.serviceCounts.entries()]
+        .map(([name, v]) => ({ name, count: v.count }))
+        .sort((x, y) => y.count - x.count),
+      artists: [...c.artists],
+      artistLabel: [...c.artists].join(", ") || "—",
+      methods: [...c.methods],
+      methodLabel: [...c.methods].map((m) => m[0].toUpperCase() + m.slice(1)).join(", ") || "—",
+    }))
+    .sort((a, b) => b.totalSpent - a.totalSpent);
+}
+
+/**
+ * Per-service rollup: how often each service sold and what it brought in.
+ * Revenue is the discount-apportioned share, so the column sums to total revenue.
+ */
+function buildServiceSummary(rows) {
+  const byService = new Map();
+
+  for (const row of rows) {
+    // Re-apportion this visit's discounted total across its service lines.
+    const prices = row.services.map((s) => s.price);
+    const sub = prices.reduce((a, b) => a + b, 0);
+    row.services.forEach((svc, i) => {
+      const key = svc.name || "Unnamed";
+      const share = sub > 0 ? (prices[i] / sub) * row.finalTotal : row.finalTotal / (row.services.length || 1);
+      const acc = byService.get(key) || {
+        service: key,
+        count: 0,
+        revenue: 0,
+        customers: new Set(),
+        artists: new Set(),
+        listPrice: 0,
+      };
+      acc.count += 1;
+      acc.revenue += share;
+      acc.listPrice += svc.price;
+      if (row.contact) acc.customers.add(row.contact);
+      row.artists.forEach((a) => acc.artists.add(a));
+      byService.set(key, acc);
+    });
+  }
+
+  return [...byService.values()]
+    .map((s) => ({
+      service: s.service,
+      count: s.count,
+      revenue: Math.round(s.revenue),
+      listRevenue: Math.round(s.listPrice),
+      avgPrice: s.count > 0 ? Math.round(s.listPrice / s.count) : 0,
+      uniqueCustomers: s.customers.size,
+      artistCount: s.artists.size,
     }))
     .sort((a, b) => b.revenue - a.revenue);
 }
@@ -381,60 +559,36 @@ router.get("/", authorizePermission(PERMISSIONS.DATAPIPELINE_VIEW), async (req, 
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
-    const groupByCustomer = String(req.query.groupBy || "").toLowerCase() === "customer";
+    const groupBy = ["visit", "customer", "artist", "service"].includes(
+      String(req.query.groupBy || "").toLowerCase()
+    )
+      ? String(req.query.groupBy).toLowerCase()
+      : "visit";
 
-    const { rows, from, to, truncated } = await loadRows(req.query);
+    const [{ rows, from, to, truncated }, commissionByName] = await Promise.all([
+      loadRows(req.query),
+      loadCommissionRates(),
+    ]);
 
     const artistFilter = req.query.artist ? String(req.query.artist).trim() : "";
     const summary = buildSummary(rows, artistFilter);
     const revenueSeries = buildRevenueSeries(rows, from, to);
     const methodMix = buildMethodMix(rows);
-    const artistPerformance = buildArtistPerformance(rows);
+    const artistPerformance = buildArtistPerformance(rows, commissionByName);
     const genderSplit = buildGenderSplit(rows);
+    const customerSummary = buildCustomerSummary(rows);
+    const serviceSummary = buildServiceSummary(rows);
 
-    // The table can show one row per visit, or one row per unique customer.
-    let tableRows;
-    if (groupByCustomer) {
-      const byContact = new Map();
-      for (const row of rows) {
-        const key = row.contact || row.name;
-        const acc = byContact.get(key) || {
-          id: key,
-          contact: row.contact,
-          name: row.name,
-          gender: row.gender,
-          visits: 0,
-          totalSpent: 0,
-          totalDiscount: 0,
-          lastVisit: row.date,
-          firstVisit: row.date,
-          artists: new Set(),
-          methods: new Set(),
-        };
-        acc.visits += 1;
-        acc.totalSpent += row.finalTotal;
-        acc.totalDiscount += row.discountAmount;
-        if (new Date(row.date) > new Date(acc.lastVisit)) acc.lastVisit = row.date;
-        if (new Date(row.date) < new Date(acc.firstVisit)) acc.firstVisit = row.date;
-        row.artists.forEach((a) => acc.artists.add(a));
-        row.paymentLines.forEach((l) => acc.methods.add(l.method));
-        byContact.set(key, acc);
-      }
-      tableRows = [...byContact.values()]
-        .map((c) => ({
-          ...c,
-          artists: [...c.artists],
-          artistLabel: [...c.artists].join(", ") || "—",
-          methods: [...c.methods],
-          methodLabel: [...c.methods].map((m) => m[0].toUpperCase() + m.slice(1)).join(", ") || "—",
-          totalSpent: Math.round(c.totalSpent),
-          totalDiscount: Math.round(c.totalDiscount),
-          avgTicket: c.visits > 0 ? Math.round(c.totalSpent / c.visits) : 0,
-        }))
-        .sort((a, b) => b.totalSpent - a.totalSpent);
-    } else {
-      tableRows = rows;
-    }
+    // The table pivots between raw visits and three rollups, all derived from
+    // the same filtered row set so every view reconciles to the same totals.
+    const tableRows =
+      groupBy === "customer"
+        ? customerSummary
+        : groupBy === "artist"
+          ? artistPerformance
+          : groupBy === "service"
+            ? serviceSummary
+            : rows;
 
     const total = tableRows.length;
     const start = (page - 1) * limit;
@@ -445,8 +599,17 @@ router.get("/", authorizePermission(PERMISSIONS.DATAPIPELINE_VIEW), async (req, 
       methodMix,
       artistPerformance,
       genderSplit,
+      customerSummary,
+      serviceSummary,
+      totals: {
+        customers: customerSummary.length,
+        artists: artistPerformance.length,
+        services: serviceSummary.length,
+        visits: rows.length,
+        commissionOwed: artistPerformance.reduce((s, a) => s + (a.commissionEarned || 0), 0),
+      },
       rows: tableRows.slice(start, start + limit),
-      groupBy: groupByCustomer ? "customer" : "visit",
+      groupBy,
       pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
       range: { from: toDateKey(from), to: toDateKey(to) },
       truncated,
@@ -508,13 +671,30 @@ router.get("/options", authorizePermission(PERMISSIONS.DATAPIPELINE_VIEW), async
 router.get("/export", authorizePermission(PERMISSIONS.DATAPIPELINE_VIEW), async (req, res) => {
   try {
     await connectDB();
-    const { rows, from, to, truncated } = await loadRows(req.query);
+    const [{ rows, from, to, truncated }, commissionByName] = await Promise.all([
+      loadRows(req.query),
+      loadCommissionRates(),
+    ]);
+
+    const artistPerformance = buildArtistPerformance(rows, commissionByName);
+    const customerSummary = buildCustomerSummary(rows);
+    const serviceSummary = buildServiceSummary(rows);
 
     return res.json({
       summary: buildSummary(rows, req.query.artist ? String(req.query.artist).trim() : ""),
-      artistPerformance: buildArtistPerformance(rows),
+      artistPerformance,
+      customerSummary,
+      serviceSummary,
       methodMix: buildMethodMix(rows),
       genderSplit: buildGenderSplit(rows),
+      revenueSeries: buildRevenueSeries(rows, from, to),
+      totals: {
+        customers: customerSummary.length,
+        artists: artistPerformance.length,
+        services: serviceSummary.length,
+        visits: rows.length,
+        commissionOwed: artistPerformance.reduce((s, a) => s + (a.commissionEarned || 0), 0),
+      },
       rows,
       range: { from: toDateKey(from), to: toDateKey(to) },
       truncated,
