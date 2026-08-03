@@ -194,15 +194,24 @@ app.post(
       return res.status(400).json({ error: "Malformed payload" });
     }
 
-    // Acknowledge immediately. Razorpay retries on non-2xx, and a slow database
-    // must not turn into a retry storm; the work below is idempotent anyway.
-    res.status(200).json({ received: true });
-
+    // The database write MUST finish before responding.
+    //
+    // This function runs on Vercel, where the instance is frozen as soon as the
+    // response is sent — any work started after res.send() may simply never
+    // execute. An earlier version acknowledged first and persisted afterwards;
+    // it passed locally on a long-lived node process and silently dropped every
+    // write in production, which is the exact failure this endpoint exists to
+    // prevent. Razorpay allows several seconds, the write is a single indexed
+    // upsert, and a 5xx makes Razorpay retry — which is the behaviour we want if
+    // the database is briefly unavailable.
     try {
       const type = event?.event;
       const payment = event?.payload?.payment?.entity;
-      if (!payment?.id) return;
-      if (!["payment.captured", "payment.authorized", "payment.failed"].includes(type)) return;
+      // Nothing to record, but acknowledge so Razorpay stops retrying.
+      if (!payment?.id) return res.status(200).json({ received: true, ignored: "no payment entity" });
+      if (!["payment.captured", "payment.authorized", "payment.failed"].includes(type)) {
+        return res.status(200).json({ received: true, ignored: type });
+      }
 
       await connectDB();
       const PaymentEvent = require("./models/PaymentEvent");
@@ -245,9 +254,13 @@ app.post(
             `from ${payment.contact || "unknown"} — captured with no matching visit`
         );
       }
+
+      return res.status(200).json({ received: true, reconciled: !!visit });
     } catch (err) {
-      // Response already sent; log loudly so the gap is visible.
+      // Persisting failed. Return 5xx so Razorpay retries rather than treating
+      // the payment as recorded — a retry is exactly the safety net we want.
       console.error("[webhook] processing error:", err.message);
+      return res.status(500).json({ error: "Failed to record payment event" });
     }
   }
 );
@@ -647,12 +660,18 @@ app.get("/api/health", async (_req, res) => {
       status: "ok",
       mongoState: mongoose.connection.readyState, // 0=disconnected,1=connected,2=connecting,3=disconnecting
       mongoUri: process.env.MONGODB_URI ? "set" : "NOT SET",
+      // Reports only whether the value exists, never the value itself — so a
+      // misconfigured webhook can be diagnosed without dashboard access.
+      webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ? "set" : "NOT SET",
     });
   } catch (err) {
     res.status(500).json({
       status: "error",
       mongoState: mongoose.connection.readyState,
       mongoUri: process.env.MONGODB_URI ? "set" : "NOT SET",
+      // Reports only whether the value exists, never the value itself — so a
+      // misconfigured webhook can be diagnosed without dashboard access.
+      webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ? "set" : "NOT SET",
       error: err.message,
     });
   }
