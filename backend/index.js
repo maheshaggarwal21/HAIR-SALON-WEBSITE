@@ -151,6 +151,107 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+/**
+ * POST /api/razorpay/webhook
+ *
+ * Razorpay calls this server-to-server the moment a payment is captured, so a
+ * payment is recorded even if the customer's browser never completes the
+ * follow-up calls that create the Visit. Reconciliation found 14 payments
+ * (₹3,185.70) lost exactly that way before this existed.
+ *
+ * Mounted HERE, above express.json(), because the signature is computed over
+ * the raw request body — parsing it first would change the bytes and every
+ * signature check would fail. It also sits above the session and rate-limit
+ * middleware: Razorpay has no cookie, and throttling a payment notification is
+ * how money goes missing in the first place.
+ */
+app.post(
+  "/api/razorpay/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error("[webhook] RAZORPAY_WEBHOOK_SECRET is not set — rejecting");
+      return res.status(503).json({ error: "Webhook not configured" });
+    }
+
+    const signature = req.get("x-razorpay-signature") || "";
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ""));
+
+    const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+    const sigBuf = Buffer.from(signature, "utf8");
+    const expBuf = Buffer.from(expected, "utf8");
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      console.warn("[webhook] signature mismatch — ignoring");
+      return res.status(400).json({ error: "Invalid signature" });
+    }
+
+    let event;
+    try {
+      event = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      return res.status(400).json({ error: "Malformed payload" });
+    }
+
+    // Acknowledge immediately. Razorpay retries on non-2xx, and a slow database
+    // must not turn into a retry storm; the work below is idempotent anyway.
+    res.status(200).json({ received: true });
+
+    try {
+      const type = event?.event;
+      const payment = event?.payload?.payment?.entity;
+      if (!payment?.id) return;
+      if (!["payment.captured", "payment.authorized", "payment.failed"].includes(type)) return;
+
+      await connectDB();
+      const PaymentEvent = require("./models/PaymentEvent");
+      const Visit = require("./models/Visit");
+
+      // Already recorded by the browser flow? Then this is simply confirmation.
+      const visit = await Visit.findOne({ razorpayPaymentId: payment.id })
+        .select("_id")
+        .lean();
+
+      await PaymentEvent.findOneAndUpdate(
+        { razorpayPaymentId: payment.id },
+        {
+          $set: {
+            razorpayOrderId: payment.order_id || null,
+            amount: Math.round((payment.amount || 0) / 100),
+            currency: payment.currency || "INR",
+            method: payment.method || null,
+            contact: String(payment.contact || "").replace(/^\+91/, "") || null,
+            customerName: payment.notes?.customer_name || null,
+            email: payment.email || null,
+            status: payment.status || "captured",
+            capturedAt: payment.created_at ? new Date(payment.created_at * 1000) : new Date(),
+            source: "webhook",
+            raw: payment,
+            ...(visit
+              ? { reconcileStatus: "matched", reconciledVisitId: visit._id, reconciledAt: new Date() }
+              : {}),
+          },
+          // Only default to "unmatched" on insert, so a later webhook retry
+          // cannot undo a reconciliation that already happened.
+          $setOnInsert: visit ? {} : { reconcileStatus: "unmatched" },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      if (!visit && payment.status === "captured") {
+        console.warn(
+          `[webhook] UNRECONCILED PAYMENT ${payment.id} ₹${Math.round((payment.amount || 0) / 100)} ` +
+            `from ${payment.contact || "unknown"} — captured with no matching visit`
+        );
+      }
+    } catch (err) {
+      // Response already sent; log loudly so the gap is visible.
+      console.error("[webhook] processing error:", err.message);
+    }
+  }
+);
+
 app.use(express.json());
 
 // Lazy owner-seed + DB warm-up on the first request
@@ -162,8 +263,32 @@ app.use(async (_req, _res, next) => {
 // Security headers
 app.use(helmet());
 
-// Global rate limiter — 200 requests per 15 min per IP
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false }));
+/**
+ * Global rate limiter — 200 requests per 15 min per IP.
+ *
+ * Every device in the salon shares one public IP, so a busy afternoon can burn
+ * through this budget. Payment-completion endpoints are therefore exempt: if
+ * `/verify-order-payment` or the visit-create call is throttled AFTER Razorpay
+ * has taken the money, the payment is captured with nothing to show for it.
+ * That is precisely the failure that lost 14 payments. Browsing endpoints stay
+ * limited; the ones that close out a transaction never are.
+ */
+const PAYMENT_CRITICAL = [
+  "/api/verify-order-payment",
+  "/api/create-order",
+  "/api/visits",          // covers /visits, /visits/v2 and confirm-assignment
+  "/api/razorpay/webhook",
+];
+
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => PAYMENT_CRITICAL.some((p) => req.path.startsWith(p)),
+  })
+);
 
 // ── Session middleware (stored in MongoDB) ────────────────────────────────────
 app.use(session({

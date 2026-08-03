@@ -21,6 +21,29 @@ import {
 // 05:30 IST to the previous day.
 const today = toLocalDateKey(new Date());
 
+/**
+ * Retry a call that runs after money has already changed hands.
+ *
+ * A single 429 or dropped connection between Razorpay capturing the payment and
+ * the visit being saved used to lose the record permanently. Three attempts with
+ * a short backoff covers the transient cases; anything still failing is surfaced
+ * to staff rather than swallowed.
+ */
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 800): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
 const EMPTY_FORM: VisitFormData = {
   name: "",
   phone: "",
@@ -357,25 +380,51 @@ export function useVisitForm() {
             setPaymentError("Payment was cancelled. Please try again.");
           },
         },
+        /**
+         * Runs AFTER Razorpay has already taken the customer's money.
+         *
+         * Everything in here must be guarded. This callback previously had no
+         * try/catch, so a throw from either call became an unhandled promise
+         * rejection: silently swallowed, `setIsLoading(false)` never ran, and
+         * staff were left on a "Processing…" spinner with the payment captured
+         * and no visit recorded. That lost 14 payments (₹3,185.70) before it
+         * was found. The money is already gone by this point, so a failure here
+         * must be loud and must surface the payment id.
+         */
         handler: async (response: RazorpayResponse) => {
-          const result = await verifyOrderPayment({
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature,
-            name: formData.name.trim(),
-            phone: formData.phone.trim(),
-            amount: order.amount,
-          });
+          try {
+            const result = await withRetry(() =>
+              verifyOrderPayment({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                name: formData.name.trim(),
+                phone: formData.phone.trim(),
+                amount: order.amount,
+              })
+            );
 
-          if (result.success) {
-            await persistDraft({
-              paymentMethod: formData.paymentMode === "partial" ? "partial" : "online",
-              razorpayPaymentId: result.payment_id,
-              cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
-              onlineAmount: chargeOnline,
-            });
-          } else {
-            setPaymentError("Payment verification failed. Contact support.");
+            if (!result.success) {
+              throw new Error("Payment verification failed");
+            }
+
+            await withRetry(() =>
+              persistDraft({
+                paymentMethod: formData.paymentMode === "partial" ? "partial" : "online",
+                razorpayPaymentId: result.payment_id,
+                cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
+                onlineAmount: chargeOnline,
+              })
+            );
+          } catch (err) {
+            const paymentId = response.razorpay_payment_id;
+            console.error("[visit] post-payment save failed", paymentId, err);
+            setPaymentError(
+              `PAYMENT RECEIVED but the visit could not be saved. ` +
+                `The money HAS been collected — do not charge the customer again. ` +
+                `Note this reference and report it: ${paymentId}. ` +
+                `${err instanceof Error ? `(${err.message})` : ""}`
+            );
             setIsLoading(false);
           }
         },
