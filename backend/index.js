@@ -308,15 +308,34 @@ app.use(session({
   secret: process.env.SESSION_SECRET || "dev-secret-change-in-prod",
   resave: false,
   saveUninitialized: false,
+  /**
+   * Extend the cookie on every response, so maxAge behaves as an INACTIVITY
+   * timeout rather than a hard deadline counted from sign-in.
+   *
+   * Without this (the express-session default is `rolling: false`) the cookie
+   * expiry is stamped once at login and never moves, no matter how much the
+   * user is doing. Staff signing in when the salon opens at ~08:45–09:30 were
+   * therefore thrown out at ~16:45–17:30 mid-shift, exactly the window they
+   * reported. It is also the likely trigger for the payments lost on 31 July:
+   * an expired session returns 401 to the post-payment save, which used to fail
+   * silently after Razorpay had already taken the money.
+   *
+   * Note the store's `touchAfter` does NOT do this — it only throttles how often
+   * the session document is rewritten in Mongo. Only `rolling` moves the cookie.
+   */
+  rolling: true,
   store: MongoStore.create({
     mongoUrl: process.env.MONGODB_URI,
-    touchAfter: 3600, // renew session TTL every hour so 8h maxAge resets on activity
+    // Rewrite the stored session at most hourly. Combined with `rolling`, the
+    // record is refreshed well within the 8h window during any active shift.
+    touchAfter: 3600,
   }),
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 8 * 60 * 60 * 1000, // 8 hours
+    // 8 hours of INACTIVITY, refreshed on every request by `rolling` above.
+    maxAge: 8 * 60 * 60 * 1000,
   },
 }));
 
