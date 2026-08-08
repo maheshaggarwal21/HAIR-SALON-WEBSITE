@@ -254,6 +254,7 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       paymentMethod = "online",
       cashAmount = 0,
       razorpayPaymentId = null,
+      recoveredPaymentId = null,
       lockUntilAssigned = true,
     } = req.body;
 
@@ -280,6 +281,35 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     }
 
     /**
+     * Recovery mode: attach this visit to money Razorpay already took.
+     *
+     * Used when staff fill in a payment that reached Razorpay but never became a
+     * visit — the Checkout-said-failure-but-took-the-money case. The payment id
+     * arrives from a link the client controls, so it is checked against our own
+     * webhook record rather than trusted: an id that no webhook ever reported, or
+     * one that was not captured, must not be able to conjure revenue into the
+     * books. Only `PaymentEvent` can vouch for it.
+     */
+    let effectivePaymentId = razorpayPaymentId;
+    if (recoveredPaymentId) {
+      const event = await PaymentEvent.findOne({
+        razorpayPaymentId: String(recoveredPaymentId).trim(),
+      }).lean();
+
+      if (!event) {
+        return res.status(400).json({
+          error: "Unknown payment reference — no captured payment matches this id",
+        });
+      }
+      if (event.status !== "captured") {
+        return res.status(400).json({
+          error: `That payment is "${event.status}", not captured — no money was collected`,
+        });
+      }
+      effectivePaymentId = event.razorpayPaymentId;
+    }
+
+    /**
      * One payment, one visit — always.
      *
      * Two independent paths now reach this route after a payment succeeds:
@@ -293,8 +323,8 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
      * callers safe to retry: they get the same visitId either way and carry on
      * to assignment as if theirs was the call that created it.
      */
-    if (razorpayPaymentId) {
-      const existing = await Visit.findOne({ razorpayPaymentId }).lean();
+    if (effectivePaymentId) {
+      const existing = await Visit.findOne({ razorpayPaymentId: effectivePaymentId }).lean();
       if (existing) {
         return res.status(200).json({
           success: true,
@@ -335,10 +365,10 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     const discountAmount = Math.round(subtotal * (pct / 100));
     const finalTotal = Math.max(0, subtotal - discountAmount);
 
-    if (paymentMethod === "online" && !razorpayPaymentId) {
+    if (paymentMethod === "online" && !effectivePaymentId) {
       return res.status(400).json({ error: "Razorpay Payment ID is required for online payment" });
     }
-    if (paymentMethod === "partial" && !razorpayPaymentId) {
+    if (paymentMethod === "partial" && !effectivePaymentId) {
       return res.status(400).json({ error: "Razorpay Payment ID is required for partial payment" });
     }
 
@@ -356,7 +386,11 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       serviceType: serviceType || undefined,
       services,
       visitDurationMins: null,
-      filledBy: req.session.name || "Unknown",
+      // Recovered rows are stamped so a reconstructed visit is never mistaken for
+      // one captured live at the desk — it was filled in from memory, after the fact.
+      filledBy: recoveredPaymentId
+        ? `${req.session.name || "Unknown"} (recovered payment)`
+        : req.session.name || "Unknown",
       subtotal,
       discountPercent: pct,
       discountAmount,
@@ -366,7 +400,7 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       cardAmount: amounts.cardAmount,
       onlineAmount: amounts.onlineAmount,
       paymentStatus: "success",
-      razorpayPaymentId: razorpayPaymentId || null,
+      razorpayPaymentId: effectivePaymentId || null,
       assignmentStatus: "pending",
       lockUntilAssigned: !!lockUntilAssigned,
       paymentConfirmedAt: new Date(),
@@ -379,7 +413,7 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         cashAmount: amounts.cashAmount,
         cardAmount: amounts.cardAmount,
         onlineAmount: amounts.onlineAmount,
-        razorpayPaymentId: razorpayPaymentId || null,
+        razorpayPaymentId: effectivePaymentId || null,
       },
     });
 
@@ -396,20 +430,23 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
      * for". Failure to update must not fail the visit — the visit is the record
      * that matters, and the sweep in GET /api/payments/unreconciled will catch up.
      */
-    if (razorpayPaymentId) {
+    if (effectivePaymentId) {
       try {
         await PaymentEvent.updateOne(
-          { razorpayPaymentId },
+          { razorpayPaymentId: effectivePaymentId },
           {
             $set: {
               reconcileStatus: "matched",
               reconciledVisitId: visit._id,
               reconciledAt: new Date(),
+              ...(recoveredPaymentId
+                ? { note: `Recorded from the unreconciled list by ${req.session.name || "staff"}` }
+                : {}),
             },
           }
         );
       } catch (err) {
-        console.error("[visits] payment event reconcile failed:", razorpayPaymentId, err.message);
+        console.error("[visits] payment event reconcile failed:", effectivePaymentId, err.message);
       }
     }
 

@@ -46,6 +46,9 @@ export default function VisitEntryPage() {
     onlinePayable,
     customerSuggestions,
     searchingCustomers,
+    recovery,
+    recoveryLoading,
+    recoveryError,
     handleChange,
     handleSelect,
     handleMultiSelect,
@@ -70,8 +73,46 @@ export default function VisitEntryPage() {
               transition={{ duration: 0.4 }}
               className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-stone-300/60 bg-white/80 backdrop-blur-sm shadow-sm mb-5"
             >
-              <span className="text-xs font-semibold text-stone-500 tracking-[0.18em] uppercase">New Visit Entry</span>
+              <span className="text-xs font-semibold text-stone-500 tracking-[0.18em] uppercase">
+                {recovery || recoveryLoading ? "Record Paid Visit" : "New Visit Entry"}
+              </span>
             </motion.div>
+
+            {/*
+              Recovery mode. The customer paid; only the salon's own record is
+              missing. Stating the amount and the time they paid gives staff
+              something concrete to match their memory of the visit against.
+            */}
+            {recoveryError && (
+              <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {recoveryError}
+              </div>
+            )}
+            {recovery && (
+              <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-5 py-4">
+                <p className="text-sm font-semibold text-emerald-900">
+                  Recording a payment of ₹{recovery.amount.toLocaleString("en-IN")} that has
+                  already been collected
+                </p>
+                <p className="text-xs text-emerald-800/90 mt-1">
+                  Paid{" "}
+                  {new Date(recovery.capturedAt).toLocaleString("en-IN", {
+                    timeZone: "Asia/Kolkata",
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                  })}
+                  {recovery.contact ? ` · ${recovery.contact}` : ""} ·{" "}
+                  <span className="font-mono">{recovery.razorpayPaymentId}</span>
+                </p>
+                <p className="text-xs text-emerald-800/90 mt-2">
+                  Fill in the services and discount that were actually given, then assign
+                  the artist. The customer will not be charged again.
+                </p>
+              </div>
+            )}
             <motion.h2
               initial={{ opacity: 0, filter: "blur(10px)", y: 8 }}
               animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
@@ -297,8 +338,35 @@ export default function VisitEntryPage() {
                 </Field>
               </div>
 
+              {/*
+                In recovery mode the money has already arrived, and it arrived
+                online — there is no method left to choose. Showing the picker
+                would only invite someone to mark paid money as cash.
+              */}
+              {recovery && subtotal > 0 && (
+                <div
+                  className={cn(
+                    "mt-5 rounded-xl border px-4 py-3 text-sm",
+                    payable === recovery.amount
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-amber-300 bg-amber-50 text-amber-900"
+                  )}
+                >
+                  {payable === recovery.amount ? (
+                    <>Total matches the ₹{recovery.amount.toLocaleString("en-IN")} collected.</>
+                  ) : (
+                    <>
+                      This adds up to ₹{payable.toLocaleString("en-IN")}, but ₹
+                      {recovery.amount.toLocaleString("en-IN")} was collected. Adjust the
+                      services or discount so they agree, otherwise the books will not
+                      balance.
+                    </>
+                  )}
+                </div>
+              )}
+
               <AnimatePresence>
-                {subtotal > 0 && (
+                {subtotal > 0 && !recovery && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
@@ -560,6 +628,11 @@ export default function VisitEntryPage() {
                       />
                       Processing...
                     </>
+                  ) : recovery ? (
+                    <>
+                      <IndianRupee className="w-4 h-4" />
+                      {`Record Paid Visit - INR ${recovery.amount.toLocaleString("en-IN")}`}
+                    </>
                   ) : formData.paymentMode === "cash" ? (
                     <>
                       <Banknote className="w-4 h-4" />
@@ -592,7 +665,7 @@ export default function VisitEntryPage() {
               </motion.button>
             </div>
 
-            {formData.paymentMode !== "cash" && formData.paymentMode !== "card" && (
+            {!recovery && formData.paymentMode !== "cash" && formData.paymentMode !== "card" && (
               <p className="text-center text-xs text-stone-400 mt-4 flex items-center justify-center gap-1">
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />

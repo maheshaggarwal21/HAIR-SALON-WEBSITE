@@ -111,6 +111,33 @@ export async function fetchOrderStatus(orderId: string): Promise<OrderStatusResu
 
 // ─── Visit creation ───────────────────────────────────────────────────────────
 
+/**
+ * Details of a captured payment that has no visit yet, used to pre-fill the
+ * entry form when staff record it after the fact.
+ */
+export interface RecoverablePayment {
+  razorpayPaymentId: string;
+  amount: number;
+  contact: string | null;
+  customerName: string | null;
+  capturedAt: string;
+}
+
+export async function fetchRecoverablePayment(
+  paymentId: string
+): Promise<RecoverablePayment | null> {
+  const res = await fetch(`${BASE}/api/payments/unreconciled?days=365`, {
+    credentials: "include",
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return (
+    (data.payments as RecoverablePayment[]).find(
+      (p) => p.razorpayPaymentId === paymentId
+    ) || null
+  );
+}
+
 export interface CreateVisitPayload {
   name: string;
   contact: string;
@@ -124,6 +151,12 @@ export interface CreateVisitPayload {
   cardAmount?: number;
   onlineAmount?: number;
   razorpayPaymentId?: string;
+  /**
+   * Set instead of `razorpayPaymentId` when recording a payment Razorpay already
+   * captured. The server validates it against its own webhook record before
+   * accepting it, so it cannot be used to invent revenue.
+   */
+  recoveredPaymentId?: string;
   lockUntilAssigned?: boolean;
 }
 

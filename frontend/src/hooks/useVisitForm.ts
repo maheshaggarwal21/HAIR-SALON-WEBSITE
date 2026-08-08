@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type {
   VisitFormData,
   VisitFormErrors,
@@ -16,6 +16,8 @@ import {
   createVisitDraftV2,
   searchCustomersByPhone,
   fetchOrderStatus,
+  fetchRecoverablePayment,
+  type RecoverablePayment,
 } from "@/services/api";
 
 /** How often to ask our own server whether the order has been paid. */
@@ -75,6 +77,22 @@ const EMPTY_FORM: VisitFormData = {
 
 export function useVisitForm() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  /**
+   * Recovery mode — reached from the unreconciled-payments panel via
+   * `/visit-entry?recover=pay_xxx`.
+   *
+   * The customer has already paid; what is missing is everything Razorpay never
+   * knew — which services were done, at what discount, by whom. So the normal
+   * form does all the work and only the payment step changes: no order is
+   * created, no Checkout window opens, and the visit is attached to the payment
+   * that already exists.
+   */
+  const recoverPaymentId = searchParams.get("recover");
+  const [recovery, setRecovery] = useState<RecoverablePayment | null>(null);
+  const [recoveryLoading, setRecoveryLoading] = useState(!!recoverPaymentId);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<VisitFormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<VisitFormErrors>({});
@@ -102,6 +120,44 @@ export function useVisitForm() {
       })
       .finally(() => setDropdownLoading(false));
   }, []);
+
+  // Pre-fill from the payment Razorpay already took. The customer's name and
+  // number come from the payment itself, and the date is the day they actually
+  // paid — not today, which may be days later.
+  useEffect(() => {
+    if (!recoverPaymentId) return;
+    let cancelled = false;
+
+    setRecoveryLoading(true);
+    fetchRecoverablePayment(recoverPaymentId)
+      .then((payment) => {
+        if (cancelled) return;
+        if (!payment) {
+          setRecoveryError(
+            "That payment is no longer outstanding — it may already have been recorded."
+          );
+          return;
+        }
+        setRecovery(payment);
+        setFormData((prev) => ({
+          ...prev,
+          name: payment.customerName || prev.name,
+          phone: payment.contact || prev.phone,
+          date: toLocalDateKey(new Date(payment.capturedAt)),
+          paymentMode: "online",
+        }));
+      })
+      .catch(() => {
+        if (!cancelled) setRecoveryError("Could not load that payment. Check your connection.");
+      })
+      .finally(() => {
+        if (!cancelled) setRecoveryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [recoverPaymentId]);
 
   const serviceDisplayItems = useMemo(
     () =>
@@ -310,6 +366,7 @@ export function useVisitForm() {
     const persistDraft = async (opts: {
       paymentMethod: "online" | "cash" | "card" | "partial";
       razorpayPaymentId?: string;
+      recoveredPaymentId?: string;
       cashAmount?: number;
       cardAmount?: number;
       onlineAmount?: number;
@@ -324,6 +381,7 @@ export function useVisitForm() {
         discountPercent: discountPct,
         paymentMethod: opts.paymentMethod,
         razorpayPaymentId: opts.razorpayPaymentId,
+        recoveredPaymentId: opts.recoveredPaymentId,
         cashAmount: opts.cashAmount,
         cardAmount: opts.cardAmount,
         onlineAmount: opts.onlineAmount,
@@ -335,6 +393,21 @@ export function useVisitForm() {
     };
 
     try {
+      /**
+       * Recovery: the money is already at Razorpay, so there is nothing to
+       * charge. Attach the visit to that payment and go straight to assignment.
+       */
+      if (recovery) {
+        await withRetry(() =>
+          persistDraft({
+            paymentMethod: "online",
+            recoveredPaymentId: recovery.razorpayPaymentId,
+            onlineAmount: payable,
+          })
+        );
+        return;
+      }
+
       if (formData.paymentMode === "cash") {
         await persistDraft({
           paymentMethod: "cash",
@@ -576,6 +649,9 @@ export function useVisitForm() {
     onlinePayable,
     customerSuggestions,
     searchingCustomers,
+    recovery,
+    recoveryLoading,
+    recoveryError,
     handleChange,
     handleSelect,
     handleMultiSelect,

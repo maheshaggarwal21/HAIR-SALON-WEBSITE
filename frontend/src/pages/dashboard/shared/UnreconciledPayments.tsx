@@ -18,7 +18,9 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, RefreshCw, Copy, Check } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, RefreshCw, FilePlus2 } from "lucide-react";
+import { usePermission } from "@/hooks/usePermission";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -52,7 +54,10 @@ const fmtDateTime = (iso: string) =>
 export default function UnreconciledPayments({ days = 30 }: { days?: number }) {
   const [data, setData] = useState<UnreconciledResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Recording a recovery creates a visit, so it needs the same permission as
+  // any other visit entry. Without it the list is still worth showing — knowing
+  // money is missing matters even if you cannot be the one to fix it.
+  const canRecordVisit = usePermission("visit.create");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,19 +80,6 @@ export default function UnreconciledPayments({ days = 30 }: { days?: number }) {
     void load();
   }, [load]);
 
-  const copyDetails = async (p: UnreconciledPayment) => {
-    const text =
-      `${p.customerName || "Unknown"} · ${p.contact || "no number"} · ₹${p.amount} · ` +
-      `${fmtDateTime(p.capturedAt)} · ${p.razorpayPaymentId}`;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(p.razorpayPaymentId);
-      window.setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      /* clipboard blocked — the details are on screen anyway */
-    }
-  };
-
   if (!data || data.count === 0) return null;
 
   return (
@@ -102,9 +94,9 @@ export default function UnreconciledPayments({ days = 30 }: { days?: number }) {
               {data.totalAmount.toLocaleString("en-IN")}
             </h3>
             <p className="text-xs text-red-700/90 mt-0.5">
-              Razorpay has this money. Add the visit from the entry form using the
-              details below, then it will clear from this list. Do not ask the
-              customer to pay again.
+              Razorpay has this money. Use <strong>Record visit</strong> to fill in the
+              services and artist — the customer is not charged again, and the row
+              clears from this list once saved.
             </p>
           </div>
         </div>
@@ -149,20 +141,14 @@ export default function UnreconciledPayments({ days = 30 }: { days?: number }) {
                   {p.razorpayPaymentId}
                 </td>
                 <td className="px-5 py-2.5">
-                  <button
-                    onClick={() => void copyDetails(p)}
-                    className="flex items-center gap-1.5 text-xs text-red-800 hover:text-red-900 transition-colors"
-                  >
-                    {copiedId === p.razorpayPaymentId ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" /> Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" /> Copy
-                      </>
-                    )}
-                  </button>
+                  {canRecordVisit && (
+                    <Link
+                      to={`/visit-entry?recover=${encodeURIComponent(p.razorpayPaymentId)}`}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-white bg-red-700 hover:bg-red-800 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      <FilePlus2 className="w-3.5 h-3.5" /> Record visit
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}
