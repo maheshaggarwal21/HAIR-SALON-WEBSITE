@@ -15,7 +15,22 @@ import {
   verifyOrderPayment,
   createVisitDraftV2,
   searchCustomersByPhone,
+  fetchOrderStatus,
 } from "@/services/api";
+
+/** How often to ask our own server whether the order has been paid. */
+const ORDER_POLL_INTERVAL_MS = 5000;
+/** Give the customer this long to complete a payment before we stop watching. */
+const ORDER_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Keep watching briefly after the window is closed.
+ *
+ * The failure this guards against looks exactly like this: Checkout wrongly
+ * reports failure, staff closes it, and the customer's payment lands a few
+ * seconds later. Without this grace period that money arrives with nobody
+ * listening.
+ */
+const ORDER_POLL_GRACE_AFTER_DISMISS_MS = 45 * 1000;
 
 // Local date, not UTC — `toISOString()` would date a visit logged before
 // 05:30 IST to the previous day.
@@ -355,6 +370,75 @@ export function useVisitForm() {
         cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
       });
 
+      /**
+       * A payment is settled exactly once, by whichever witness sees it first.
+       *
+       * Razorpay Checkout is no longer trusted as the only witness to its own
+       * success. On 7 Aug a customer paid ₹150 by UPI, Razorpay captured it, and
+       * Checkout still showed "Payment could not be completed — Too many
+       * requests" and went back to offering a QR: its `handler` never ran, so no
+       * visit was created for money the salon had already taken. Checkout polls
+       * Razorpay from this browser, and every device in the salon shares one
+       * public IP, so it is that polling — not the payment — that gets throttled.
+       *
+       * So two witnesses now race: Checkout's handler, and a poll of our own
+       * server (which asks Razorpay with the salon's API key, from a different
+       * address). Whichever sees the payment first saves the visit; this flag
+       * makes sure the other one does nothing. `/visits/v2` is idempotent on the
+       * payment id as a second line of defence.
+       */
+      let settled = false;
+      let dismissed = false;
+      let pollTimer: number | undefined;
+      let pollDeadline = Date.now() + ORDER_POLL_TIMEOUT_MS;
+
+      const stopPolling = () => {
+        if (pollTimer !== undefined) {
+          window.clearInterval(pollTimer);
+          pollTimer = undefined;
+        }
+      };
+
+      /**
+       * Save the visit for a payment we now know Razorpay has captured.
+       *
+       * `settled` is raised before anything else, so the Checkout window can be
+       * closed here without its `ondismiss` handler mistaking that for the
+       * customer walking away.
+       *
+       * The money is already gone by the time this runs, so a failure here has
+       * to be loud and has to surface the payment id — that reference is the
+       * only way to reconcile it later.
+       */
+      const settle = async (paymentId: string) => {
+        if (settled) return;
+        settled = true;
+        stopPolling();
+        setPaymentError(null);
+        setIsLoading(true);
+        try { rzp.close(); } catch { /* already closed, or never opened */ }
+
+        try {
+          await withRetry(() =>
+            persistDraft({
+              paymentMethod: formData.paymentMode === "partial" ? "partial" : "online",
+              razorpayPaymentId: paymentId,
+              cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
+              onlineAmount: chargeOnline,
+            })
+          );
+        } catch (err) {
+          console.error("[visit] post-payment save failed", paymentId, err);
+          setPaymentError(
+            `PAYMENT RECEIVED but the visit could not be saved. ` +
+              `The money HAS been collected — do not charge the customer again. ` +
+              `Note this reference and report it: ${paymentId}. ` +
+              `${err instanceof Error ? `(${err.message})` : ""}`
+          );
+          setIsLoading(false);
+        }
+      };
+
       const rzp = new window.Razorpay({
         key: order.key_id,
         amount: order.amount,
@@ -375,9 +459,24 @@ export function useVisitForm() {
         },
         theme: { color: "#1c1917" },
         modal: {
+          /**
+           * Closing the window is not proof the customer did not pay — it is
+           * often staff giving up on a Checkout error while the payment is still
+           * in flight. Keep watching for a little longer instead of declaring it
+           * cancelled and walking away.
+           */
           ondismiss: () => {
+            if (settled) return;
+            dismissed = true;
             setIsLoading(false);
-            setPaymentError("Payment was cancelled. Please try again.");
+            setPaymentError(
+              "Payment window closed — still confirming with Razorpay. " +
+                "Wait for this message to clear before charging the customer again."
+            );
+            pollDeadline = Math.min(
+              pollDeadline,
+              Date.now() + ORDER_POLL_GRACE_AFTER_DISMISS_MS
+            );
           },
         },
         /**
@@ -388,10 +487,10 @@ export function useVisitForm() {
          * rejection: silently swallowed, `setIsLoading(false)` never ran, and
          * staff were left on a "Processing…" spinner with the payment captured
          * and no visit recorded. That lost 14 payments (₹3,185.70) before it
-         * was found. The money is already gone by this point, so a failure here
-         * must be loud and must surface the payment id.
+         * was found.
          */
         handler: async (response: RazorpayResponse) => {
+          if (settled) return;
           try {
             const result = await withRetry(() =>
               verifyOrderPayment({
@@ -408,29 +507,46 @@ export function useVisitForm() {
               throw new Error("Payment verification failed");
             }
 
-            await withRetry(() =>
-              persistDraft({
-                paymentMethod: formData.paymentMode === "partial" ? "partial" : "online",
-                razorpayPaymentId: result.payment_id,
-                cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
-                onlineAmount: chargeOnline,
-              })
-            );
+            await settle(result.payment_id);
           } catch (err) {
-            const paymentId = response.razorpay_payment_id;
-            console.error("[visit] post-payment save failed", paymentId, err);
-            setPaymentError(
-              `PAYMENT RECEIVED but the visit could not be saved. ` +
-                `The money HAS been collected — do not charge the customer again. ` +
-                `Note this reference and report it: ${paymentId}. ` +
-                `${err instanceof Error ? `(${err.message})` : ""}`
-            );
-            setIsLoading(false);
+            // Verification itself failed. The poller is still running and asks
+            // Razorpay directly, so let it have the final word rather than
+            // giving up on a payment that may well have gone through.
+            console.error("[visit] checkout handler failed, leaving it to the poller", err);
           }
         },
       });
 
       rzp.open();
+
+      // Second witness: our own server, asking Razorpay whether this order was
+      // actually paid. Immune to whatever throttling Checkout has run into.
+      pollTimer = window.setInterval(async () => {
+        if (settled) return stopPolling();
+
+        if (Date.now() > pollDeadline) {
+          stopPolling();
+          // Only speak up if the window has been closed. If it is still open,
+          // Checkout owns the screen and the customer may yet pay — saying
+          // anything here would just contradict what is in front of them.
+          if (dismissed) {
+            setIsLoading(false);
+            setPaymentError("Payment was not completed. Please try again.");
+          }
+          return;
+        }
+
+        try {
+          const status = await fetchOrderStatus(order.order_id);
+          if (status.paid && status.payment_id) {
+            await settle(status.payment_id);
+          }
+        } catch (err) {
+          // A poll that could not reach the server tells us nothing about the
+          // payment. Stay quiet and try again on the next tick.
+          console.warn("[visit] order status poll failed", err);
+        }
+      }, ORDER_POLL_INTERVAL_MS);
     } catch (err) {
       setPaymentError(
         err instanceof Error

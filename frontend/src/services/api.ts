@@ -82,6 +82,33 @@ export async function verifyOrderPayment(
   return data;
 }
 
+export interface OrderStatusResult {
+  paid: boolean;
+  payment_id: string | null;
+  amount: number | null;
+  status: string | null;
+  attempts: number;
+}
+
+/**
+ * Ask our backend whether Razorpay has actually been paid for this order.
+ *
+ * Checkout polls Razorpay straight from the salon's browser, and every device
+ * there shares one public IP, so that polling is what hits Razorpay's rate
+ * limit — the payment goes through fine. When it does get throttled, Checkout
+ * declares "Payment could not be completed" and never calls its own success
+ * handler. This asks the server instead, which uses the salon's API key from a
+ * different address, and reads the order rather than trusting the widget.
+ */
+export async function fetchOrderStatus(orderId: string): Promise<OrderStatusResult> {
+  const res = await fetch(`${BASE}/api/order-status/${encodeURIComponent(orderId)}`, {
+    credentials: "include",
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to check order status");
+  return data;
+}
+
 // ─── Visit creation ───────────────────────────────────────────────────────────
 
 export interface CreateVisitPayload {

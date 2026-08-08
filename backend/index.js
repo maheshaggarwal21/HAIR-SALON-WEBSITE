@@ -84,7 +84,8 @@ async function ensureOwner() {
 // ── New: session & auth packages ─────────────────────────────────────────────
 const session = require("express-session");
 const MongoStore = require("connect-mongo").default;
-const { authenticate, authorize } = require("./middleware/authMiddleware");
+const { authenticate, authorize, authorizePermission } = require("./middleware/authMiddleware");
+const { PERMISSIONS } = require("./constants/permissions");
 
 // ── Configuration ────────────────────────────────────────────────────────────
 /** Frontend URL used for Razorpay payment-link callbacks (redirect after pay). */
@@ -289,6 +290,7 @@ app.use(helmet());
 const PAYMENT_CRITICAL = [
   "/api/verify-order-payment",
   "/api/create-order",
+  "/api/order-status",    // polled every few seconds while checkout is open
   "/api/visits",          // covers /visits, /visits/v2 and confirm-assignment
   "/api/razorpay/webhook",
 ];
@@ -513,6 +515,140 @@ app.post("/api/verify-order-payment", authenticate, async (req, res) => {
     phone: phone || "",
   });
 });
+
+/**
+ * GET /api/order-status/:orderId
+ * @returns {{ paid: boolean, payment_id: string|null, amount: number|null,
+ *             status: string|null, attempts: number }}
+ *
+ * Asks Razorpay's server whether this order has actually been paid.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────────
+ * The Checkout SDK is not a reliable witness to its own success. On 7 Aug a
+ * customer scanned the UPI QR and paid ₹150; Razorpay captured it
+ * (pay_TMqcyVB4DQpw2a, order paid on the first attempt) while the checkout
+ * window showed "Payment could not be completed — Too many requests" and went
+ * back to offering a QR. Checkout polls Razorpay directly from the salon's
+ * browser, and every device in the salon shares one public IP, so that polling
+ * is what gets rate-limited — the payment itself is untouched. When checkout
+ * gives up, its `handler` never fires, so nothing creates the visit.
+ *
+ * This endpoint is the independent second opinion. It is called from OUR server
+ * with OUR API key, so it is unaffected by whatever throttling the salon's
+ * browser has run into, and it reads the order — the thing that actually knows
+ * whether money arrived — instead of trusting the widget's own report.
+ */
+app.get("/api/order-status/:orderId", authenticate, async (req, res) => {
+  if (!razorpay) return res.status(503).json({ error: "Payment service not configured" });
+
+  const { orderId } = req.params;
+  if (!/^order_[A-Za-z0-9]+$/.test(orderId)) {
+    return res.status(400).json({ error: "Invalid order id" });
+  }
+
+  try {
+    const { items = [] } = await razorpay.orders.fetchPayments(orderId);
+    const captured = items.find((p) => p.status === "captured");
+
+    return res.json({
+      paid: !!captured,
+      payment_id: captured?.id || null,
+      amount: captured?.amount ?? null,
+      status: captured?.status || null,
+      attempts: items.length,
+    });
+  } catch (err) {
+    // A failed poll is not a failed payment. Report it and let the caller keep
+    // polling — treating a transient Razorpay error as "unpaid" is how a
+    // captured payment ends up with no visit against it.
+    console.error("[payment] Order status check failed:", orderId, err.message);
+    return res.status(502).json({ error: "Could not reach Razorpay", details: err.message });
+  }
+});
+
+/**
+ * GET /api/payments/unreconciled
+ * @query days — how far back to look (default 30, max 365)
+ * @returns {{ count: number, totalAmount: number, healed: number, payments: [...] }}
+ *
+ * Every payment Razorpay captured that still has no visit against it — the
+ * salon's "money we cannot account for" list.
+ *
+ * It re-checks before reporting, and that is the point. The webhook fires about
+ * a second after capture, which is before the browser has finished creating the
+ * visit, so a payment event is ALWAYS born "unmatched" and nothing used to
+ * revisit it. That left 30 unmatched events of which 29 were perfectly fine —
+ * an alarm nobody could act on, hiding the single ₹150 that really was lost.
+ * Re-checking here clears the stale ones (and writes the correction back, so the
+ * list gets cheaper to compute over time) and leaves only real gaps.
+ */
+app.get(
+  "/api/payments/unreconciled",
+  authenticate,
+  authorizePermission(PERMISSIONS.PAYMENTS_VIEW),
+  async (req, res) => {
+    try {
+      await connectDB();
+      const PaymentEvent = require("./models/PaymentEvent");
+      const Visit = require("./models/Visit");
+
+      const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const candidates = await PaymentEvent.find({
+        reconcileStatus: "unmatched",
+        status: "captured",
+        capturedAt: { $gte: since },
+      })
+        .sort({ capturedAt: -1 })
+        .lean();
+
+      // One query for all of them rather than one per payment.
+      const ids = candidates.map((e) => e.razorpayPaymentId);
+      const visits = await Visit.find({ razorpayPaymentId: { $in: ids } })
+        .select("_id razorpayPaymentId")
+        .lean();
+      const visitByPaymentId = new Map(visits.map((v) => [v.razorpayPaymentId, v._id]));
+
+      const stale = candidates.filter((e) => visitByPaymentId.has(e.razorpayPaymentId));
+      const genuine = candidates.filter((e) => !visitByPaymentId.has(e.razorpayPaymentId));
+
+      // Write the correction back so this work is not repeated on every load.
+      await Promise.all(
+        stale.map((e) =>
+          PaymentEvent.updateOne(
+            { razorpayPaymentId: e.razorpayPaymentId },
+            {
+              $set: {
+                reconcileStatus: "matched",
+                reconciledVisitId: visitByPaymentId.get(e.razorpayPaymentId),
+                reconciledAt: new Date(),
+              },
+            }
+          )
+        )
+      );
+
+      return res.json({
+        count: genuine.length,
+        totalAmount: genuine.reduce((sum, e) => sum + (e.amount || 0), 0),
+        healed: stale.length,
+        payments: genuine.map((e) => ({
+          razorpayPaymentId: e.razorpayPaymentId,
+          razorpayOrderId: e.razorpayOrderId,
+          amount: e.amount,
+          method: e.method,
+          contact: e.contact,
+          customerName: e.customerName,
+          capturedAt: e.capturedAt,
+        })),
+      });
+    } catch (err) {
+      console.error("[payment] Unreconciled lookup failed:", err);
+      return res.status(500).json({ error: "Failed to load unreconciled payments" });
+    }
+  }
+);
 
 /**
  * POST /api/create-payment-link

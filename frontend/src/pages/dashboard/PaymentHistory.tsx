@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import * as XLSX from "xlsx";
 import { toLocalDateKey } from "@/lib/utils";
+import UnreconciledPayments from "@/pages/dashboard/shared/UnreconciledPayments";
 import {
   Receipt,
   Filter,
@@ -310,6 +311,14 @@ export default function PaymentHistory() {
           <Download className="w-4 h-4" /> Export Excel
         </button>
       </div>
+
+      {/*
+        Money Razorpay took that never became a visit. Renders nothing when
+        everything reconciles, so it only appears when there is something to do.
+        It sits above the filters deliberately — a gap here is not something to
+        find by scrolling.
+      */}
+      <UnreconciledPayments />
 
       {/* ── Date Preset Tabs ── */}
       <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm p-5 mb-4">

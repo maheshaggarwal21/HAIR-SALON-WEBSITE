@@ -14,6 +14,7 @@ const connectDB = require("../db");
 const Visit = require("../models/Visit");
 const Service = require("../models/Service");
 const Artist = require("../models/Artist");
+const PaymentEvent = require("../models/PaymentEvent");
 const { authorizePermission } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require('../constants/permissions');
 
@@ -278,6 +279,40 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       return res.status(400).json({ error: "Invalid service ID in serviceIds" });
     }
 
+    /**
+     * One payment, one visit — always.
+     *
+     * Two independent paths now reach this route after a payment succeeds:
+     * Checkout's own `handler`, and the order-status poller that covers the case
+     * where Checkout fails to notice its own success. Both are also wrapped in
+     * retries, so a request that succeeded but whose response was lost gets sent
+     * again. Without this guard any of those could bill one customer once and
+     * write the visit twice, inflating the day's revenue.
+     *
+     * Returning the existing visit (rather than an error) is what makes the
+     * callers safe to retry: they get the same visitId either way and carry on
+     * to assignment as if theirs was the call that created it.
+     */
+    if (razorpayPaymentId) {
+      const existing = await Visit.findOne({ razorpayPaymentId }).lean();
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          visitId: existing._id,
+          finalTotal: existing.finalTotal,
+          assignmentStatus: existing.assignmentStatus,
+          lockUntilAssigned: existing.lockUntilAssigned,
+          services: (existing.services || []).map((s) => ({
+            serviceEntryId: s._id,
+            serviceId: s.serviceId,
+            serviceName: s.name,
+            servicePrice: s.price,
+          })),
+        });
+      }
+    }
+
     const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
     if (error) {
       return res.status(400).json({ error });
@@ -347,6 +382,36 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         razorpayPaymentId: razorpayPaymentId || null,
       },
     });
+
+    /**
+     * Close the loop on the webhook's record of this payment.
+     *
+     * The webhook fires within a second of capture — before this visit exists —
+     * so it can only ever file the payment as "unmatched" and nothing used to
+     * revisit that. The result was 30 unmatched payment events of which 29 had a
+     * perfectly good visit: an alarm that cried wolf so consistently that the one
+     * genuinely lost payment (₹150, 7 Aug) was indistinguishable from the noise.
+     *
+     * Marking it here is what makes "unmatched" mean "money we cannot account
+     * for". Failure to update must not fail the visit — the visit is the record
+     * that matters, and the sweep in GET /api/payments/unreconciled will catch up.
+     */
+    if (razorpayPaymentId) {
+      try {
+        await PaymentEvent.updateOne(
+          { razorpayPaymentId },
+          {
+            $set: {
+              reconcileStatus: "matched",
+              reconciledVisitId: visit._id,
+              reconciledAt: new Date(),
+            },
+          }
+        );
+      } catch (err) {
+        console.error("[visits] payment event reconcile failed:", razorpayPaymentId, err.message);
+      }
+    }
 
     return res.status(201).json({
       success: true,

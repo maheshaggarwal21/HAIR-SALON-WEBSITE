@@ -28,9 +28,18 @@ export interface RazorpayResponse {
   razorpay_signature: string;
 }
 
+/**
+ * `close()` is used to dismiss the window from our side when our own
+ * order-status poll finds the payment that Checkout failed to notice.
+ */
+export interface RazorpayInstance {
+  open: () => void;
+  close: () => void;
+}
+
 declare global {
   interface Window {
-    Razorpay: new (options: RazorpayOptions) => { open: () => void };
+    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
   }
 }
 
