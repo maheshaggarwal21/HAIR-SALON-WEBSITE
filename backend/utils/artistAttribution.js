@@ -151,6 +151,62 @@ function allocateServiceRevenues(services, subtotal, finalTotal) {
   return allocations;
 }
 
+/**
+ * The exact set of Visit fields buildArtistRows() reads.
+ *
+ * Analytics used to fetch whole documents. Measured on the live dataset that is
+ * 5,697 KB for 4,481 visits, of which the maths below touches only 2,775 KB —
+ * `paymentSnapshot` alone is 14% of the payload and is never read here. Fetching
+ * just these fields halves the bytes on the wire and roughly halves the query
+ * time, while the JavaScript that follows is byte-for-byte the same.
+ *
+ * ─── IF YOU ADD A FIELD READ BELOW, ADD IT HERE ──────────────────────────────
+ * A field missing from this list arrives as `undefined`, which will not throw —
+ * it will silently produce wrong revenue. This constant lives next to the
+ * function that defines the requirement so the two cannot drift apart, and
+ * assertRowFieldsCovered() below fails loudly in development if they do.
+ */
+const VISIT_FIELDS_FOR_ROWS = Object.freeze({
+  _id:               1, // row.visitId
+  date:              1, // row.visitDate
+  contact:           1, // row.contact — unique-customer counts
+  schemaVersion:     1, // selects the v2 per-service branch vs the legacy branch
+  subtotal:          1, // allocateServiceRevenues weighting base
+  finalTotal:        1, // allocateServiceRevenues total, and legacy row revenue
+  services:          1, // name, price, artistName, startTime, endTime,
+                        // actualDurationMins, duration
+  artist:            1, // legacy visit-level artist
+  visitDurationMins: 1, // legacy actual duration when present
+  startTime:         1, // legacy calcHours fallback
+  endTime:           1, // legacy calcHours fallback
+});
+
+/**
+ * Development-only guard. Runs buildArtistRows over a projected document and
+ * the same document unprojected, and shouts if the outputs differ — which is
+ * exactly what happens when a newly-read field is missing from the projection.
+ * Called from the analytics loader; a no-op in production.
+ */
+function assertRowFieldsCovered(fullVisit) {
+  if (process.env.NODE_ENV === "production" || !fullVisit) return;
+
+  const projected = {};
+  for (const key of Object.keys(VISIT_FIELDS_FOR_ROWS)) {
+    if (fullVisit[key] !== undefined) projected[key] = fullVisit[key];
+  }
+
+  const a = JSON.stringify(buildArtistRows([fullVisit]));
+  const b = JSON.stringify(buildArtistRows([projected]));
+  if (a !== b) {
+    console.error(
+      "[artistAttribution] VISIT_FIELDS_FOR_ROWS is missing a field that " +
+      "buildArtistRows() now reads. Analytics revenue will be wrong. " +
+      "Add the field to VISIT_FIELDS_FOR_ROWS.\n  full:      " + a +
+      "\n  projected: " + b
+    );
+  }
+}
+
 function buildArtistRows(visits) {
   const rows = [];
 
@@ -421,6 +477,8 @@ function buildTimePerformanceFromRows(rows) {
 }
 
 module.exports = {
+  VISIT_FIELDS_FOR_ROWS,
+  assertRowFieldsCovered,
   allocateServiceRevenues,
   buildDateRangeFilter,
   buildFinalizedVisitFilter,

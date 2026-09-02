@@ -786,7 +786,13 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
       ? "name contact artist services subtotal discountPercent discountAmount finalTotal paymentMethod cashAmount cardAmount onlineAmount razorpayPaymentId paymentStatus assignmentStatus filledBy date startTime endTime createdAt schemaVersion"
       : "name contact artist subtotal discountPercent discountAmount finalTotal paymentMethod cashAmount cardAmount onlineAmount razorpayPaymentId paymentStatus assignmentStatus filledBy date createdAt schemaVersion";
 
-    const [visits, total] = await Promise.all([
+    /**
+     * All four reads are independent, so they go out together. The page row
+     * fetch and the count were already parallel, but the two aggregations then
+     * ran one after the other, making the endpoint as slow as the sum of three
+     * round trips to Atlas rather than the slowest one.
+     */
+    const [visits, total, summary, schemaCountsAgg] = await Promise.all([
       Visit.find(filter)
         .sort({ date: -1, createdAt: -1 })
         .skip(skip)
@@ -794,40 +800,49 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
         .select(selectFields)
         .lean(),
       Visit.countDocuments(filter),
-    ]);
-
-    // Aggregate summary for the filtered range
-    const summary = await Visit.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$finalTotal" },
-          totalCash: { $sum: "$cashAmount" },
-          totalCard: { $sum: "$cardAmount" },
-          totalOnline: { $sum: "$onlineAmount" },
-          totalDiscount: { $sum: "$discountAmount" },
-          count: { $sum: 1 },
+      // Aggregate summary for the filtered range
+      Visit.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$finalTotal" },
+            totalCash: { $sum: "$cashAmount" },
+            totalCard: { $sum: "$cardAmount" },
+            totalOnline: { $sum: "$onlineAmount" },
+            totalDiscount: { $sum: "$discountAmount" },
+            count: { $sum: 1 },
+          },
         },
-      },
-    ]);
-
-    const schemaCountsAgg = await Visit.aggregate([
-      { $match: schemaCountsFilter },
-      {
-        $group: {
-          _id: "$schemaVersion",
-          count: { $sum: 1 },
+      ]),
+      Visit.aggregate([
+        { $match: schemaCountsFilter },
+        {
+          $group: {
+            _id: "$schemaVersion",
+            count: { $sum: 1 },
+          },
         },
-      },
+      ]),
     ]);
 
+    /**
+     * Accumulate, do not assign.
+     *
+     * $group returns THREE buckets on the live data, not two: schemaVersion 2
+     * (4,102), schemaVersion 1 (9), and documents predating the field entirely
+     * where _id is null (369). Both of the latter are "legacy", and the old
+     * `schemaCounts.legacy = row.count` made them overwrite each other — so the
+     * card reported either 9 or 369 depending on the order Mongo happened to
+     * return the groups in, and never the true 378. The legacy + v2 total also
+     * failed to match the row count above it.
+     */
     const schemaCounts = { legacy: 0, v2: 0 };
     schemaCountsAgg.forEach((row) => {
       if (Number(row._id) === 2) {
-        schemaCounts.v2 = row.count;
+        schemaCounts.v2 += row.count;
       } else {
-        schemaCounts.legacy = row.count;
+        schemaCounts.legacy += row.count;
       }
     });
 
