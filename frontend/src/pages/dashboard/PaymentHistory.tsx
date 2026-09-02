@@ -16,7 +16,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import * as XLSX from "xlsx";
 import { toLocalDateKey } from "@/lib/utils";
 import UnreconciledPayments from "@/pages/dashboard/shared/UnreconciledPayments";
 import {
@@ -226,8 +225,12 @@ export default function PaymentHistory() {
   }, [fetchHistory]);
 
   // ── Excel Export ─────────────────────────────────────────────────────────
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!visits.length) return;
+
+    // xlsx is ~400 KB and is only needed the moment someone clicks Export.
+    // Loading it here keeps it out of the main bundle entirely.
+    const XLSX = await import("xlsx");
 
     const rows = visits.map((v) => ({
       Date: fmtDate(v.date),

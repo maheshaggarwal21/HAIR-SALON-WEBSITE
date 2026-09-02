@@ -29,6 +29,56 @@ const {
 
 const router = express.Router();
 
+// ─── Shared visit loader ────────────────────────────────────────────────────
+/**
+ * The Analytics page mounts four widgets at once, and /summary, /top-services,
+ * /employees and /employee/:name each ran `Visit.find(match).lean()` with the
+ * SAME filter — four full scans of ~4,500 documents (~500–800 ms each) for one
+ * page load, measured at ~2 s of database time in total.
+ *
+ * This memoises the result per filter for a few seconds so those four requests
+ * share a single read. The reduction comes from not repeating the query; the
+ * numbers returned are identical because every caller still receives the same
+ * document array it fetched before.
+ *
+ * Deliberately short-lived. Analytics is reporting, not money movement, so a
+ * few seconds of staleness is harmless — but a receptionist who records a visit
+ * and immediately opens Analytics should still see it, hence seconds not
+ * minutes. Nothing payment-critical reads through this cache.
+ */
+const VISIT_CACHE_TTL_MS = 15 * 1000;
+const visitCache = new Map(); // key → { promise, expiresAt }
+
+async function loadVisits(match) {
+  const key = JSON.stringify(match);
+  const hit = visitCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.promise;
+
+  // Cache the PROMISE, not the result: the four widgets fire concurrently, so
+  // storing the resolved value would still let all four start their own query
+  // before the first one finished.
+  //
+  // .exec() is required, not cosmetic. Without it `Visit.find().lean()` hands
+  // back a Mongoose Query, which is thenable but single-use — awaiting a cached
+  // one a second time throws "Query was already executed" and 500s the page.
+  // .exec() returns a real Promise, which any number of callers can await.
+  const promise = Visit.find(match).lean().exec();
+  visitCache.set(key, { promise, expiresAt: Date.now() + VISIT_CACHE_TTL_MS });
+
+  // A rejected query must not be served to later callers.
+  promise.catch(() => visitCache.delete(key));
+
+  // Bound the map. Filters are date-range driven, so distinct keys are few, but
+  // an unbounded Map in a long-lived process is a slow leak.
+  if (visitCache.size > 50) {
+    for (const [k, v] of visitCache) {
+      if (v.expiresAt <= Date.now()) visitCache.delete(k);
+    }
+  }
+
+  return promise;
+}
+
 // ─── Middleware: ensure DB connection on every request ─────────────────────
 router.use(async (_req, res, next) => {
   try {
@@ -125,7 +175,7 @@ function buildEmployeeLeaderboard(rows) {
 router.get("/summary", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = analyticsFilter(req.query);
-    const visits = await Visit.find(match).lean();
+    const visits = await loadVisits(match);
 
     const totalRevenue = visits.reduce((sum, v) => sum + (v.finalTotal || 0), 0);
     const totalVisits = visits.length;
@@ -153,7 +203,7 @@ router.get("/summary", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (r
 router.get("/top-services", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = analyticsFilter(req.query);
-    const visits = await Visit.find(match).lean();
+    const visits = await loadVisits(match);
     const rows = buildArtistRows(visits);
     const result = buildServiceBreakdown(rows);
 
@@ -183,7 +233,7 @@ router.get("/top-services", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), asy
 router.get("/employees", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), async (req, res) => {
   try {
     const match = analyticsFilter(req.query);
-    const visits = await Visit.find(match).lean();
+    const visits = await loadVisits(match);
     const rows = buildArtistRows(visits);
     const leaderboard = buildEmployeeLeaderboard(rows);
 
@@ -203,7 +253,7 @@ router.get("/employee/:name", authorizePermission(PERMISSIONS.ANALYTICS_VIEW), a
     const match = analyticsFilter(req.query);
     const artistName = req.params.name;
 
-    const allVisits = await Visit.find(match).lean();
+    const allVisits = await loadVisits(match);
     const allRows = buildArtistRows(allVisits);
     const artistRows = allRows.filter((r) => r.artist === artistName);
     const leaderboard = buildEmployeeLeaderboard(allRows);

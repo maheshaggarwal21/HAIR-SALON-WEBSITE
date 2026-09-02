@@ -16,27 +16,56 @@
  *   /dashboard/owner/*     — Owner only
  */
 
-import { StrictMode, useEffect, type ReactNode } from 'react'
+import { StrictMode, useEffect, lazy, Suspense, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import './index.css'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import ChangePasswordPage from './pages/ChangePasswordPage'
+
+/**
+ * ── Route-level code splitting ───────────────────────────────────────────────
+ *
+ * Everything used to live in one 1.99 MB bundle, so a customer opening the
+ * public landing page downloaded every dashboard, chart library and the Excel
+ * writer before anything rendered. Each lazy() below becomes its own chunk that
+ * is fetched only when that route is actually visited.
+ *
+ * Eagerly imported (deliberately): LandingPage and SignInPage are the first
+ * thing every visitor and every staff member hits, so splitting them would only
+ * add a round trip. They stay in the entry chunk.
+ */
 import LandingPage from './pages/LandingPage'
 import SignInPage from './pages/SignInPage'
-import PaymentStatus from './pages/PaymentStatus'
-import UnauthorizedPage from './pages/UnauthorizedPage'
-import VisitEntryPage from './pages/VisitEntryPage'
-import ManagerDashboard from './pages/ManagerDashboard'
-import OwnerDashboard from './pages/OwnerDashboard'
-import ArtistDashboardLayout from './pages/ArtistDashboardLayout'
-import ReceptionistDashboard from './pages/ReceptionistDashboard'
-import AboutPage from './pages/AboutPage'
-import ContactPage from './pages/ContactPage'
-import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
-import TermsOfServicePage from './pages/TermsOfServicePage'
-import VisitAssignmentPage from './pages/VisitAssignmentPage'
+
+// Staff-only surfaces — never needed by a member of the public.
+const OwnerDashboard        = lazy(() => import('./pages/OwnerDashboard'))
+const ManagerDashboard      = lazy(() => import('./pages/ManagerDashboard'))
+const ReceptionistDashboard = lazy(() => import('./pages/ReceptionistDashboard'))
+const ArtistDashboardLayout = lazy(() => import('./pages/ArtistDashboardLayout'))
+const VisitEntryPage        = lazy(() => import('./pages/VisitEntryPage'))
+const VisitAssignmentPage   = lazy(() => import('./pages/VisitAssignmentPage'))
+const ChangePasswordPage    = lazy(() => import('./pages/ChangePasswordPage'))
+
+// Rarely-visited public pages.
+const PaymentStatus       = lazy(() => import('./pages/PaymentStatus'))
+const UnauthorizedPage    = lazy(() => import('./pages/UnauthorizedPage'))
+const AboutPage           = lazy(() => import('./pages/AboutPage'))
+const ContactPage         = lazy(() => import('./pages/ContactPage'))
+const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'))
+const TermsOfServicePage  = lazy(() => import('./pages/TermsOfServicePage'))
+
+/** Shown while a route chunk downloads. Matches ProtectedRoute's spinner. */
+function RouteFallback() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: '#faf8f4' }}
+    >
+      <div className="w-10 h-10 rounded-full border-4 border-stone-200 border-t-amber-500 animate-spin" />
+    </div>
+  )
+}
 
 function AssignmentLockGuard({ children }: { children: ReactNode }) {
   const location = useLocation()
@@ -99,6 +128,7 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <PasswordChangeGuard>
         <AssignmentLockGuard>
+          <Suspense fallback={<RouteFallback />}>
           <Routes>
             {/* ── Public ── */}
             <Route path="/" element={<LandingPage />} />
@@ -183,6 +213,7 @@ createRoot(document.getElementById('root')!).render(
             {/* ── Catch-all ── */}
             <Route path="*" element={<Navigate to="/signin" replace />} />
           </Routes>
+          </Suspense>
         </AssignmentLockGuard>
         </PasswordChangeGuard>
       </AuthProvider>

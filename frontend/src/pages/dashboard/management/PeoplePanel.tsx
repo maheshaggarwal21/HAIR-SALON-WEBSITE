@@ -66,6 +66,11 @@ export default function PeoplePanel({ canManage }: { canManage: boolean }) {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  /** Reveal-once state for the inline "Reset password" action on a roster row. */
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [quickResetResult, setQuickResetResult] =
+    useState<{ name: string; password: string } | null>(null);
+
   const { showOk, showErr, element: toastEl } = useToast();
 
   const load = useCallback(async () => {
@@ -100,6 +105,30 @@ export default function PeoplePanel({ canManage }: { canManage: boolean }) {
 
   const selected = roster.find((r) => r.id === selectedId) ?? null;
 
+  /**
+   * Reset from the roster row. Confirms first: this immediately invalidates the
+   * person's current password and signs them out everywhere, so a mis-click on
+   * the wrong row would strand a staff member mid-shift.
+   */
+  const quickReset = async (person: RosterEntry) => {
+    if (!person.userId) return;
+    const confirmed = window.confirm(
+      `Generate a new temporary password for ${person.name}?\n\nTheir current password stops working immediately and they'll be signed out everywhere. You'll get the new one to read out to them.`
+    );
+    if (!confirmed) return;
+
+    setResettingId(person.userId);
+    try {
+      const res = await managementApi.tempPassword(person.userId);
+      setQuickResetResult({ name: person.name, password: res.password });
+      await load();
+    } catch (err) {
+      showErr((err as Error).message);
+    } finally {
+      setResettingId(null);
+    }
+  };
+
   const counts = useMemo(() => {
     const byRole = { receptionist: 0, manager: 0, artist: 0, owner: 0 } as Record<StaffRole, number>;
     roster.forEach((r) => { byRole[r.role] += 1; });
@@ -115,6 +144,18 @@ export default function PeoplePanel({ canManage }: { canManage: boolean }) {
         title="People"
         subtitle="Everyone in the salon — artists, reception and management in one list"
       />
+
+      {/* Shown once after an inline reset — the server cannot return it again. */}
+      {quickResetResult && (
+        <div className="mb-5">
+          <SecretReveal
+            value={quickResetResult.password}
+            title={`Temporary password for ${quickResetResult.name}`}
+            note="Read this out to them now. They'll be forced to choose their own password at next sign-in. It cannot be shown again."
+            onDismiss={() => setQuickResetResult(null)}
+          />
+        </div>
+      )}
 
       {/* Search + role filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
@@ -156,10 +197,16 @@ export default function PeoplePanel({ canManage }: { canManage: boolean }) {
         ) : (
           <ul className="divide-y divide-stone-100">
             {filtered.map((person) => (
-              <li key={person.id}>
+              // A row is a flex container rather than one big <button> so the
+              // quick-reset action can sit inside it — nesting a button in a
+              // button is invalid HTML and breaks keyboard navigation.
+              <li
+                key={person.id}
+                className="flex items-stretch hover:bg-stone-50/70 transition-colors"
+              >
                 <button
                   onClick={() => setSelectedId(person.id)}
-                  className="w-full flex items-center gap-4 px-5 py-4 hover:bg-stone-50/70 transition-colors text-left"
+                  className="flex-1 min-w-0 flex items-center gap-4 px-5 py-4 text-left"
                 >
                   <div
                     className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold uppercase shrink-0 ${
@@ -208,6 +255,23 @@ export default function PeoplePanel({ canManage }: { canManage: boolean }) {
                     </span>
                   </div>
                 </button>
+
+                {/* Quick reset — the most common action, without opening the drawer. */}
+                {canManage && person.hasLogin && person.role !== "owner" && (
+                  <button
+                    onClick={() => quickReset(person)}
+                    disabled={resettingId === person.userId}
+                    title={`Reset ${person.name}'s password`}
+                    className="shrink-0 flex items-center gap-1.5 self-center mr-4 text-xs text-stone-500 hover:text-stone-900 border border-stone-200 hover:border-stone-300 rounded-lg px-3 py-2 transition-all disabled:opacity-50"
+                  >
+                    {resettingId === person.userId ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-3.5 h-3.5" />
+                    )}
+                    <span className="hidden md:inline">Reset password</span>
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -384,6 +448,40 @@ function PersonDrawer({
             />
           )}
 
+          {/*
+            ── Account actions ──
+            Deliberately first. Resetting a password is the single most common
+            reason the owner opens this drawer; behind an 11-row permission
+            checklist it was invisible without scrolling.
+          */}
+          {editable && (
+            <section>
+              <SectionTitle>Account actions</SectionTitle>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <ActionButton
+                  icon={KeyRound}
+                  label="Generate temp password"
+                  hint="Forces a change at next sign-in"
+                  busy={busy === "password"}
+                  onClick={generatePassword}
+                />
+                <ActionButton
+                  icon={LogOut}
+                  label="Force sign-out"
+                  hint="Ends every active session now"
+                  busy={busy === "logout"}
+                  onClick={forceLogout}
+                />
+              </div>
+              {person.mustChangePassword && (
+                <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-700">
+                  <UserX className="w-3.5 h-3.5" />
+                  Must set a new password at next sign-in
+                </p>
+              )}
+            </section>
+          )}
+
           {/* ── Permissions ── */}
           {person.role !== "owner" && (
             <section>
@@ -438,35 +536,6 @@ function PersonDrawer({
                   {person.effectiveApproval ? "Currently gated" : "Currently signs in directly"}
                 </span>
               </div>
-            </section>
-          )}
-
-          {/* ── Account actions ── */}
-          {editable && (
-            <section>
-              <SectionTitle>Account actions</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <ActionButton
-                  icon={KeyRound}
-                  label="Generate temp password"
-                  hint="Forces a change at next sign-in"
-                  busy={busy === "password"}
-                  onClick={generatePassword}
-                />
-                <ActionButton
-                  icon={LogOut}
-                  label="Force sign-out"
-                  hint="Ends every active session now"
-                  busy={busy === "logout"}
-                  onClick={forceLogout}
-                />
-              </div>
-              {person.mustChangePassword && (
-                <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-700">
-                  <UserX className="w-3.5 h-3.5" />
-                  Must set a new password at next sign-in
-                </p>
-              )}
             </section>
           )}
 

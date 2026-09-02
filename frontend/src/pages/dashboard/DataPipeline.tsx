@@ -46,16 +46,15 @@ import {
   Scissors,
   Table,
 } from "lucide-react";
-import {
-  exportPipelineExcel,
-  exportPipelinePdf,
-  exportPipelineCsv,
-  type ExportPayload,
-  type PipelineRow,
-  type PipelineSummary,
-  type ArtistPerf,
-  type PaymentLine,
-  type ChartImage,
+// Types only — erased at compile time, so this import pulls in no runtime code.
+// The functions themselves are loaded on demand at export time (see below).
+import type {
+  ExportPayload,
+  PipelineRow,
+  PipelineSummary,
+  ArtistPerf,
+  PaymentLine,
+  ChartImage,
 } from "@/lib/dataPipelineExport";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
@@ -567,10 +566,19 @@ export default function DataPipeline() {
       };
       const mode = summaryPdf ? "summary" : "full";
 
+      /**
+       * Loaded on demand, not at page load. This module pulls in xlsx, jsPDF
+       * and jspdf-autotable — roughly 700 KB that previously shipped in the
+       * main bundle to every visitor, including anyone who only opened the
+       * public landing page. Exporting is a deliberate click, so paying the
+       * download here is the right trade.
+       */
+      const exporters = await import("@/lib/dataPipelineExport");
+
       if (kind === "excel") {
-        exportPipelineExcel(payload, { mode });
+        exporters.exportPipelineExcel(payload, { mode });
       } else if (kind === "csv") {
-        exportPipelineCsv(payload, { mode });
+        exporters.exportPipelineCsv(payload, { mode });
       } else {
         // Charts are rasterised from the live DOM, so the PDF shows exactly
         // the plots on screen for the current filters.
@@ -597,7 +605,7 @@ export default function DataPipeline() {
         const charts = summaryPdf
           ? (await captureCharts()).map((c) => ({ ...c, caption: captions[c.title] }))
           : [];
-        exportPipelinePdf(payload, { mode, colored: colorPdf, charts });
+        exporters.exportPipelinePdf(payload, { mode, colored: colorPdf, charts });
       }
     } catch {
       setError("Export failed. Please try again.");
