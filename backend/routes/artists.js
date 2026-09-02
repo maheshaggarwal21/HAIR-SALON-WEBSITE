@@ -17,6 +17,7 @@ const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Artist = require("../models/Artist");
 const User = require("../models/User");
+const SecuritySettings = require("../models/SecuritySettings");
 const { authorizePermission, evictPermissionCache } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require('../constants/permissions');
 const validateId = require("../middleware/validateId");
@@ -122,12 +123,15 @@ router.post(
       // If email + password provided, create a linked User account (role: "artist")
       if (emailLower && req.body.password) {
         const passwordHash = await bcrypt.hash(req.body.password, 12);
+        // Seed from the owner-configured artist defaults (Management → Team).
+        const settings = await SecuritySettings.load();
         const user = await User.create({
           name: req.body.name.trim(),
           email: emailLower,
           passwordHash,
           role: "artist",
           createdBy: req.session.userId,
+          permissions: settings.roleDefaults?.artist ?? [],
         });
         userId = user._id;
       }
@@ -281,12 +285,14 @@ router.patch(
           return res.status(409).json({ error: "A user with this email already exists" });
         }
         const passwordHash = await bcrypt.hash(newPassword, 12);
+        const settings = await SecuritySettings.load();
         const createdUser = await User.create({
           name: updateObj.name || artist.name,
           email: incomingEmail,
           passwordHash,
           role: "artist",
           createdBy: req.session.userId,
+          permissions: settings.roleDefaults?.artist ?? [],
         });
         updateObj.userId = createdUser._id;
       }

@@ -11,7 +11,26 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, Scissors, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, type Role, type PendingLoginState } from "@/context/AuthContext";
+import LoginGate from "@/components/ui/LoginGate";
+
+/**
+ * Randomised suffix for the password field's id/name.
+ *
+ * Computed once at module load rather than during render: React treats
+ * Math.random() in a render body as impure (it breaks StrictMode's
+ * double-render equality and the React Compiler's memoisation), and a value
+ * that changed mid-render would remount the input and steal focus.
+ */
+const FIELD_NONCE = Math.random().toString(36).slice(2, 8);
+
+/** Where each role lands after a successful sign-in. */
+const HOME_BY_ROLE: Record<Role, string> = {
+  receptionist: "/dashboard/receptionist",
+  manager:      "/dashboard/manager",
+  owner:        "/dashboard/owner",
+  artist:       "/dashboard/artist",
+};
 
 // ── Tiny reusable field wrapper ────────────────────────────────────────────────
 function FormField({
@@ -113,13 +132,24 @@ export default function SignInForm() {
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  /** Set when the account is gated behind owner approval. */
+  const [pending, setPending] = useState<PendingLoginState | null>(null);
+
+  /**
+   * Chrome ignores autocomplete="off" on login forms by design, so a saved
+   * password cannot be blocked outright — the owner-approval gate is what
+   * actually stops a remembered credential being sufficient on its own.
+   * The randomised field name (see FIELD_NONCE) is the remaining best-effort
+   * measure: it stops autofill matching on a stable selector, at zero cost to
+   * anyone typing their password normally.
+   */
+
   // If already logged in, redirect based on role
   useEffect(() => {
     if (!user) return;
-    if (user.role === "receptionist") navigate("/dashboard/receptionist");
-    else if (user.role === "manager") navigate("/dashboard/manager");
-    else if (user.role === "owner") navigate("/dashboard/owner");
-    else if (user.role === "artist") navigate("/dashboard/artist");
+    // A forced reset outranks the normal landing page.
+    if (user.mustChangePassword) navigate("/change-password", { replace: true });
+    else navigate(HOME_BY_ROLE[user.role] ?? "/signin", { replace: true });
   }, [user, navigate]);
 
   // Simple client-side validation
@@ -142,16 +172,43 @@ export default function SignInForm() {
     const result = await login(email, password);
     setLoading(false);
 
-    if (!result.success) {
+    if (result.status === "error") {
       setSubmitError(result.error || "Sign in failed. Please try again.");
       return;
     }
 
-    if (result.role === "receptionist") navigate("/dashboard/receptionist");
-    else if (result.role === "manager") navigate("/dashboard/manager");
-    else if (result.role === "owner") navigate("/dashboard/owner");
-    else if (result.role === "artist") navigate("/dashboard/artist");
+    if (result.status === "pending") {
+      // Password was correct, but this account needs the owner to approve.
+      // Drop the plaintext immediately — the gate never needs it again.
+      setPassword("");
+      setPending(result.pending);
+      return;
+    }
+
+    const dest = result.user.mustChangePassword
+      ? "/change-password"
+      : HOME_BY_ROLE[result.user.role] ?? "/signin";
+    navigate(dest, { replace: true });
   };
+
+  /** Restart a cancelled or failed gate without a full page reload. */
+  const resetToCredentials = () => {
+    setPending(null);
+    setPassword("");
+    setSubmitError("");
+  };
+
+  if (pending) {
+    return (
+      <LoginGate
+        initial={pending}
+        // The auth context already holds the user by the time this fires; the
+        // redirect effect above picks it up and routes by role.
+        onAuthenticated={() => setPending(null)}
+        onRestart={resetToCredentials}
+      />
+    );
+  }
 
   return (
     <motion.div
@@ -211,7 +268,7 @@ export default function SignInForm() {
           />
 
           <FormField
-            id="password"
+            id={`pw-${FIELD_NONCE}`}
             label="Password"
             type={showPw ? "text" : "password"}
             value={password}
@@ -219,7 +276,9 @@ export default function SignInForm() {
             placeholder="••••••••"
             icon={Lock}
             error={errors.password}
-            autoComplete="current-password"
+            // "new-password" discourages Chrome from offering a saved credential.
+            // It is a nudge, not a guarantee — see the note on fieldSuffix above.
+            autoComplete="new-password"
             rightSlot={
               <button
                 type="button"

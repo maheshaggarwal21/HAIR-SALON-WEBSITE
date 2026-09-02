@@ -83,6 +83,7 @@ async function ensureOwner() {
 
 // ── New: session & auth packages ─────────────────────────────────────────────
 const session = require("express-session");
+const cookieParser = require("cookie-parser");
 const MongoStore = require("connect-mongo").default;
 const { authenticate, authorize, authorizePermission } = require("./middleware/authMiddleware");
 const { PERMISSIONS } = require("./constants/permissions");
@@ -293,6 +294,14 @@ const PAYMENT_CRITICAL = [
   "/api/order-status",    // polled every few seconds while checkout is open
   "/api/visits",          // covers /visits, /visits/v2 and confirm-assignment
   "/api/razorpay/webhook",
+  // The owner-approval gate polls /login-status every ~2.5s for up to 90s, so a
+  // handful of staff signing in at opening time would otherwise exhaust the
+  // global budget and lock the salon out. It carries its own tighter limiter
+  // (pollLimiter in routes/auth.js) instead.
+  "/api/auth/login-status",
+  // Telegram delivers Approve/Deny callbacks from its own IP range and retries
+  // on non-2xx; throttling it would strand logins in `pending`.
+  "/api/telegram/webhook",
 ];
 
 app.use(
@@ -304,6 +313,17 @@ app.use(
     skip: (req) => PAYMENT_CRITICAL.some((p) => req.path.startsWith(p)),
   })
 );
+
+/**
+ * Cookie parsing — required by the login gate.
+ *
+ * express-session reads the session cookie itself but never populates
+ * req.cookies, and the approval flow needs two cookies of its own:
+ * `salon_device` (device trust) and `salon_pending` (binds a /login-status poll
+ * to the browser that supplied the password). Must run before the session
+ * middleware so both are available everywhere downstream.
+ */
+app.use(cookieParser());
 
 // ── Session middleware (stored in MongoDB) ────────────────────────────────────
 app.use(session({
@@ -749,6 +769,12 @@ app.get("/api/verify-payment", authenticate, async (req, res) => {
 // any authenticated user whose permissions array contains the required key can
 // reach the handler, regardless of role.
 app.use("/api/auth", require("./routes/auth"));
+
+// Public by design — Telegram has no session cookie. The webhook authenticates
+// itself with the X-Telegram-Bot-Api-Secret-Token header instead.
+app.use("/api/telegram", require("./routes/telegram"));
+
+app.use("/api/management", authenticate, require("./routes/management"));
 app.use("/api/admin", authenticate, require("./routes/admin"));
 app.use("/api/artists", authenticate, require("./routes/artists"));
 app.use("/api/services", authenticate, require("./routes/services"));

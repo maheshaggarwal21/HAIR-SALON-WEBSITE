@@ -25,6 +25,7 @@ import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
 import ServiceManagement from "@/pages/dashboard/ServiceManagement";
 import TeamManagement from "@/pages/dashboard/TeamManagement";
+import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
@@ -62,18 +63,70 @@ function DefaultRedirect() {
   return <Navigate to="/unauthorized" replace />;
 }
 
+const HOME = "/dashboard/receptionist";
+
+/** Same URL-typing gap as the manager shell — see RequirePermission. */
 export default function ReceptionistDashboard() {
   return (
     <DashboardLayout sidebarLinks={receptionistLinks} pageTitle="Receptionist Dashboard">
       <Routes>
         <Route index element={<DefaultRedirect />} />
-        <Route path="payments" element={<PaymentHistory />} />
-        <Route path="data-pipeline" element={<DataPipeline />} />
-        <Route path="analytics" element={<DashboardAnalyticsView />} />
-        <Route path="services" element={<ServiceManagement />} />
-        <Route path="artists" element={<ArtistManagement />} />
-        <Route path="artist-view/:id" element={<ArtistDashboardView />} />
-        <Route path="team" element={<TeamManagement />} />
+        <Route
+          path="payments"
+          element={
+            <RequirePermission permission="payments.view" backTo={HOME}>
+              <PaymentHistory />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="data-pipeline"
+          element={
+            <RequirePermission permission="datapipeline.view" backTo={HOME}>
+              <DataPipeline />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="analytics"
+          element={
+            <RequirePermission permission="analytics.view" backTo={HOME}>
+              <DashboardAnalyticsView />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="services"
+          element={
+            <RequirePermission permission={["services.view", "services.crud"]} backTo={HOME}>
+              <ServiceManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="artists"
+          element={
+            <RequirePermission permission={["artists.view", "artists.crud"]} backTo={HOME}>
+              <ArtistManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="artist-view/:id"
+          element={
+            <RequirePermission permission="artist_dashboard.view" backTo={HOME}>
+              <ArtistDashboardView />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="team"
+          element={
+            <RequirePermission permission={["team.view", "team.manage"]} backTo={HOME}>
+              <TeamManagement />
+            </RequirePermission>
+          }
+        />
       </Routes>
     </DashboardLayout>
   );

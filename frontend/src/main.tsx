@@ -20,8 +20,9 @@ import { StrictMode, useEffect, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import './index.css'
-import { AuthProvider } from '@/context/AuthContext'
+import { AuthProvider, useAuth } from '@/context/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 import LandingPage from './pages/LandingPage'
 import SignInPage from './pages/SignInPage'
 import PaymentStatus from './pages/PaymentStatus'
@@ -67,10 +68,36 @@ function AssignmentLockGuard({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Holds a user on /change-password until they replace a temporary password.
+ *
+ * The owner can issue a temp password from Management → People; without this
+ * guard that shared, spoken-aloud credential would quietly become the account's
+ * permanent password. Sits inside the router so it can read the location, and
+ * outside the route table so it covers every protected page at once.
+ */
+function PasswordChangeGuard({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  const mustChange = !loading && Boolean(user?.mustChangePassword)
+  const onChangePage = location.pathname === '/change-password'
+
+  useEffect(() => {
+    if (mustChange && !onChangePage) {
+      navigate('/change-password', { replace: true })
+    }
+  }, [mustChange, onChangePage, navigate])
+
+  return <>{children}</>
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>
+        <PasswordChangeGuard>
         <AssignmentLockGuard>
           <Routes>
             {/* ── Public ── */}
@@ -82,6 +109,16 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+
+            {/* ── Forced / voluntary password change — any signed-in role ── */}
+            <Route
+              path="/change-password"
+              element={
+                <ProtectedRoute allowedRoles={["receptionist", "manager", "owner", "artist"]}>
+                  <ChangePasswordPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* ── Visit Entry: receptionist + manager + owner ── */}
             <Route
@@ -147,6 +184,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<Navigate to="/signin" replace />} />
           </Routes>
         </AssignmentLockGuard>
+        </PasswordChangeGuard>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

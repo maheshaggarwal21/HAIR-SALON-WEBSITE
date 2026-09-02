@@ -17,6 +17,7 @@ const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const User = require("../models/User");
 const Artist = require("../models/Artist");
+const SecuritySettings = require("../models/SecuritySettings");
 const validateId = require("../middleware/validateId");
 const { invalidateUserSessions } = require("../utils/sessionUtils");
 const { PERMISSIONS, ROLE_DEFAULTS, PERMISSION_LABELS, PERMISSION_GROUPS } = require('../constants/permissions');
@@ -101,13 +102,20 @@ router.post(
 
       const passwordHash = await bcrypt.hash(req.body.password, 12);
 
+      // Seed from the owner-configured defaults in the Management tab, falling
+      // back to the ROLE_DEFAULTS constant only if the settings document has no
+      // entry for this role.
+      const settings = await SecuritySettings.load();
+      const seedPermissions =
+        settings.roleDefaults?.[req.body.role] ?? ROLE_DEFAULTS[req.body.role] ?? [];
+
       const user = await User.create({
         name: req.body.name.trim(),
         email: emailLower,
         passwordHash,
         role: req.body.role,
         createdBy: req.session.userId,
-        permissions: ROLE_DEFAULTS[req.body.role] ?? [],
+        permissions: seedPermissions,
       });
 
       // Return without passwordHash
@@ -161,6 +169,14 @@ router.patch(
       // Prevent editing artist-role users through this route (use /api/artists instead)
       if (user.role === "artist") {
         return res.status(403).json({ error: "Artist accounts must be managed through the Artist directory" });
+      }
+
+      // Privilege containment: team.manage is a delegable permission, so a
+      // manager or receptionist can hold it. Without this guard they could
+      // PATCH the owner's passwordHash and take over the salon — the role
+      // whitelist above only constrains `role`, not `password` or `isActive`.
+      if (user.role === "owner" && req.session.role !== "owner") {
+        return res.status(403).json({ error: "Only the owner can modify the owner account" });
       }
 
       // Prevent owner from changing their own role
@@ -238,6 +254,12 @@ router.delete("/users/:id", validateId, authorizePermission(PERMISSIONS.TEAM_MAN
     // Prevent touching artist accounts through this route
     if (user.role === "artist") {
       return res.status(403).json({ error: "Artist accounts must be managed through the Artist directory" });
+    }
+
+    // The owner account must never be deactivatable by a delegate — locking the
+    // owner out would leave nobody able to approve logins or undo the change.
+    if (user.role === "owner") {
+      return res.status(400).json({ error: "Cannot deactivate the owner account" });
     }
 
     // Prevent self-deletion

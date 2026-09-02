@@ -20,8 +20,10 @@ import {
   CalendarPlus,
   Receipt,
   Database,
+  Network,
 } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
+import Management from "@/pages/dashboard/Management";
 import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
 import ServiceManagement from "@/pages/dashboard/ServiceManagement";
@@ -39,6 +41,7 @@ const ownerLinks = [
   { to: "/dashboard/owner/services", label: "Services", icon: Scissors },
   { to: "/dashboard/owner/artists", label: "Artists", icon: Palette },
   { to: "/dashboard/owner/team", label: "Team", icon: Users },
+  { to: "/dashboard/owner/management", label: "Management", icon: Network },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus },
 ];
 
@@ -54,6 +57,7 @@ export default function OwnerDashboard() {
         <Route path="artists" element={<ArtistManagement />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />
         <Route path="team" element={<TeamManagement />} />
+        <Route path="management" element={<Management />} />
       </Routes>
     </DashboardLayout>
   );
