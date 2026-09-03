@@ -50,14 +50,33 @@ router.post("/webhook", async (req, res) => {
     return res.status(401).json({ ok: false });
   }
 
-  // Acknowledge immediately; Telegram does not wait on our processing.
-  res.json({ ok: true });
-
+  /**
+   * Process BEFORE responding. This ordering is load-bearing on serverless.
+   *
+   * The obvious pattern is to ack immediately and process afterwards, which is
+   * right on a long-lived Node server. On Vercel it silently breaks: once the
+   * response is flushed the invocation is complete and the container can be
+   * frozen straight away, so anything awaited after res.json() may never run.
+   *
+   * The symptom is nasty because it is partial — a /start would get far enough
+   * to save the chat id to Mongo and then die before sending the confirmation,
+   * so the link worked but the user saw no reply at all.
+   *
+   * Telegram waits ~60s before treating a webhook as failed; our handling is a
+   * couple of DB reads plus one or two Bot API calls, comfortably under a
+   * second. Retries are safe regardless: handleCallback ignores any pending
+   * login that is no longer `pending`, and a /start code is single-use.
+   */
   try {
     await processUpdate(req.body, req);
   } catch (err) {
     console.error("[telegram] update handling failed:", err);
   }
+
+  // Always 200, even after a handler error. A non-2xx makes Telegram retry the
+  // same update with backoff, and a permanently malformed update would then be
+  // redelivered indefinitely.
+  res.json({ ok: true });
 });
 
 /**
