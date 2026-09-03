@@ -54,12 +54,32 @@ router.post("/webhook", async (req, res) => {
   res.json({ ok: true });
 
   try {
-    if (req.body?.callback_query) await handleCallback(req.body.callback_query, req);
-    else if (req.body?.message)    await handleMessage(req.body.message, req);
+    await processUpdate(req.body, req);
   } catch (err) {
     console.error("[telegram] update handling failed:", err);
   }
 });
+
+/**
+ * Single entry point for a Telegram update, whichever transport delivered it.
+ *
+ * The webhook calls this, and so does the dev long-poller (see
+ * telegram.startPolling). Sharing one function means the path you test locally
+ * is the same one that runs in production — the transport differs, the handling
+ * does not.
+ *
+ * @param {object} update  raw Telegram Update
+ * @param {object} [req]   express request when available; only used for audit
+ *                         metadata (ip / user-agent), safe to omit when polling
+ */
+async function processUpdate(update, req) {
+  // The poller runs outside the router, so it never passes through the
+  // connect-on-request middleware above.
+  await connectDB();
+
+  if (update?.callback_query) return handleCallback(update.callback_query, req);
+  if (update?.message) return handleMessage(update.message, req);
+}
 
 // ─── ✅ Approve / ❌ Deny ────────────────────────────────────────────────────
 
@@ -190,3 +210,5 @@ async function handleMessage(message, req) {
 }
 
 module.exports = router;
+// Exposed so the dev poller can reuse the exact webhook handling path.
+module.exports.processUpdate = processUpdate;

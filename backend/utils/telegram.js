@@ -38,7 +38,7 @@ function isConfigured() {
  * Never throws — a Telegram outage must not take down the login endpoint, so
  * failures are returned as { ok: false } and the caller falls through to SMS.
  */
-async function call(method, payload) {
+async function call(method, payload, { timeoutMs = 8000 } = {}) {
   const token = botToken();
   if (!token) return { ok: false, error: "TELEGRAM_BOT_TOKEN is not set" };
 
@@ -47,7 +47,7 @@ async function call(method, payload) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const data = await res.json();
     if (!data.ok) {
@@ -193,6 +193,66 @@ async function getMe() {
 }
 
 /**
+ * DEVELOPMENT ONLY — pull updates instead of receiving them on a webhook.
+ *
+ * Telegram cannot reach http://localhost, so the webhook never fires on a dev
+ * machine. Rather than forcing a tunnel just to click Approve once, this long-
+ * polls getUpdates and hands each update to the same processUpdate() the
+ * webhook uses, so both paths exercise identical code.
+ *
+ * Never enable this in production:
+ *   - Telegram allows only ONE consumer. Polling calls deleteWebhook first, so
+ *     starting it against a deployed bot silently unhooks production.
+ *   - It holds an open request permanently, which serverless cannot do.
+ *
+ * @param {(update: object) => Promise<void>} onUpdate
+ * @returns {() => void} stop function
+ */
+function startPolling(onUpdate) {
+  if (!isConfigured()) {
+    console.warn("[telegram] polling requested but TELEGRAM_BOT_TOKEN is not set");
+    return () => {};
+  }
+
+  let stopped = false;
+  let offset = 0;
+
+  (async () => {
+    // Telegram rejects getUpdates while a webhook is registered.
+    await call("deleteWebhook", {});
+    console.log("[telegram] dev polling started — webhook removed for this bot");
+
+    while (!stopped) {
+      // 5s server-side long poll, comfortably inside the 8s client abort.
+      const res = await call(
+        "getUpdates",
+        { offset, timeout: 5, allowed_updates: ["message", "callback_query"] },
+        { timeoutMs: 20000 }
+      );
+
+      if (!res.ok) {
+        // Back off so a bad token doesn't spin the CPU.
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+
+      for (const update of res.result) {
+        offset = update.update_id + 1; // acknowledge even if handling throws
+        try {
+          await onUpdate(update);
+        } catch (err) {
+          console.error("[telegram] poll handler error:", err.message);
+        }
+      }
+    }
+  })();
+
+  return () => {
+    stopped = true;
+  };
+}
+
+/**
  * MarkdownV2 requires escaping a long list of punctuation. Names and device
  * labels are user-controlled, so escape everything Telegram lists as reserved.
  */
@@ -208,5 +268,6 @@ module.exports = {
   sendMessage,
   registerWebhook,
   getMe,
+  startPolling,
   call,
 };

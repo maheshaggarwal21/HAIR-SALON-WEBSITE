@@ -774,6 +774,21 @@ app.use("/api/auth", require("./routes/auth"));
 // itself with the X-Telegram-Bot-Api-Secret-Token header instead.
 app.use("/api/telegram", require("./routes/telegram"));
 
+/**
+ * Dev-only Telegram long-polling.
+ *
+ * Telegram cannot deliver a webhook to localhost, so without this the Approve /
+ * Deny buttons do nothing on a development machine. Opt in with
+ * TELEGRAM_MODE=polling; it is hard-gated to non-production because it calls
+ * deleteWebhook (which would unhook the live bot) and holds a permanently open
+ * request (which serverless cannot support).
+ */
+if (process.env.TELEGRAM_MODE === "polling" && process.env.NODE_ENV !== "production") {
+  const telegram = require("./utils/telegram");
+  const { processUpdate } = require("./routes/telegram");
+  telegram.startPolling((update) => processUpdate(update));
+}
+
 app.use("/api/management", authenticate, require("./routes/management"));
 app.use("/api/admin", authenticate, require("./routes/admin"));
 app.use("/api/artists", authenticate, require("./routes/artists"));
