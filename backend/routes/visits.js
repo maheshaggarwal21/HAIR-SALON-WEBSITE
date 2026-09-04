@@ -15,7 +15,7 @@ const Visit = require("../models/Visit");
 const Service = require("../models/Service");
 const Artist = require("../models/Artist");
 const PaymentEvent = require("../models/PaymentEvent");
-const { authorizePermission } = require("../middleware/authMiddleware");
+const { authorizePermission, getUserPermissions } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require('../constants/permissions');
 
 const router = express.Router();
@@ -719,6 +719,32 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
       return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD." });
     }
 
+    /**
+     * `payments.today_only` clamps the range to the current day.
+     *
+     * Enforced HERE, not in the UI. Hiding the date buttons stops an honest
+     * receptionist browsing last month's takings; it does nothing about someone
+     * editing the `from=` parameter in the address bar. The server has to be
+     * the thing that refuses, so the clamp is applied after parsing and before
+     * the filter is built — every read below inherits it, including the summary
+     * totals and the row count.
+     *
+     * The owner bypasses PBAC everywhere else, so it bypasses this too.
+     */
+    const permissions = await getUserPermissions(req.session.userId);
+    const todayOnly =
+      req.session.role !== "owner" &&
+      permissions.includes(PERMISSIONS.PAYMENTS_TODAY_ONLY);
+
+    if (todayOnly) {
+      const now = new Date();
+      // Mutate in place — `from`/`to` are const bindings to Date objects.
+      from.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
+      from.setHours(0, 0, 0, 0);
+      to.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
+      to.setHours(23, 59, 59, 999);
+    }
+
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
     const skip = (page - 1) * limit;
@@ -851,6 +877,10 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       summary: summary[0] || { totalRevenue: 0, totalCash: 0, totalCard: 0, totalOnline: 0, totalDiscount: 0, count: 0 },
       schemaCounts,
+      // Lets the UI explain why the date filters are gone, instead of the page
+      // looking broken to a receptionist who remembers them being there.
+      restrictedToToday: todayOnly,
+      range: { from, to },
     });
   } catch (err) {
     console.error("[visits] History error:", err);

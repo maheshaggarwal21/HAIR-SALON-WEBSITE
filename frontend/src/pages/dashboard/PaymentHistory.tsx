@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { toLocalDateKey } from "@/lib/utils";
 import UnreconciledPayments from "@/pages/dashboard/shared/UnreconciledPayments";
+import { usePermission } from "@/hooks/usePermission";
 import {
   Receipt,
   Filter,
@@ -158,13 +159,24 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PaymentHistory() {
+  /**
+   * `payments.today_only` narrows this page to the current day.
+   *
+   * The server clamps the range regardless of what we send (see /history in
+   * routes/visits.js) — this only keeps the UI honest, so a restricted user
+   * sees a page that makes sense rather than date buttons that silently do
+   * nothing. usePermission already returns false for the owner's bypass.
+   */
+  const todayOnly = usePermission("payments.today_only");
+
   // Date preset + custom
-  const [preset, setPreset] = useState<DatePreset>("month");
+  const [preset, setPreset] = useState<DatePreset>(todayOnly ? "today" : "month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const { from: pFrom, to: pTo } = getPresetDates(preset);
-  const from = preset === "custom" ? customFrom : pFrom;
-  const to = preset === "custom" ? customTo : pTo;
+  const effectivePreset: DatePreset = todayOnly ? "today" : preset;
+  const { from: pFrom, to: pTo } = getPresetDates(effectivePreset);
+  const from = effectivePreset === "custom" ? customFrom : pFrom;
+  const to = effectivePreset === "custom" ? customTo : pTo;
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState("");
@@ -303,7 +315,9 @@ export default function PaymentHistory() {
             <Receipt className="w-6 h-6 text-amber-500" /> Payment History
           </h2>
           <p className="text-sm text-stone-500 mt-0.5">
-            Browse and export all visit payment records
+            {todayOnly
+              ? "Today's payments. Older records aren't available on your account."
+              : "Browse and export all visit payment records"}
           </p>
         </div>
         <button
@@ -327,7 +341,12 @@ export default function PaymentHistory() {
       <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm p-5 mb-4">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <Filter className="w-4 h-4 text-stone-400" />
-          {presets.map(({ key, label }) => (
+          {todayOnly && (
+            <span className="px-4 py-1.5 rounded-lg text-sm font-medium bg-stone-900 text-white">
+              Today
+            </span>
+          )}
+          {!todayOnly && presets.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setPreset(key)}
@@ -342,7 +361,7 @@ export default function PaymentHistory() {
           ))}
         </div>
 
-        {preset === "custom" && (
+        {!todayOnly && preset === "custom" && (
           <div className="flex flex-wrap gap-3 mt-2">
             <div>
               <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1">From</label>

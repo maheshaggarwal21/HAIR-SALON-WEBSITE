@@ -6,6 +6,9 @@
 const PERMISSIONS = Object.freeze({
   ANALYTICS_VIEW:        'analytics.view',
   PAYMENTS_VIEW:         'payments.view',
+  // Narrows PAYMENTS_VIEW rather than granting anything on its own — see the
+  // note above PERMISSION_LABELS. Useless without payments.view.
+  PAYMENTS_TODAY_ONLY:   'payments.today_only',
   DATAPIPELINE_VIEW:     'datapipeline.view',
   SERVICES_VIEW:         'services.view',
   SERVICES_CRUD:         'services.crud',
@@ -42,9 +45,16 @@ const ROLE_DEFAULTS = {
 
 // Human-readable labels used by the frontend permission editor UI.
 // Keep this in sync with the PERMISSIONS object above.
+//
+// Almost every key here GRANTS access. `payments.today_only` is the exception:
+// it RESTRICTS payments.view down to the current day. It is written as an
+// opt-in restriction rather than making payments.view mean "today" and adding a
+// payments.view_history key, because the latter would silently strip history
+// from every account that already holds payments.view today.
 const PERMISSION_LABELS = {
   'analytics.view':        'View Analytics Dashboard',
   'payments.view':         'View Payment History',
+  'payments.today_only':   "↳ Restrict to today's payments only (hides older records)",
   'datapipeline.view':     'View Data Pipeline (includes per-artist revenue)',
   'services.view':         'View Services List',
   'services.crud':         'Manage Services (Create / Edit / Delete)',
@@ -64,7 +74,9 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Financials',
-    keys:  ['payments.view', 'datapipeline.view'],
+    // today_only sits directly under payments.view so the indented label reads
+    // as a modifier of the line above it.
+    keys:  ['payments.view', 'payments.today_only', 'datapipeline.view'],
   },
   {
     label: 'Analytics',
