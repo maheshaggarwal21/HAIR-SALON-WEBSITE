@@ -18,7 +18,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { toLocalDateKey } from "@/lib/utils";
 import UnreconciledPayments from "@/pages/dashboard/shared/UnreconciledPayments";
-import { usePermission } from "@/hooks/usePermission";
+import { useRestriction } from "@/hooks/usePermission";
 import {
   Receipt,
   Filter,
@@ -165,9 +165,13 @@ export default function PaymentHistory() {
    * The server clamps the range regardless of what we send (see /history in
    * routes/visits.js) — this only keeps the UI honest, so a restricted user
    * sees a page that makes sense rather than date buttons that silently do
-   * nothing. usePermission already returns false for the owner's bypass.
+   * nothing.
+   *
+   * useRestriction, NOT usePermission: the latter reports true for the owner on
+   * every key, which would restrict the owner to today. See the note on
+   * useRestriction.
    */
-  const todayOnly = usePermission("payments.today_only");
+  const todayOnly = useRestriction("payments.today_only");
 
   // Date preset + custom
   const [preset, setPreset] = useState<DatePreset>(todayOnly ? "today" : "month");
