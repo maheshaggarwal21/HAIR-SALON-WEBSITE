@@ -17,6 +17,7 @@
  */
 
 const User = require('../models/User');
+const connectDB = require('../db');
 const { PERMISSIONS } = require('../constants/permissions');
 
 // ─── In-process permission cache ─────────────────────────────────────────────
@@ -38,6 +39,17 @@ async function getUserPermissions(userId) {
   if (cached && cached.expiresAt > Date.now()) {
     return cached.permissions;
   }
+
+  /**
+   * Defence in depth: this middleware is mounted app-wide and runs BEFORE any
+   * router's own connect-on-request middleware. A router that forgets to add
+   * one leaves this read hitting an unconnected mongoose on a cold serverless
+   * container, where it buffers, times out and throws — which staff see as
+   * "Internal server error during permission check". routes/visits.js did
+   * exactly that. connectDB is an idempotent singleton, so calling it here is
+   * effectively free once warm and removes a whole class of ordering bug.
+   */
+  await connectDB();
 
   // Lightweight DB fetch — only the permissions field, not the whole document
   const user = await User.findById(userId, { permissions: 1 }).lean();

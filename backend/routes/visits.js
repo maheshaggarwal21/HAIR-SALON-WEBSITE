@@ -20,6 +20,36 @@ const { PERMISSIONS } = require('../constants/permissions');
 
 const router = express.Router();
 
+/**
+ * ── Ensure DB on every request (Vercel cold-start) ──────────────────────────
+ *
+ * Every other router has had this; this one connected inside each handler
+ * instead, and that ordering was a live bug.
+ *
+ * authorizePermission() runs BEFORE the handler and reads the user's
+ * permissions from Mongo. On a cold container the connection did not exist
+ * yet, so that read buffered until it timed out and threw — surfacing to staff
+ * as "Internal server error during permission check" on the customer lookup,
+ * the assignment page and the record-payment button, intermittently, depending
+ * on whether the container happened to be warm.
+ *
+ * It never affected the owner: authorizePermission short-circuits on
+ * role === "owner" and never touches the database, so the bug was invisible
+ * from the account most likely to be testing.
+ *
+ * The per-handler connectDB() calls below are now redundant but harmless —
+ * connectDB is an idempotent singleton.
+ */
+router.use(async (_req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error("[visits] DB middleware error:", err.message);
+    res.status(503).json({ error: "Database unavailable", details: err.message });
+  }
+});
+
 function toMins(t) {
   if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
   const [h, m] = t.split(":").map(Number);
