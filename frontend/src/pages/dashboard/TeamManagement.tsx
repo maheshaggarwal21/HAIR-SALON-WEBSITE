@@ -233,12 +233,32 @@ export default function TeamManagement() {
   const handleEditSave = async () => {
     if (!editingUser) return;
     setEditFormError("");
+    const isOwner = editingUser.role === "owner";
+
     const body: Record<string, unknown> = {
       name: editForm.name,
       email: editForm.email,
-      role: editForm.role,
-      permissions: selectedPermissions,
     };
+
+    /**
+     * Send `role` only when it can legitimately change.
+     *
+     * The form always used to include it, which made editing the owner
+     * impossible: the field renders as "Owner (cannot change)" but still posted
+     * role: "owner", and the server only accepts receptionist|manager — so
+     * every save returned 400, including a plain password change. The server
+     * separately refuses a self role-change, so omitting it when unchanged is
+     * correct on both counts.
+     */
+    if (!isOwner && editForm.role !== editingUser.role) {
+      body.role = editForm.role;
+    }
+
+    // The permission editor is hidden for the owner (they bypass PBAC), so
+    // there is no meaningful selection to send — posting [] would just be noise.
+    if (!isOwner) {
+      body.permissions = selectedPermissions;
+    }
     if (editForm.newPassword.trim()) {
       if (editForm.newPassword.length < 8) {
         setEditFormError("New password must be at least 8 characters.");
@@ -258,7 +278,12 @@ export default function TeamManagement() {
         fetchUsers();
         setEditingUser(null);
       } else {
-        setEditFormError(data.error || "Failed to update user.");
+        // express-validator replies with { errors: [{ msg }] }, not { error }.
+        // Reading only `data.error` turned every validation failure into an
+        // unhelpful "Failed to update user." with the real reason discarded.
+        setEditFormError(
+          data.error || data.errors?.[0]?.msg || "Failed to update user."
+        );
       }
     } catch {
       setEditFormError("Network error. Check your connection.");
