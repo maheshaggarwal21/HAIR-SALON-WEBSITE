@@ -17,69 +17,19 @@ const cors = require("cors");
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const Razorpay = require("razorpay");
-const bcrypt = require("bcryptjs");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
 // ── Database ─────────────────────────────────────────────────────────────────
 const connectDB = require("./db");
-const User = require("./models/User");
 const Service = require("./models/Service");
 
-// ── Auto-seed owner account from env vars ────────────────────────────────────
-/**
- * Ensures exactly one owner account exists in the database.
- * - If no owner exists → creates one from OWNER_EMAIL / OWNER_PASSWORD env vars
- * - If an owner exists → updates email, name, and password to match env vars
- * Runs lazily on the first request (not at module load) to avoid unhandled
- * rejection crashes in Vercel's serverless environment.
- */
-let ownerSeeded = false;
-async function ensureOwner() {
-  if (ownerSeeded) return;
-  ownerSeeded = true; // Mark immediately to prevent concurrent runs
-
-  const email = process.env.OWNER_EMAIL;
-  const password = process.env.OWNER_PASSWORD;
-  const name = "Salon Owner";
-
-  if (!email || !password) {
-    console.warn("[ensureOwner] OWNER_EMAIL / OWNER_PASSWORD not set — skipping owner auto-seed");
-    return;
-  }
-
-  try {
-    await connectDB();
-    const existing = await User.findOne({ role: "owner" });
-
-    if (existing) {
-      // Sync credentials with env vars
-      let changed = false;
-      if (existing.email !== email) { existing.email = email; changed = true; }
-      if (existing.name !== name) { existing.name = name; changed = true; }
-
-      // Only re-hash if the password actually changed
-      const passwordMatch = await bcrypt.compare(password, existing.passwordHash);
-      if (!passwordMatch) {
-        existing.passwordHash = await bcrypt.hash(password, 12);
-        changed = true;
-      }
-
-      if (!existing.isActive) { existing.isActive = true; changed = true; }
-      if (changed) {
-        await existing.save();
-        console.log("[ensureOwner] Owner account updated:", email);
-      }
-    } else {
-      const passwordHash = await bcrypt.hash(password, 12);
-      await User.create({ name, email, passwordHash, role: "owner" });
-      console.log("[ensureOwner] Owner account created:", email);
-    }
-  } catch (err) {
-    ownerSeeded = false; // Allow retry on next request
-    console.error("[ensureOwner] Failed:", err.message);
-  }
-}
+// ── Owner-account seed ───────────────────────────────────────────────────────
+// The owner account is seeded by `scripts/seedOwner.js` (run `npm run
+// seed:owner` at deploy time), NOT lazily on the first request. Keeping it out
+// of the request path means a cold serverless container no longer pays a
+// bcrypt hash + DB round trip on its very first (login) request. See that file
+// for the full rationale.
 
 // ── New: session & auth packages ─────────────────────────────────────────────
 const session = require("express-session");
@@ -268,12 +218,6 @@ app.post(
 );
 
 app.use(express.json());
-
-// Lazy owner-seed + DB warm-up on the first request
-app.use(async (_req, _res, next) => {
-  try { await ensureOwner(); } catch { /* logged inside ensureOwner */ }
-  next();
-});
 
 // Security headers
 app.use(helmet());

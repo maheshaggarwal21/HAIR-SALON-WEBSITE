@@ -91,6 +91,37 @@ export const useAuth = () => {
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
+/**
+ * Last-known user, cached in localStorage so a returning visitor renders their
+ * dashboard shell instantly instead of staring at a spinner while the (often
+ * cold-started, multi-second) GET /api/auth/me round-trips.
+ *
+ * This is a UX optimisation only, never an authority: the session cookie is the
+ * real credential and the server re-enforces auth and PBAC on every API call,
+ * so an expired or tampered cache can at worst flash a shell before the next
+ * request 401s and refresh() clears it. We still revalidate against /me on
+ * mount and update or drop the cache from the truthful response.
+ */
+const USER_CACHE_KEY = "salon_user_v1";
+
+function readCachedUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUser(u: AuthUser | null): void {
+  try {
+    if (u) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
+    else localStorage.removeItem(USER_CACHE_KEY);
+  } catch {
+    /* storage unavailable (private mode, quota) — cache is best-effort */
+  }
+}
+
 /** Statuses from which no further progress is possible — stop polling. */
 const TERMINAL_FAILURES: GateStatus[] = ["denied", "expired", "otp_failed"];
 
@@ -102,19 +133,32 @@ const FAILURE_COPY: Record<string, string> = {
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Seed from the cache so returning users render immediately. When there is no
+  // cache (first-ever visit) we fall back to the blocking spinner. Lazy
+  // initialisers so localStorage is read once, not on every render.
+  const [user, setUser] = useState<AuthUser | null>(() => readCachedUser());
+  const [loading, setLoading] = useState<boolean>(() => readCachedUser() === null);
+
+  /** Update both the in-memory user and its localStorage mirror together. */
+  const persist = useCallback((u: AuthUser | null) => {
+    setUser(u);
+    writeCachedUser(u);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/auth/me`, { credentials: "include" });
-      setUser(res.ok ? await res.json() : null);
+      // A definitive answer (200 or 401) is authoritative — trust it over the
+      // cache. Only a network failure leaves the optimistic state untouched.
+      persist(res.ok ? await res.json() : null);
     } catch {
-      /* offline — keep whatever we already had */
+      /* offline — keep whatever we already had (cache stays as-is) */
     }
-  }, []);
+  }, [persist]);
 
-  // Restore session on mount
+  // Restore/revalidate the session on mount. With a cached user we've already
+  // rendered optimistically, so revalidation happens in the background without
+  // ever flipping `loading` back on.
   useEffect(() => {
     refresh().finally(() => setLoading(false));
   }, [refresh]);
@@ -146,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { status: "pending", pending: data as PendingLoginState };
       }
 
-      setUser(data.user);
+      persist(data.user);
       return { status: "authenticated", user: data.user };
     } catch {
       return { status: "error", error: "Network error. Check your connection." };
@@ -161,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (res: Response, data: Record<string, unknown>): GateResult => {
       if (res.ok && data.status === "authenticated") {
         const u = data.user as AuthUser;
-        setUser(u);
+        persist(u);
         return { status: "authenticated", user: u };
       }
 
@@ -188,7 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { status: "pending", pending: data as unknown as PendingLoginState };
     },
-    []
+    [persist]
   );
 
   const pollStatus = useCallback(
@@ -257,7 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       credentials: "include",
     }).catch(() => {});
-    setUser(null);
+    persist(null);
   };
 
   return (
