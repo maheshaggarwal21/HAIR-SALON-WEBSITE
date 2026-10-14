@@ -22,3 +22,8 @@ copilot-instructions.md
 context.md
 project-context.md
 .gstack/
+
+# Source photos for the website (2 MB PNGs). Only the optimised WebP files in
+# customer/public/images/services/ are committed.
+hair-salon-media/
+__MACOSX/

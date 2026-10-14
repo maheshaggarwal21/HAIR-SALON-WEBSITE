@@ -15,6 +15,7 @@ import { getService, getServices, getSite } from "@/lib/api";
 import { OptionPicker } from "@/components/menu/OptionPicker";
 import { Faq } from "@/components/site/Faq";
 import { ServiceJsonLd } from "@/components/site/JsonLd";
+import { getServiceImage } from "@/lib/serviceImages";
 
 /** Cache Components needs at least one param; "menu" is a stand-in that 404s. */
 export async function generateStaticParams() {
@@ -39,6 +40,7 @@ async function ServiceDetail({ params }: { params: PageProps<"/services/[slug]">
   const { slug } = await params;
   const [service, site] = await Promise.all([getService(slug), getSite()]);
   if (!service) notFound();
+  const photo = getServiceImage(service);
 
   return (
     <>
@@ -68,9 +70,25 @@ async function ServiceDetail({ params }: { params: PageProps<"/services/[slug]">
           <OptionPicker service={service} />
           <p className="mt-6 text-[14px] text-ink-muted">You pay at the salon. We call or WhatsApp you to fix the exact time.</p>
         </div>
-        {service.description && (
-          <div className="max-w-[640px] whitespace-pre-line text-[17px] leading-[1.7]">{service.description}</div>
-        )}
+        <div className="md:order-first">
+          {/* The large photo (1200px) on desktop; phones get the 640px file. */}
+          <div className="aspect-[3/2] overflow-hidden rounded-[var(--radius-card)] bg-ivory-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- static WebP with our own srcset */}
+            <img
+              src={photo.src}
+              srcSet={photo.srcSet}
+              sizes={photo.srcSet ? "(min-width: 1024px) 600px, 213px" : undefined}
+              alt={photo.alt}
+              width={1200}
+              height={800}
+              decoding="async"
+              className="h-full w-full object-cover"
+            />
+          </div>
+          {service.description && (
+            <div className="mt-8 max-w-[640px] whitespace-pre-line text-[17px] leading-[1.7]">{service.description}</div>
+          )}
+        </div>
       </div>
 
       <section className="mt-20 max-w-[840px]">

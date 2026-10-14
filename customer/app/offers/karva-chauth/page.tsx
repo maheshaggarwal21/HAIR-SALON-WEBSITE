@@ -101,7 +101,7 @@ async function Offer() {
                 <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {highlights.map((c) => (
                     <div key={c.slug} className="flex flex-col">
-                      <ServiceCard service={c} />
+                      <ServiceCard service={c} showImage fill />
                       <div className="mt-2">
                         <RequestCta
                           preset={{ audience: "her", optionIds: c.options.length === 1 ? [c.options[0].id] : [] }}

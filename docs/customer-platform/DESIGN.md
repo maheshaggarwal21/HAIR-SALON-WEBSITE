@@ -141,6 +141,7 @@ Rules:
 |---|---|
 | `Button` | Variants: `primary` (charcoal fill, white text), `secondary` (charcoal outline on light, white outline over photos), `ghost`, `whatsapp` (outline with WhatsApp icon). Height 48px mobile, 52px desktop. |
 | `Chip` | Pill, 36px, selectable. Selected = sand fill + gold-deep text. |
+| `ServiceCard` photo | Optional 3:2 photo on top (`object-fit: cover`), card radius, lazy, `srcset` 640/1200; price pinned to the bottom so rows stay even (CF D30). |
 | `PriceTag` | "₹500" or "from ₹500". Optional campaign strike-through only when a campaign is active. Duration shown beside it: "45 min". |
 | `ServiceCard` | Name, one-line benefit, price, duration, badges ("Consultation first", "Patch test 48h before"). Tap → service page or adds to booking. |
 | `ArtistCard` | Photo (4:5), name, level, top 2 specialties, Instagram handle, "Book with {name}". Hover reel on desktop. |
@@ -165,7 +166,7 @@ Rules:
    with `word-rise`, sub-line, primary "Book now", secondary "WhatsApp us", `RatingBadge`.
 2. **Offer bar** (site-wide, CF D29): sits above the header on every page while an offer runs,
    in the offer's own colour theme (outside the cream palette) with a soft blinking label.
-3. **For her / For him** (white, sand and cream panels): two large image panels. Her first. Each leads to the
+3. **For her / For him** (white, sand and cream panels; full-bleed salon photo with a cream fade behind the text, CF D30): two large image panels. Her first. Each leads to the
    filtered menu and the booking sheet with that audience preselected.
 4. **Signature services** (cream): snap carousel on every device, arrow buttons on desktop.
    6–8 services the owner marks `featured`. Prices shown.

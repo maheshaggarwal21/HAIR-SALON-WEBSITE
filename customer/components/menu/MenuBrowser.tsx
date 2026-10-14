@@ -102,7 +102,7 @@ export function MenuBrowser({ her, him }: { her: Card[]; him: Card[] }) {
             <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {g.cards.map((c) => (
                 <div key={c.slug} className="flex flex-col">
-                  <ServiceCard service={c} />
+                  <ServiceCard service={c} showImage fill />
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <Link href={`/services/${c.slug}`} className="text-[14px] font-semibold text-ink-muted hover:text-ink">
                       Details →

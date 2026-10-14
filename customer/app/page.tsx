@@ -26,6 +26,7 @@ import { PinnedRow } from "@/components/home/PinnedRow";
 import { BeforeAfter } from "@/components/home/BeforeAfter";
 import { ReelsWall } from "@/components/home/ReelsWall";
 import { ReviewsWall } from "@/components/home/ReviewsWall";
+import { imageBySlug } from "@/lib/serviceImages";
 import { ArtistCard } from "@/components/site/ArtistCard";
 import { Faq } from "@/components/site/Faq";
 import { SalonJsonLd } from "@/components/site/JsonLd";
@@ -110,33 +111,43 @@ export default async function Home() {
 
       {/* 2. Offers: the site-wide offer bar and pop-up in the root layout (CF D29). */}
 
-      {/* 3. For her / For him (white, with sand and cream panels) */}
+      {/* 3. For her / For him (white, with sand and cream panels). Each tile is a
+          full-bleed photo (the owner's own from Website Settings, else the salon
+          shoot), positioned so the face stays in frame, with a soft cream fade
+          behind the text so the title, categories and both buttons stay readable. */}
       <section className={`bg-ivory ${section}`}>
         <div className="reveal mx-auto grid max-w-[1240px] gap-4 md:grid-cols-2">
           {(
             [
-              { key: "her", title: "For her", image: media?.forHerImage, cards: herCards, tone: "bg-sand text-ink" },
-              { key: "him", title: "For him", image: media?.forHimImage, cards: himCards, tone: "bg-ivory-2 text-ink" },
+              { key: "her", title: "For her", own: media?.forHerImage, stock: imageBySlug("for-her"), focus: "50% 20%", cards: herCards, tone: "bg-sand", fade: "from-sand via-sand/90" },
+              { key: "him", title: "For him", own: media?.forHimImage, stock: imageBySlug("for-him"), focus: "70% 22%", cards: himCards, tone: "bg-ivory-2", fade: "from-ivory-2 via-ivory-2/90" },
             ] as const
           ).map((p) => {
             const cats = [...new Set(p.cards.map((c) => c.displayCategory).filter(Boolean))].slice(0, 5);
             return (
-              <div key={p.key} className={`relative flex min-h-[340px] flex-col justify-end overflow-hidden rounded-[var(--radius-media)] p-6 md:min-h-[480px] md:p-10 ${p.tone}`}>
-                {p.image && (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.image} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
-                    <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/20 to-transparent" />
-                  </>
-                )}
-                <div className={`relative ${p.image ? "text-ivory" : ""}`}>
+              <div key={p.key} className={`relative flex min-h-[440px] flex-col justify-end overflow-hidden rounded-[var(--radius-media)] p-6 text-ink md:min-h-[520px] md:p-10 ${p.tone}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- static WebP with our own srcset */}
+                <img
+                  src={p.own ?? p.stock.src}
+                  srcSet={p.own ? undefined : p.stock.srcSet}
+                  sizes={p.own ? undefined : "(min-width: 768px) 50vw, 100vw"}
+                  alt={p.own ? "" : p.stock.alt}
+                  width={1200}
+                  height={800}
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  style={{ objectPosition: p.focus }}
+                />
+                <div aria-hidden className={`absolute inset-x-0 bottom-0 h-[72%] bg-gradient-to-t to-transparent ${p.fade}`} />
+                <div className="relative">
                   <h2 className="font-serif text-[44px] leading-none md:text-[64px]">{p.title}</h2>
-                  {cats.length > 0 && <p className="mt-3 text-[15px] opacity-80">{cats.join(" · ")}</p>}
+                  {cats.length > 0 && <p className="mt-3 text-[15px] text-ink-muted">{cats.join(" · ")}</p>}
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <Button variant="secondary" tone={p.image ? "dark" : "light"} href={`/services?for=${p.key}`}>
+                    <Button variant="secondary" href={`/services?for=${p.key}`} className="bg-ivory/70">
                       See the menu
                     </Button>
-                    <RequestCta preset={{ audience: p.key }} label="Request" variant="secondary" tone={p.image ? "dark" : "light"} />
+                    <RequestCta preset={{ audience: p.key }} label="Request" variant="secondary" className="bg-ivory/70" />
                   </div>
                 </div>
               </div>
@@ -164,7 +175,7 @@ export default async function Home() {
               <PinnedRow>
                 {signatureCards.map((c) => (
                   <div key={c.slug} className="flex min-w-0 flex-col">
-                    <ServiceCard service={c} />
+                    <ServiceCard service={c} showImage fill imageSizes="(min-width: 768px) 360px, 213px" />
                     <Link href={`/services/${c.slug}`} className="mt-3 text-[14px] font-semibold text-ink-muted hover:text-ink">
                       Details →
                     </Link>
