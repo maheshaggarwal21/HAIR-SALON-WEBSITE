@@ -1,11 +1,14 @@
 /**
  * Site header. Server component; the mobile menu is a <details> element, so it
  * opens and closes with no JavaScript at all. One primary CTA (the request
- * sheet) — the only gold button in the header (DS §3.1).
+ * sheet) — the only gold button in the header (DS §3.1). "Staff sign in" is a
+ * quiet text link to the staff app (T1.23), labelled "Staff" so customers
+ * don't think they need an account to book.
  */
 
 import Link from "next/link";
 import { RequestCta } from "@/components/request/RequestContext";
+import { STAFF_SIGNIN_URL } from "@/lib/site";
 
 const NAV = [
   { href: "/services", label: "Services" },
@@ -32,6 +35,13 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <a
+            href={STAFF_SIGNIN_URL}
+            rel="nofollow"
+            className="hidden px-3 text-[14px] font-medium text-ink-muted transition-colors hover:text-ink lg:inline"
+          >
+            Staff sign in
+          </a>
           <div className="hidden md:block">
             <RequestCta label="Request a slot" className="h-11! md:h-11!" />
           </div>
@@ -52,6 +62,13 @@ export function Header() {
                   {n.label}
                 </Link>
               ))}
+              <a
+                href={STAFF_SIGNIN_URL}
+                rel="nofollow"
+                className="mt-1 block rounded-[var(--radius-control)] border-t border-line px-4 py-3 text-[15px] text-ink-muted hover:bg-ivory-2"
+              >
+                Staff sign in
+              </a>
             </nav>
           </details>
         </div>
