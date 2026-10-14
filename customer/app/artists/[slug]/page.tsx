@@ -52,7 +52,7 @@ async function Profile({ params }: { params: PageProps<"/artists/[slug]">["param
             Artists
           </Link>
         </nav>
-        <h1 className="mt-4 font-serif text-[44px] leading-none md:text-[72px]">{a.name}</h1>
+        <h1 className="mt-4 font-serif text-[44px] leading-none md:text-[64px]">{a.name}</h1>
         {(a.level || a.specialties.length > 0) && (
           <p className="mt-4 text-[17px] text-ink-muted">{[a.level ? LEVEL[a.level] : null, ...a.specialties].filter(Boolean).join(" · ")}</p>
         )}
@@ -81,7 +81,7 @@ async function Profile({ params }: { params: PageProps<"/artists/[slug]">["param
 export default function ArtistPage(props: PageProps<"/artists/[slug]">) {
   return (
     <main className="flex-1 bg-ivory px-4 pb-28 pt-12 md:px-16 md:pb-32 md:pt-20">
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-site">
         <Suspense fallback={<div className="h-[60vh]" aria-busy="true" />}>
           <Profile params={props.params} />
         </Suspense>

@@ -74,8 +74,8 @@ of the same tint back to back. Never more than one charcoal-filled button per vi
 
 | Role | Font | Size (mobile → desktop) | Weight | Notes |
 |---|---|---|---|---|
-| Display XL (hero) | Instrument Serif | 44 → 96px | 400 | line-height 1.0, letter-spacing -0.02em |
-| Display L (section titles) | Instrument Serif | 34 → 64px | 400 | line-height 1.05 |
+| Display XL (hero) | Instrument Serif | 44 → 84px | 400 | line-height 1.0, letter-spacing -0.02em |
+| Display L (section titles) | Instrument Serif | 34 → 56px | 400 | line-height 1.05 |
 | Display M (card titles) | Instrument Serif | 24 → 32px | 400 | |
 | Eyebrow | Manrope | 12 → 13px | 600 | uppercase, letter-spacing 0.18em, the only uppercase allowed |
 | Body L | Manrope | 17 → 19px | 400 | line-height 1.6 |
@@ -92,7 +92,7 @@ Examples: "Hair that *turns* heads." · "Colour, done *right*." · "Karva Chauth
 ### 3.3 Spacing, radius, elevation
 
 - Spacing scale (px): 4, 8, 12, 16, 24, 32, 48, 64, 96, 128. Section padding: 64 mobile, 128 desktop.
-- Content width: 1240px max; text columns 640px max.
+- Content width: 1160px max (`max-w-site`, token `--container-site`) for every section, the header, offer bar and footer, all with the same 16 / 64px side gutter, so every left edge lines up; text columns 640px max. Wide screens: Visit us puts the map beside the address and hours; FAQs put the title left and the questions right (owner review, 14 Oct 2026).
 - Radius: 10px controls, 18px cards, 28px media cards, full for pills/chips.
 - Elevation: no drop shadows on ivory except the booking sheet (`0 24px 60px rgba(23,18,15,0.18)`).
   Depth comes from colour blocks and photography, not shadows.

@@ -20,8 +20,8 @@ const NAV = [
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-ivory/95 text-ink backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-[1240px] items-center justify-between gap-4 px-4 md:px-8">
+    <header className="sticky top-0 z-30 border-b border-line bg-ivory/95 px-4 text-ink backdrop-blur md:px-16">
+      <div className="mx-auto flex h-16 max-w-site items-center justify-between gap-4">
         <Link href="/" className="font-serif text-[26px] leading-none" aria-label="The Experts, home">
           The Experts
         </Link>

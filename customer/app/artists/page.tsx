@@ -14,9 +14,9 @@ export default async function ArtistsPage() {
   const artists = await getArtists();
   return (
     <main className="flex-1 bg-sand px-4 pb-28 pt-12 md:px-16 md:pb-32 md:pt-20">
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-site">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep md:text-[13px]">The team</p>
-        <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[80px]">
+        <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[72px]">
           Meet the <em className="text-gold-deep">artists</em>.
         </h1>
         <p className="mt-6 max-w-[640px] text-[17px] leading-[1.6] text-ink-muted">

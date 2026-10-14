@@ -256,12 +256,14 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
         })}
       </div>
 
-      {/* Controls: bottom-right on phones; bottom-left under the text on wide screens, clear of the video */}
+      {/* Controls: bottom-right on phones; on wide screens under the text, lined up
+          with the page's content column (same gutter and max width as the text). */}
+      <div className="pointer-events-none absolute bottom-5 right-4 z-20 md:inset-x-0 md:bottom-8 md:right-0 md:px-16">
       <div
         role="group"
         aria-roledescription="carousel"
         aria-label="Videos and photos from the salon"
-        className="absolute bottom-5 right-4 z-20 flex items-center gap-3 md:bottom-8 md:left-16 md:right-auto"
+        className="pointer-events-auto flex items-center gap-3 md:mx-auto md:w-full md:max-w-site"
       >
         <span className="sr-only" aria-live="polite">
           {`Slide ${index + 1} of ${count}${slide.alt ? `: ${slide.alt}` : ""}`}
@@ -281,6 +283,7 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
         <button onClick={next} aria-label="Next" className="flex h-11 w-11 items-center justify-center rounded-full border border-ivory/40 bg-ink/30 text-ivory backdrop-blur hover:bg-ink/50">
           <ChevronRight className="h-5 w-5" strokeWidth={1.75} />
         </button>
+      </div>
       </div>
     </>
   );

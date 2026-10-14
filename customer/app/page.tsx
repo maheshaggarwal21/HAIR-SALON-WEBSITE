@@ -101,9 +101,9 @@ export default async function Home() {
             <div aria-hidden className="absolute inset-0 z-10 bg-gradient-to-t from-ink/95 from-0% via-ink/65 via-55% to-ink/10 to-85% md:bg-gradient-to-r md:from-ink/85 md:via-ink/55 md:to-transparent" />
           </>
         )}
-        <div className="relative z-10 mx-auto w-full max-w-[1240px]">
+        <div className="relative z-10 mx-auto w-full max-w-site">
           <p className={`text-xs font-semibold uppercase tracking-[0.18em] md:text-[13px] ${bg ? "text-gold drop-shadow-[0_1px_6px_rgba(0,0,0,0.6)]" : "text-gold-deep"}`}>The Experts · Patiala</p>
-          <h1 className={`mt-6 max-w-[12ch] font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[96px] ${bg ? "drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]" : ""}`}>
+          <h1 className={`mt-6 max-w-[12ch] font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[84px] ${bg ? "drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]" : ""}`}>
             <WordRise text="Hair that *turns* heads." />
           </h1>
           <p className={`mt-8 max-w-[560px] text-[17px] leading-[1.6] md:text-[19px] ${bg ? "text-ivory/90 drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]" : "text-ink-muted"}`}>
@@ -133,7 +133,7 @@ export default async function Home() {
           shoot), positioned so the face stays in frame, with a soft cream fade
           behind the text so the title, categories and both buttons stay readable. */}
       <section className={`bg-ivory ${section}`}>
-        <div className="reveal mx-auto grid max-w-[1240px] gap-4 md:grid-cols-2">
+        <div className="reveal mx-auto grid max-w-site gap-4 md:grid-cols-2">
           {(
             [
               { key: "her", title: "For her", own: media?.forHerImage, stock: imageBySlug("for-her"), focus: "50% 20%", cards: herCards, tone: "bg-sand", fade: "from-sand via-sand/90" },
@@ -158,7 +158,7 @@ export default async function Home() {
                 />
                 <div aria-hidden className={`absolute inset-x-0 bottom-0 h-[72%] bg-gradient-to-t to-transparent ${p.fade}`} />
                 <div className="relative">
-                  <h2 className="font-serif text-[44px] leading-none md:text-[64px]">{p.title}</h2>
+                  <h2 className="font-serif text-[44px] leading-none md:text-[56px]">{p.title}</h2>
                   {cats.length > 0 && <p className="mt-3 text-[15px] text-ink-muted">{cats.join(" · ")}</p>}
                   <div className="mt-6 flex flex-wrap gap-3">
                     <Button variant="secondary" href={`/services?for=${p.key}`} className="bg-ivory/70">
@@ -176,11 +176,11 @@ export default async function Home() {
       {/* 4. Signature services (cream) */}
       {signatureCards.length > 0 && (
         <section className={`bg-ivory-2 ${section}`}>
-          <div className="mx-auto max-w-[1240px]">
+          <div className="mx-auto max-w-site">
             <div className="reveal flex flex-wrap items-end justify-between gap-4">
               <div>
                 <Eyebrow tone="accent">Signature services</Eyebrow>
-                <h2 className="mt-4 max-w-[16ch] font-serif text-[34px] leading-[1.05] md:text-[64px]">
+                <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
                   What we&apos;re <em className="text-gold">known</em> for.
                 </h2>
               </div>
@@ -207,10 +207,10 @@ export default async function Home() {
       {/* 5. Transformations (white) — consented pairs only */}
       {site && site.transformations.length > 0 && (
         <section className={`bg-ivory ${section}`}>
-          <div className="mx-auto max-w-[1240px]">
+          <div className="mx-auto max-w-site">
             <div className="reveal">
               <Eyebrow>Transformations</Eyebrow>
-              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
                 Before, and <em className="text-gold">after</em>.
               </h2>
             </div>
@@ -226,10 +226,10 @@ export default async function Home() {
       {/* 6. Meet the owner (sand, CF D32): words on the left, a large photo on the right. */}
       {owner && (
         <section className={`bg-sand ${section}`}>
-          <div className="mx-auto grid max-w-[1240px] items-center gap-10 md:grid-cols-[1.1fr_0.9fr] md:gap-16">
+          <div className="mx-auto grid max-w-site items-center gap-10 md:grid-cols-[1.1fr_0.9fr] md:gap-16">
             <div className="reveal">
               <Eyebrow tone="accent">Meet the owner</Eyebrow>
-              <h2 className="mt-4 font-serif text-[40px] leading-[1.02] md:text-[72px]">
+              <h2 className="mt-4 font-serif text-[40px] leading-[1.02] md:text-[64px]">
                 {owner.name.split(" ").slice(0, -1).join(" ") || owner.name}{" "}
                 {owner.name.includes(" ") && <em className="text-gold-deep">{owner.name.split(" ").slice(-1)[0]}</em>}
               </h2>
@@ -276,10 +276,10 @@ export default async function Home() {
       {/* 6b. See us in action (white, CF D33): real photos of the salon in a coverflow carousel. */}
       {gallery.length > 0 && (
         <section className={`overflow-hidden bg-ivory ${section}`}>
-          <div className="mx-auto max-w-[1240px]">
+          <div className="mx-auto max-w-site">
             <div className="reveal text-center">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep md:text-[13px]">See us in action</p>
-              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
                 Inside the <em className="text-gold">salon</em>.
               </h2>
               <p className="mx-auto mt-4 max-w-[520px] text-[17px] text-ink-muted">Our space, our team, our work. No stock photos.</p>
@@ -307,10 +307,10 @@ export default async function Home() {
       {/* 8. Reels wall (cream) */}
       {reels && reels.length > 0 && (
         <section className={`bg-ivory-2 ${section}`}>
-          <div className="mx-auto max-w-[1240px]">
+          <div className="mx-auto max-w-site">
             <div className="reveal mb-10">
               <Eyebrow tone="accent">From the salon</Eyebrow>
-              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
                 Fresh from the <em className="text-gold">chair</em>.
               </h2>
             </div>
@@ -322,10 +322,10 @@ export default async function Home() {
       {/* 9. Packages (white) */}
       {packages && packages.length > 0 && (
         <section className={`bg-ivory ${section}`}>
-          <div className="mx-auto max-w-[1240px]">
+          <div className="mx-auto max-w-site">
             <div className="reveal">
               <Eyebrow>Packages</Eyebrow>
-              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
                 More for <em className="text-gold">less</em>.
               </h2>
             </div>
@@ -360,16 +360,18 @@ export default async function Home() {
         </section>
       )}
 
-      {/* 11. Visit us (sand) */}
+      {/* 11. Visit us (sand). Wide screens: address, buttons and hours on the left,
+          the map beside them on the right (no gap in the middle, no full-width strip).
+          Phones: the map follows the hours. */}
       {site && (
         <section id="visit" className={`scroll-mt-16 bg-sand ${section}`}>
-          <div className="mx-auto grid max-w-[1240px] gap-10 md:grid-cols-2">
+          <div className={`mx-auto grid max-w-site gap-10 ${site.contact.mapEmbedUrl ? "lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-14" : "md:grid-cols-2"}`}>
             <div className="reveal">
               <Eyebrow tone="accent">Visit us</Eyebrow>
-              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
                 Find us <em className="text-gold">easily</em>.
               </h2>
-              {site.contact.address && <p className="mt-6 text-[17px] leading-[1.6] md:text-[19px]">{site.contact.address}</p>}
+              {site.contact.address && <p className="mt-6 max-w-[440px] text-[17px] leading-[1.6] md:text-[19px]">{site.contact.address}</p>}
               {site.contact.parkingNote && <p className="mt-2 text-[15px] text-ink-muted">{site.contact.parkingNote}</p>}
               <div className="mt-8 flex flex-wrap gap-3">
                 {site.contact.mapUrl && (
@@ -383,10 +385,8 @@ export default async function Home() {
                   </Button>
                 )}
               </div>
-            </div>
-            <div className="reveal">
-              <h3 className="text-[13px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Opening hours</h3>
-              <dl className="mt-4 space-y-2 text-[16px]">
+              <h3 className="mt-10 text-[13px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Opening hours</h3>
+              <dl className="mt-4 max-w-[440px] space-y-2 text-[16px]">
                 {hoursSummary(site).map((g) => (
                   <div key={g.days} className="flex justify-between gap-6 border-b border-line pb-2">
                     <dt>{g.days}</dt>
@@ -394,46 +394,52 @@ export default async function Home() {
                   </div>
                 ))}
               </dl>
-              {site.media.salonImages.length > 0 && (
-                <div className="mt-8 grid grid-cols-2 gap-3">
-                  {site.media.salonImages.slice(0, 4).map((src) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={src} src={src} alt="Inside the salon" loading="lazy" className="aspect-[4/3] w-full rounded-[var(--radius-card)] object-cover" />
-                  ))}
-                </div>
-              )}
             </div>
+            {site.contact.mapEmbedUrl && (
+              // The map (DS §6.1 §11). Lazy, so it loads only when the visitor scrolls here.
+              <div className="reveal min-h-[320px] overflow-hidden rounded-[var(--radius-card)] border border-line bg-ivory-2 lg:min-h-[440px]">
+                <iframe
+                  src={site.contact.mapEmbedUrl}
+                  title="Map: The Experts salon, Sirhind–Patiala Rd, Patiala"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  allowFullScreen
+                  className="block h-full min-h-[320px] w-full border-0 lg:min-h-[440px]"
+                />
+              </div>
+            )}
           </div>
-          {/* The map (DS §6.1 §11). Lazy, so it loads only when the visitor scrolls here. */}
-          {site.contact.mapEmbedUrl && (
-            <div className="reveal mx-auto mt-12 max-w-[1240px] overflow-hidden rounded-[var(--radius-card)] border border-line bg-ivory-2">
-              <iframe
-                src={site.contact.mapEmbedUrl}
-                title="Map: The Experts salon, Sirhind–Patiala Rd, Patiala"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                allowFullScreen
-                className="block h-[320px] w-full border-0 md:h-[420px]"
-              />
+          {site.media.salonImages.length > 0 && (
+            <div className="mx-auto mt-10 grid max-w-site grid-cols-2 gap-3 md:grid-cols-4">
+              {site.media.salonImages.slice(0, 4).map((src) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={src} src={src} alt="Inside the salon" loading="lazy" className="aspect-[4/3] w-full rounded-[var(--radius-card)] object-cover" />
+              ))}
             </div>
           )}
         </section>
       )}
 
-      {/* 12. FAQ (white) */}
+      {/* 12. FAQ (white). Wide screens: title and the request button on the left
+          (they stay in view while reading), questions on the right, inside the same
+          content column as every other section. */}
       <section className={`bg-ivory ${section}`}>
-        <div className="mx-auto max-w-[840px]">
-          <div className="reveal">
+        <div className="mx-auto grid max-w-site gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+          <div className="reveal lg:sticky lg:top-28 lg:self-start">
             <Eyebrow>Questions</Eyebrow>
-            <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+            <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
               Good to <em className="text-gold">know</em>.
             </h2>
+            <p className="mt-4 max-w-[360px] text-[17px] text-ink-muted">Anything else? Ask us on WhatsApp or at the desk.</p>
+            <div className="mt-8 hidden lg:block">
+              <RequestCta label="Request a slot" />
+            </div>
           </div>
-          <div className="mt-10">
+          <div>
             <Faq site={site} />
-          </div>
-          <div className="mt-12">
-            <RequestCta label="Request a slot" />
+            <div className="mt-12 lg:hidden">
+              <RequestCta label="Request a slot" />
+            </div>
           </div>
         </div>
       </section>
