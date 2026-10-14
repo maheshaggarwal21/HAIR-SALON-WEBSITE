@@ -3,8 +3,9 @@
  * @description Shared layout shell for public and visit-entry pages.
  *
  * Auth-aware navbar with mobile hamburger menu:
- *   Guest:     logo left · [Home · About Us · Contact] centered · Sign In right
- *   Logged in: logo left · [Home · About Us · Contact · Dashboard] centered · avatar+role dropdown right
+ *   Guest:     logo left · Sign In right
+ *   Logged in: logo left · [Dashboard] centered · avatar+role dropdown right
+ * The old Home / About Us / Contact pages moved to the customer site (T1.23).
  */
 
 import { useState, useRef, useEffect } from "react";
@@ -59,11 +60,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   };
 
   /* Build nav links dynamically */
-  const navLinks: { to: string; label: string }[] = [
-    { to: "/", label: "Home" },
-    { to: "/about", label: "About Us" },
-    { to: "/contact", label: "Contact" },
-  ];
+  const navLinks: { to: string; label: string }[] = [];
   if (user && ["manager", "owner", "receptionist", "artist"].includes(user.role)) {
     navLinks.push({ to: dashboardPath(user.role), label: "Dashboard" });
   }
@@ -86,7 +83,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <div className="mx-auto max-w-7xl px-4 sm:px-8 h-16 flex items-center">
 
           {/* ── Left: logo (fixed width so center stays truly centered) ── */}
-          <Link to="/" className="shrink-0 flex items-center gap-3 group w-40 lg:w-48">
+          <Link to={user ? dashboardPath(user.role) : "/signin"} className="shrink-0 flex items-center gap-3 group w-40 lg:w-48">
             <div className="h-10 w-10 rounded-xl bg-amber-50 shadow-sm ring-1 ring-black/8 group-hover:ring-amber-300/60 transition-all duration-200 flex items-center justify-center">
               <Scissors className="w-5 h-5 text-amber-600" />
             </div>

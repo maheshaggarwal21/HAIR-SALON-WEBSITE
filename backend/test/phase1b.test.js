@@ -350,3 +350,14 @@ test("salon gallery (D33): starting photos, owner list wins, [] hides", async ()
   await call("PATCH", "/website/settings", { media: { gallery: [] } });
   assert.deepEqual((await call("GET", "/public/site")).body.media.gallery, []);
 });
+
+test("map embed: starts on the salon's pin, accepts Google's whole <iframe> code, refuses other sites", async () => {
+  assert.match((await call("GET", "/public/site")).body.contact.mapEmbedUrl, /^https:\/\/maps\.google\.com\/maps\?q=30\.3667632,76\.4024824/);
+  const code = '<iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12&amp;x=1" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy"></iframe>';
+  const ok = await call("PATCH", "/website/settings", { contact: { mapEmbedUrl: code } });
+  assert.equal(ok.status, 200);
+  assert.equal((await call("GET", "/public/site")).body.contact.mapEmbedUrl, "https://www.google.com/maps/embed?pb=!1m18!1m12&x=1");
+  assert.equal((await call("PATCH", "/website/settings", { contact: { mapEmbedUrl: "https://evil.example/maps/embed" } })).status, 400);
+  assert.equal((await call("PATCH", "/website/settings", { contact: { mapEmbedUrl: "" } })).status, 200);
+  assert.equal((await call("GET", "/public/site")).body.contact.mapEmbedUrl, null);
+});

@@ -3,12 +3,13 @@
  * @description Application entry point with role-based routing.
  *
  * Public routes:
- *   /                — Landing page
+ *   /                — straight to sign-in (the staff app has no landing page;
+ *                      the public website is the customer site, T1.23)
  *   /signin          — Sign-in page
  *   /payment-status  — Payment confirmation
  *   /unauthorized    — 403 page
- *   /about           — About Us
- *   /contact         — Contact Us
+ *   /about, /contact, /privacy-policy, /terms-of-service
+ *                    — forwarded to the same pages on the customer site
  *
  * Protected routes:
  *   /visit-entry           — Receptionist + Manager + Owner
@@ -31,12 +32,11 @@ import ProtectedRoute from '@/components/ProtectedRoute'
  * writer before anything rendered. Each lazy() below becomes its own chunk that
  * is fetched only when that route is actually visited.
  *
- * Eagerly imported (deliberately): LandingPage and SignInPage are the first
- * thing every visitor and every staff member hits, so splitting them would only
- * add a round trip. They stay in the entry chunk.
+ * Eagerly imported (deliberately): SignInPage is the first thing every staff
+ * member hits, so splitting it would only add a round trip.
  */
-import LandingPage from './pages/LandingPage'
 import SignInPage from './pages/SignInPage'
+import ToCustomerSite from '@/components/ToCustomerSite'
 
 // Staff-only surfaces — never needed by a member of the public.
 const OwnerDashboard        = lazy(() => import('./pages/OwnerDashboard'))
@@ -50,10 +50,6 @@ const ChangePasswordPage    = lazy(() => import('./pages/ChangePasswordPage'))
 // Rarely-visited public pages.
 const PaymentStatus       = lazy(() => import('./pages/PaymentStatus'))
 const UnauthorizedPage    = lazy(() => import('./pages/UnauthorizedPage'))
-const AboutPage           = lazy(() => import('./pages/AboutPage'))
-const ContactPage         = lazy(() => import('./pages/ContactPage'))
-const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'))
-const TermsOfServicePage  = lazy(() => import('./pages/TermsOfServicePage'))
 
 /** Shown while a route chunk downloads. Matches ProtectedRoute's spinner. */
 function RouteFallback() {
@@ -131,14 +127,14 @@ createRoot(document.getElementById('root')!).render(
           <Suspense fallback={<RouteFallback />}>
           <Routes>
             {/* ── Public ── */}
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<Navigate to="/signin" replace />} />
             <Route path="/signin" element={<SignInPage />} />
             <Route path="/payment-status" element={<PaymentStatus />} />
             <Route path="/unauthorized" element={<UnauthorizedPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-            <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+            <Route path="/about" element={<ToCustomerSite path="/" />} />
+            <Route path="/contact" element={<ToCustomerSite path="/#visit" />} />
+            <Route path="/privacy-policy" element={<ToCustomerSite path="/privacy" />} />
+            <Route path="/terms-of-service" element={<ToCustomerSite path="/terms" />} />
 
             {/* ── Forced / voluntary password change — any signed-in role ── */}
             <Route

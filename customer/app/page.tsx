@@ -404,6 +404,19 @@ export default async function Home() {
               )}
             </div>
           </div>
+          {/* The map (DS §6.1 §11). Lazy, so it loads only when the visitor scrolls here. */}
+          {site.contact.mapEmbedUrl && (
+            <div className="reveal mx-auto mt-12 max-w-[1240px] overflow-hidden rounded-[var(--radius-card)] border border-line bg-ivory-2">
+              <iframe
+                src={site.contact.mapEmbedUrl}
+                title="Map: The Experts salon, Sirhind–Patiala Rd, Patiala"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                allowFullScreen
+                className="block h-[320px] w-full border-0 md:h-[420px]"
+              />
+            </div>
+          )}
         </section>
       )}
 

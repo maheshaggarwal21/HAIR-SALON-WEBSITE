@@ -74,6 +74,7 @@ interface Settings {
     whatsapp: string | null;
     address: string | null;
     mapUrl: string | null;
+    mapEmbedUrl: string | null;
     instagram: string | null;
     parkingNote: string | null;
   };
@@ -117,6 +118,7 @@ export default function WebsiteSettings() {
             whatsapp: d.contact?.whatsapp ?? "",
             address: d.contact?.address ?? "",
             mapUrl: d.contact?.mapUrl ?? "",
+            mapEmbedUrl: d.contact?.mapEmbedUrl ?? "",
             instagram: d.contact?.instagram ?? "",
             parkingNote: d.contact?.parkingNote ?? "",
           },
@@ -285,6 +287,15 @@ export default function WebsiteSettings() {
               value={form.contact.mapUrl ?? ""}
               onChange={(e) => setContact("mapUrl", e.target.value.trim())}
               placeholder="https://maps.app.goo.gl/…"
+              className={inputClass}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Map on the website (Google Maps → Share → Embed a map → copy HTML)</label>
+            <input
+              value={form.contact.mapEmbedUrl ?? ""}
+              onChange={(e) => setContact("mapEmbedUrl", e.target.value.trim())}
+              placeholder="Paste the <iframe …> code here. Empty = no map"
               className={inputClass}
             />
           </div>

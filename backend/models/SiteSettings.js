@@ -122,6 +122,12 @@ const siteSettingsSchema = new mongoose.Schema(
       address: { type: String, default: "Green Park Colony, near Sunrise Hotel, Sirhind–Patiala Rd, Patiala" },
       /** The owner's Google Maps share link (confirmed 14 Oct 2026). */
       mapUrl: { type: String, default: "https://maps.app.goo.gl/3crtqx58iqAG4S568" },
+      /**
+       * The map shown in "Visit us" (an iframe src; null = no map). Default pins
+       * the salon's Google listing coordinates. The owner can replace it with
+       * Google Maps → Share → Embed a map (the whole <iframe> code is accepted).
+       */
+      mapEmbedUrl: { type: String, default: "https://maps.google.com/maps?q=30.3667632,76.4024824&z=17&output=embed" },
       placeId: { type: String, default: null },
       instagram: { type: String, default: "theexpertssalonpatiala" },
       /** Optional line under the address, e.g. "Free parking in front". */
@@ -283,6 +289,7 @@ siteSettingsSchema.methods.toPublic = function () {
       whatsapp: this.contact?.whatsapp ?? null,
       address: this.contact?.address ?? null,
       mapUrl: this.contact?.mapUrl ?? null,
+      mapEmbedUrl: this.contact?.mapEmbedUrl ?? null,
       instagram: this.contact?.instagram ?? null,
       parkingNote: this.contact?.parkingNote ?? null,
     },
