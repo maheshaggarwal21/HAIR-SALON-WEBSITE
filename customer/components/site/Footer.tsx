@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { SiteInfo } from "@/lib/types";
 import { hoursSummary, phoneLabel } from "@/lib/format";
+import { STAFF_SIGNIN_URL } from "@/lib/site";
 
 export function Footer({ site }: { site: SiteInfo | null }) {
   const c = site?.contact;
@@ -55,6 +56,7 @@ export function Footer({ site }: { site: SiteInfo | null }) {
         <Link href="/privacy" className="hover:text-ivory">Privacy</Link>
         <Link href="/terms" className="hover:text-ivory">Terms</Link>
         <Link href="/cancellation-policy" className="hover:text-ivory">Cancellation policy</Link>
+        <a href={STAFF_SIGNIN_URL} rel="nofollow" className="hover:text-ivory">Staff sign in</a>
         <span className="ml-auto">The Experts, Patiala</span>
       </div>
     </footer>

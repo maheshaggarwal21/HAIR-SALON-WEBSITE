@@ -8,3 +8,11 @@
 
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://thexpertshair.com").replace(/\/+$/, "");
 export const INDEXABLE = process.env.NEXT_PUBLIC_INDEXABLE === "1";
+
+/**
+ * Staff sign-in (T1.23): the staff app lives on its own subdomain once this
+ * site takes the apex. STAFF_APP_URL is read on the server, where the header
+ * and footer render; the default is the planned home, so the link works before
+ * the variable is set.
+ */
+export const STAFF_SIGNIN_URL = `${(process.env.STAFF_APP_URL || "https://app.thexpertshair.com").replace(/\/+$/, "")}/signin`;
