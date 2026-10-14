@@ -18,7 +18,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Globe, Loader2, Plus, Save, Star, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff, Globe, Loader2, Plus, Save, Star, Trash2, X } from "lucide-react";
 import MediaInput from "@/components/website/MediaInput";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
@@ -38,6 +38,19 @@ interface Interval {
   open: string;
   close: string;
 }
+
+/** One hero slider slide (CF D31). */
+interface HeroSlide {
+  kind: "video" | "image";
+  url: string;
+  poster: string | null;
+  alt: string | null;
+  /** Optional landscape (16:9) version shown on computers; phones use `url`. */
+  wideUrl: string | null;
+  widePoster: string | null;
+}
+
+const isVideoUrl = (u: string) => /\.(mp4|webm|mov)(\?|#|$)/i.test(u);
 
 interface Transformation {
   before: string;
@@ -72,10 +85,15 @@ interface Settings {
     forHerImage: string | null;
     forHimImage: string | null;
     salonImages: string[];
+    heroSlides: HeroSlide[];
+    /** "See us in action" carousel (CF D33). */
+    gallery: { url: string; caption: string | null }[];
   };
   transformations: Transformation[];
   /** Kept as text while typing; converted to numbers on save. */
   reviews: { rating: string; count: string; url: string; featured: FeaturedReview[] };
+  /** "Meet the owner" on the home page (CF D32). */
+  owner: { name: string; title: string; bio: string; photo: string | null; visible: boolean };
 }
 
 const inputClass =
@@ -110,6 +128,15 @@ export default function WebsiteSettings() {
             forHerImage: d.media?.forHerImage ?? null,
             forHimImage: d.media?.forHimImage ?? null,
             salonImages: d.media?.salonImages ?? [],
+            gallery: (d.media?.gallery ?? []).map((g: { url: string; caption: string | null }) => ({ url: g.url, caption: g.caption ?? null })),
+            heroSlides: (d.media?.heroSlides ?? []).map((x: HeroSlide) => ({
+              kind: x.kind,
+              url: x.url,
+              poster: x.poster ?? null,
+              alt: x.alt ?? null,
+              wideUrl: x.wideUrl ?? null,
+              widePoster: x.widePoster ?? null,
+            })),
           },
           transformations: (d.transformations ?? []).map((t: Transformation) => ({
             before: t.before,
@@ -117,6 +144,13 @@ export default function WebsiteSettings() {
             caption: t.caption ?? null,
             consent: Boolean(t.consent),
           })),
+          owner: {
+            name: d.owner?.name ?? "",
+            title: d.owner?.title ?? "",
+            bio: d.owner?.bio ?? "",
+            photo: d.owner?.photo ?? null,
+            visible: d.owner?.visible !== false,
+          },
           reviews: {
             rating: d.reviews?.rating != null ? String(d.reviews.rating) : "",
             count: d.reviews?.count != null ? String(d.reviews.count) : "",
@@ -144,10 +178,27 @@ export default function WebsiteSettings() {
 
   const setContact = (k: keyof Settings["contact"], v: string) => setForm({ ...form, contact: { ...form.contact, [k]: v } });
   const setDay = (d: Day, list: Interval[]) => setForm({ ...form, openingHours: { ...form.openingHours, [d]: list } });
-  const setMedia = (k: keyof Settings["media"], v: string | null | string[]) => setForm({ ...form, media: { ...form.media, [k]: v } });
+  const setMedia = (k: keyof Settings["media"], v: string | null | string[] | HeroSlide[] | Settings["media"]["gallery"]) =>
+    setForm({ ...form, media: { ...form.media, [k]: v } });
+  const gallery = form.media.gallery;
+  const setGallery = (i: number, patch: Partial<Settings["media"]["gallery"][number]>) =>
+    setMedia("gallery", gallery.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  const moveGallery = (i: number, d: -1 | 1) => {
+    const next = [...gallery];
+    [next[i], next[i + d]] = [next[i + d], next[i]];
+    setMedia("gallery", next);
+  };
+  const slides = form.media.heroSlides;
+  const setSlide = (i: number, patch: Partial<HeroSlide>) => setMedia("heroSlides", slides.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const moveSlide = (i: number, d: -1 | 1) => {
+    const next = [...slides];
+    [next[i], next[i + d]] = [next[i + d], next[i]];
+    setMedia("heroSlides", next);
+  };
   const setPair = (i: number, patch: Partial<Transformation>) =>
     setForm({ ...form, transformations: form.transformations.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
   const setReviews = (patch: Partial<Settings["reviews"]>) => setForm({ ...form, reviews: { ...form.reviews, ...patch } });
+  const setOwner = (patch: Partial<Settings["owner"]>) => setForm({ ...form, owner: { ...form.owner, ...patch } });
   const setReview = (i: number, patch: Partial<FeaturedReview>) =>
     setReviews({ featured: form.reviews.featured.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
 
@@ -164,11 +215,19 @@ export default function WebsiteSettings() {
         body: JSON.stringify({
           ...form,
           transformations: form.transformations.filter((t) => t.before && t.after),
+          media: { ...form.media, heroSlides: form.media.heroSlides.filter((x) => x.url), gallery: form.media.gallery.filter((g) => g.url) },
           reviews: {
             rating: form.reviews.rating.trim() ? Number(form.reviews.rating) : null,
             count: form.reviews.count.trim() ? Number(form.reviews.count) : null,
             url: form.reviews.url.trim() || null,
             featured: form.reviews.featured.filter((r) => r.author.trim() && r.text.trim()),
+          },
+          owner: {
+            name: form.owner.name.trim() || null,
+            title: form.owner.title.trim() || null,
+            bio: form.owner.bio.trim() || null,
+            photo: form.owner.photo,
+            visible: form.owner.visible,
           },
         }),
       });
@@ -291,15 +350,117 @@ export default function WebsiteSettings() {
           <h3 className="font-semibold text-stone-900 mb-1">Photos and video</h3>
           <p className="text-xs text-stone-500">Real photos of the salon&apos;s own work only. Anything left empty is simply not shown on the website.</p>
         </div>
-        <MediaInput
-          label="Home page video"
-          kind="video"
-          folder="hero"
-          value={form.media.heroVideoUrl}
-          onChange={(u) => setMedia("heroVideoUrl", u)}
-          hint="Muted loop, MP4, 720p, under 1.5 MB."
-        />
-        <MediaInput label="Video cover photo" folder="hero" value={form.media.heroPosterUrl} onChange={(u) => setMedia("heroPosterUrl", u)} hint="Shown while the video loads, and instead of it for people who turn motion off." />
+        {/* Home page slider (CF D31) */}
+        <div>
+          <label className="block text-xs font-semibold text-stone-600 mb-1 uppercase tracking-wider">Home page slider</label>
+          <p className="text-xs text-stone-500 mb-3">
+            Plays in this order as the background behind the headline: each video to its end, each photo for 5 seconds, then the
+            next. Visitors can also step through. Everything fills the background and is cropped to fit, never stretched.
+            <strong>Landscape (16:9, 1920×1080)</strong> looks sharpest on computers; vertical reels look best on phones. Videos: under
+            30 s, MP4, under about 6 MB (upload the original, not a re-shared copy); they play without sound.
+          </p>
+          <div className="space-y-3">
+            {slides.map((sl, i) => (
+              <div key={i} className="rounded-lg border border-stone-200 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-stone-500 w-16">
+                    {i + 1}. {sl.kind === "video" ? "Video" : "Photo"}
+                  </span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button disabled={i === 0} onClick={() => moveSlide(i, -1)} aria-label="Move up" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-30">
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                    <button disabled={i === slides.length - 1} onClick={() => moveSlide(i, 1)} aria-label="Move down" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-30">
+                      <ArrowDown className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setMedia("heroSlides", slides.filter((_, j) => j !== i))} aria-label="Remove slide" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-red-600">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <MediaInput
+                  label="Video or photo"
+                  kind="any"
+                  folder="hero"
+                  value={sl.url || null}
+                  onChange={(u) => setSlide(i, { url: u ?? "", kind: u && isVideoUrl(u) ? "video" : "image" })}
+                />
+                {sl.kind === "video" && (
+                  <>
+                    <MediaInput label="Cover photo (first frame)" folder="hero" value={sl.poster} onChange={(u) => setSlide(i, { poster: u })} hint="Shown while the video loads, and to visitors who turn motion off." />
+                    <MediaInput
+                      label="Wide version for computers (optional)"
+                      kind="video"
+                      folder="hero"
+                      value={sl.wideUrl}
+                      onChange={(u) => setSlide(i, { wideUrl: u })}
+                      hint="A landscape (16:9) cut of the same video fills the whole background on computers. Without it, computers show the full upright video on the right over a soft blurred copy."
+                    />
+                    {sl.wideUrl && (
+                      <MediaInput label="Cover photo for the wide version" folder="hero" value={sl.widePoster} onChange={(u) => setSlide(i, { widePoster: u })} />
+                    )}
+                  </>
+                )}
+                <input
+                  value={sl.alt ?? ""}
+                  maxLength={120}
+                  onChange={(e) => setSlide(i, { alt: e.target.value || null })}
+                  placeholder="What it shows, e.g. Beard trim and moustache styling"
+                  className="w-full h-10 px-3 rounded-lg border border-stone-200 bg-stone-50 text-sm"
+                />
+              </div>
+            ))}
+            {slides.length < 10 && (
+              <button
+                onClick={() => setMedia("heroSlides", [...slides, { kind: "video", url: "", poster: null, alt: null, wideUrl: null, widePoster: null }])}
+                className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-stone-200 text-sm text-stone-700 hover:bg-stone-50"
+              >
+                <Plus className="w-4 h-4" /> Add a slide
+              </button>
+            )}
+          </div>
+        </div>
+        {/* Salon gallery (CF D33) */}
+        <div>
+          <label className="block text-xs font-semibold text-stone-600 mb-1 uppercase tracking-wider">Salon gallery (“See us in action”)</label>
+          <p className="text-xs text-stone-500 mb-3">Real photos of the salon and your work, with a short caption. Landscape photos look best. Up to 12.</p>
+          <div className="space-y-3">
+            {gallery.map((g, i) => (
+              <div key={i} className="rounded-lg border border-stone-200 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-stone-500">Photo {i + 1}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button disabled={i === 0} onClick={() => moveGallery(i, -1)} aria-label="Move up" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-30">
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                    <button disabled={i === gallery.length - 1} onClick={() => moveGallery(i, 1)} aria-label="Move down" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-30">
+                      <ArrowDown className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setMedia("gallery", gallery.filter((_, j) => j !== i))} aria-label="Remove photo" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-red-600">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <MediaInput label="Photo" folder="gallery" value={g.url || null} onChange={(u) => setGallery(i, { url: u ?? "" })} />
+                <input
+                  value={g.caption ?? ""}
+                  maxLength={80}
+                  onChange={(e) => setGallery(i, { caption: e.target.value || null })}
+                  placeholder="Caption, e.g. Bridal makeup room"
+                  className="w-full h-10 px-3 rounded-lg border border-stone-200 bg-stone-50 text-sm"
+                />
+              </div>
+            ))}
+            {gallery.length < 12 && (
+              <button
+                onClick={() => setMedia("gallery", [...gallery, { url: "", caption: null }])}
+                className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-stone-200 text-sm text-stone-700 hover:bg-stone-50"
+              >
+                <Plus className="w-4 h-4" /> Add a gallery photo
+              </button>
+            )}
+          </div>
+        </div>
         <div className="grid sm:grid-cols-2 gap-4">
           <MediaInput label="“For her” photo" folder="panels" value={form.media.forHerImage} onChange={(u) => setMedia("forHerImage", u)} />
           <MediaInput label="“For him” photo" folder="panels" value={form.media.forHimImage} onChange={(u) => setMedia("forHimImage", u)} />
@@ -381,6 +542,41 @@ export default function WebsiteSettings() {
               <Plus className="w-4 h-4" /> Add a before/after pair
             </button>
           )}
+        </div>
+      </section>
+
+      {/* Meet the owner (CF D32) */}
+      <section className="bg-white rounded-xl border border-stone-200/80 shadow-sm p-5 mb-5 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-stone-900">Meet the owner (home page)</h3>
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            <input type="checkbox" checked={form.owner.visible} onChange={(e) => setOwner({ visible: e.target.checked })} /> Show on the website
+          </label>
+        </div>
+        <p className="text-xs text-stone-500">
+          A photo and a few lines about the owner. Keep it true and personal: years of experience, training, what you love doing.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Name</label>
+            <input value={form.owner.name} maxLength={60} onChange={(e) => setOwner({ name: e.target.value })} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Title</label>
+            <input value={form.owner.title} maxLength={80} onChange={(e) => setOwner({ title: e.target.value })} placeholder="Founder & owner, The Experts" className={inputClass} />
+          </div>
+        </div>
+        <MediaInput label="Photo" folder="owner" value={form.owner.photo} onChange={(u) => setOwner({ photo: u })} hint="Upright or square, face clearly visible." />
+        <div>
+          <label className={labelClass}>About the owner</label>
+          <textarea
+            value={form.owner.bio}
+            maxLength={1200}
+            rows={5}
+            onChange={(e) => setOwner({ bio: e.target.value })}
+            className="w-full px-4 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-sm"
+          />
+          <p className="mt-1 text-[11px] text-stone-400">Leave an empty line between paragraphs.</p>
         </div>
       </section>
 

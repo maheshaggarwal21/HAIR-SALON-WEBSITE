@@ -38,6 +38,8 @@ const Campaign = require("../models/Campaign");
 const { revalidateSite } = require("../utils/revalidate");
 
 const HTTPS_URL = { protocols: ["https"], require_protocol: true };
+/** An https link, or a file shipped with the customer site (/images/…, /media/…). */
+const siteOrHttps = (v) => typeof v === "string" && (/^https:\/\/\S+$/.test(v) || /^\/(images|media)\/[\w./-]+$/.test(v));
 /** "" → null so a cleared field removes the media. */
 const nullableUrl = (path) =>
   body(path)
@@ -123,11 +125,18 @@ const SETTINGS_PATHS = [
   "media.forHerImage",
   "media.forHimImage",
   "media.salonImages",
+  "media.heroSlides",
+  "media.gallery",
   "transformations",
   "reviews.rating",
   "reviews.count",
   "reviews.url",
   "reviews.featured",
+  "owner.name",
+  "owner.title",
+  "owner.bio",
+  "owner.photo",
+  "owner.visible",
 ];
 
 const nullablePhone = (path) =>
@@ -150,6 +159,12 @@ router.get("/settings", async (_req, res) => {
     // Show the starting review list until the owner saves their own (CF D27).
     const json = doc.toJSON();
     json.reviews = { ...(json.reviews || {}), featured: doc.featuredReviews() };
+    // Show the starting owner text until the owner saves their own (CF D32).
+    json.owner = doc.ownerProfile();
+    // Show the starting gallery until the owner saves their own (CF D33).
+    if (!Array.isArray(doc.media?.gallery)) json.media = { ...(json.media || {}), gallery: require("../config/gallery") };
+    // …and the starting hero slider (CF D31), unless a single hero video is set.
+    if (!Array.isArray(doc.media?.heroSlides) && !doc.media?.heroVideoUrl) json.media = { ...(json.media || {}), heroSlides: require("../config/heroSlides") };
     return res.json(json);
   } catch (err) {
     console.error("[website] settings error:", err);
@@ -199,6 +214,18 @@ router.patch(
     nullableUrl("media.forHimImage"),
     body("media.salonImages").optional().isArray({ max: 12 }),
     body("media.salonImages.*").isURL(HTTPS_URL),
+    body("media.gallery").optional().isArray({ max: 12 }).withMessage("Up to 12 gallery photos"),
+    body("media.gallery.*.url")
+      .custom((v) => typeof v === "string" && (/^https:\/\/\S+$/.test(v) || /^\/images\/[\w./-]+$/.test(v)))
+      .withMessage("Each gallery photo needs an https link"),
+    body("media.gallery.*.caption").optional({ nullable: true }).isString().trim().isLength({ max: 80 }),
+    body("media.heroSlides").optional().isArray({ max: 10 }).withMessage("Up to 10 slides"),
+    body("media.heroSlides.*.kind").isIn(["video", "image"]).withMessage("Each slide is a video or a photo"),
+    body("media.heroSlides.*.url").custom(siteOrHttps).withMessage("Each slide needs an https link"),
+    body("media.heroSlides.*.poster").optional({ nullable: true }).custom(siteOrHttps),
+    body("media.heroSlides.*.alt").optional({ nullable: true }).isString().trim().isLength({ max: 120 }),
+    body("media.heroSlides.*.wideUrl").optional({ nullable: true }).custom(siteOrHttps),
+    body("media.heroSlides.*.widePoster").optional({ nullable: true }).custom(siteOrHttps),
     body("transformations").optional().isArray({ max: 12 }),
     body("transformations.*.before").isURL(HTTPS_URL).withMessage("Before photo needs an https link"),
     body("transformations.*.after").isURL(HTTPS_URL).withMessage("After photo needs an https link"),
@@ -227,6 +254,16 @@ router.patch(
     body("reviews.featured.*.text").isString().trim().isLength({ min: 1, max: 600 }).withMessage("Each review needs its text (up to 600 characters)"),
     body("reviews.featured.*.service").optional({ nullable: true }).isString().trim().isLength({ max: 80 }),
     body("reviews.featured.*.visible").optional().isBoolean({ strict: true }),
+    // Meet the owner (CF D32).
+    body("owner.name").optional({ nullable: true }).isString().trim().isLength({ max: 60 }),
+    body("owner.title").optional({ nullable: true }).isString().trim().isLength({ max: 80 }),
+    body("owner.bio").optional({ nullable: true }).isString().trim().isLength({ max: 1200 }),
+    body("owner.photo")
+      .optional({ nullable: true })
+      .customSanitizer((v) => (v === "" ? null : v))
+      .custom((v) => v === null || /^https:\/\/\S+$/.test(v) || /^\/images\/[\w./-]+$/.test(v))
+      .withMessage("Owner photo needs an https link"),
+    body("owner.visible").optional().isBoolean({ strict: true }),
   ],
   async (req, res) => {
     if (firstError(req, res)) return;
@@ -350,6 +387,7 @@ const SERVICE_PATHS = [
   "sortOrder",
   "seo.title",
   "seo.description",
+  "images",
 ];
 
 router.patch(
@@ -374,6 +412,10 @@ router.patch(
     body("sortOrder").optional().isInt({ min: 0, max: 9999 }),
     body("seo.title").optional({ nullable: true }).isString().isLength({ max: 70 }),
     body("seo.description").optional({ nullable: true }).isString().isLength({ max: 160 }),
+    // The owner's own photo(s) for this service (Vercel Blob). The first one
+    // replaces the stock photo on the website (CF D30). [] goes back to stock.
+    body("images").optional().isArray({ max: 4 }),
+    body("images.*").isURL(HTTPS_URL).withMessage("Photo needs an https link"),
   ],
   async (req, res) => {
     if (firstError(req, res)) return;

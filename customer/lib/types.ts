@@ -98,11 +98,25 @@ export interface SiteInfo {
     forHerImage: string | null;
     forHimImage: string | null;
     salonImages: string[];
+    /** "See us in action" gallery (CF D33), in order; [] hides the section. */
+    gallery: { url: string; caption: string | null }[];
+    /** Hero slider, in order (CF D31). Falls back to the single hero video server-side. */
+    heroSlides: {
+      kind: "video" | "image";
+      url: string;
+      poster: string | null;
+      alt: string | null;
+      /** Optional landscape version for wide screens (phones use `url`). */
+      wideUrl: string | null;
+      widePoster: string | null;
+    }[];
   };
   /** Only pairs with the client's recorded consent reach the API. */
   transformations: { id: string; before: string; after: string; caption: string | null }[];
   /** Google rating: live from the Places feed, else as the owner copied it from Google (CF D27). Null until known. */
   rating: { value: number; count: number; mapsUri: string | null; source: "Google" } | null;
+  /** "Meet the owner" on the home page (CF D32); null when the owner hid it. */
+  owner?: { name: string; title: string; bio: string; photo: string | null } | null;
   /** Counted from paid visits and already rounded down by the server (CF D28). Null below 100. */
   stats?: { clientsServed: number | null };
 }

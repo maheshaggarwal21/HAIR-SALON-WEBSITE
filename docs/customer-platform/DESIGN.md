@@ -113,7 +113,7 @@ Examples: "Hair that *turns* heads." · "Colour, done *right*." · "Karva Chauth
 |---|---|---|
 | `rise` | translateY 24→0, opacity 0→1, 600ms, ease `cubic-bezier(.22,1,.36,1)` | Section content on enter |
 | `word-rise` | Each word masked, translateY 100%→0, 70ms stagger | Hero and section headlines |
-| `card-expand` | Hero video scales from rounded card (radius 28, scale .92) to full-bleed (radius 0, scale 1) as scroll progresses 0→35% | Hero |
+| `hero-slider` | Full-bleed hero BACKGROUND (`cover`, crossfade) under a dark overlay; story bars + ‹ › bottom-right: progress bar per slide, video plays to its end, photo 5 s, loops; ‹ ›, bars, swipe and tap zones; pauses off-screen; reduced motion = manual only, tap to play (CF D31) | Hero |
 | `snap-carousel` | Native CSS scroll-snap; on desktop, arrow buttons scroll one card (CF D26) | Signature services, all devices |
 | `marquee` | Infinite horizontal text, 40s per loop, outlined serif | Between sections |
 | `peek` | Before/after divider auto-nudges 12% left/right once when 60% visible | Transformations |
@@ -130,7 +130,7 @@ Rules:
   video (show poster), fades only.
 - Never animate layout properties. Only transform and opacity.
 - No animation may delay a primary CTA becoming tappable by more than 600ms.
-- Libraries: `motion` (Framer Motion), `gsap` + `ScrollTrigger`, `lenis`. Nothing else for motion.
+- Libraries: none for motion on the customer site. CSS and small React components only (CF D26, D31).
 - No Three.js or real-time 3D. Depth comes from layered parallax and video.
 
 ---
@@ -162,8 +162,9 @@ Rules:
 ## 6. Pages
 
 ### 6.1 Home `/`
-1. **Hero** (cream): full-bleed muted loop of the salon's own work (`card-expand`), headline
-   with `word-rise`, sub-line, primary "Book now", secondary "WhatsApp us", `RatingBadge`.
+1. **Hero** (cream): headline with `word-rise`, sub-line, primary "Request a slot", secondary
+   "WhatsApp us", `RatingBadge`; the salon's own videos and photos play behind it as the background
+   (`hero-slider`, owner's order), with light text over a dark overlay (CF D31).
 2. **Offer bar** (site-wide, CF D29): sits above the header on every page while an offer runs,
    in the offer's own colour theme (outside the cream palette) with a soft blinking label.
 3. **For her / For him** (white, sand and cream panels; full-bleed salon photo with a cream fade behind the text, CF D30): two large image panels. Her first. Each leads to the
@@ -171,7 +172,8 @@ Rules:
 4. **Signature services** (cream): snap carousel on every device, arrow buttons on desktop.
    6–8 services the owner marks `featured`. Prices shown.
 5. **Transformations** (white): 3–6 `BeforeAfter` pairs (colour, keratin, smoothening, bridal).
-6. **Artists** (sand): `ArtistCard` grid, sorted by owner. "Book with …" deep-links.
+6. **Meet the owner** (sand, CF D32): owner's name with italic gold surname, title, short bio, CTA and "Meet the team" link; large 4:5 photo on the right.
+   **See us in action** (white, CF D33): real salon photos in a coverflow carousel with captions.
 7. **Marquee** (white, thin, gold outline): "Colour · Keratin · Bridal · Grooming · Facials ·"
 8. **Reels wall** (cream): 6–9 `ReelTile`s from the synced Instagram feed + "Follow" link.
 9. **Packages and gift cards** (white): active packages and gift-card CTA.

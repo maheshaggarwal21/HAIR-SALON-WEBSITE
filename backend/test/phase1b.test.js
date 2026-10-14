@@ -284,3 +284,68 @@ test("offers (D29): owner creates, edits and pauses; the site sees only live or 
   assert.deepEqual(staff.map((c) => c.status).sort(), ["ended", "paused", "scheduled", "scheduled"]);
   assert.equal((await call("DELETE", `/website/campaigns/${live.body._id}`)).status, 200);
 });
+
+test("hero slider (D31) and service photos (D30): saved in order, public, validated", async () => {
+  // Never saved: the starting slides shipped with the site.
+  let start = (await call("GET", "/public/site")).body.media.heroSlides;
+  assert.equal(start.length, 6);
+  assert.equal(start[0].wideUrl, "/media/hero/hero-1-moustache-style-wide.mp4");
+  assert.equal((await call("GET", "/website/settings")).body.media.heroSlides.length, 6);
+  // The owner can save them back unchanged (site paths are allowed).
+  assert.equal((await call("PATCH", "/website/settings", { media: { heroSlides: start } })).status, 200);
+  const slides = [
+    { kind: "video", url: "https://x.public.blob.vercel-storage.com/hero-1.mp4", poster: "https://x.public.blob.vercel-storage.com/hero-1.webp", alt: "Moustache styling", wideUrl: "https://x.public.blob.vercel-storage.com/hero-1-wide.mp4" },
+    { kind: "image", url: "https://x.public.blob.vercel-storage.com/salon.webp", alt: "The salon floor" },
+  ];
+  assert.equal((await call("PATCH", "/website/settings", { media: { heroSlides: [{ kind: "gif", url: "https://a/b" }] } })).status, 400);
+  assert.equal((await call("PATCH", "/website/settings", { media: { heroSlides: [{ kind: "video", url: "http://insecure/x.mp4" }] } })).status, 400);
+  assert.equal((await call("PATCH", "/website/settings", { media: { heroSlides: slides } })).status, 200);
+  let site = (await call("GET", "/public/site")).body;
+  assert.deepEqual(site.media.heroSlides.map((s) => s.kind), ["video", "image"]);
+  assert.equal(site.media.heroSlides[0].wideUrl, "https://x.public.blob.vercel-storage.com/hero-1-wide.mp4");
+  assert.equal(site.media.heroSlides[1].wideUrl, null);
+  assert.equal(site.media.heroSlides[1].poster, null);
+
+  // A saved empty list hides the slider (it does not bring the starting slides back).
+  await call("PATCH", "/website/settings", { media: { heroSlides: [], heroVideoUrl: "https://x/hero.mp4" } });
+  site = (await call("GET", "/public/site")).body;
+  assert.deepEqual(site.media.heroSlides, []);
+
+  // A service's own photo: saved, public, and [] clears it.
+  const svc = await Service.create({ name: "Keratin", category: "Hair", price: 4000, showOnWebsite: true, slug: "keratin", publicPrice: 2000, displayCategory: "Treatments", audience: "her", bookingMode: "request" });
+  assert.equal((await call("PATCH", `/website/services/${svc._id}/public`, { images: ["not-a-url"] })).status, 400);
+  assert.equal((await call("PATCH", `/website/services/${svc._id}/public`, { images: ["https://x.public.blob.vercel-storage.com/keratin.jpg"] })).status, 200);
+  let card = (await call("GET", "/public/services?for=her")).body.services.find((c) => c.slug === "keratin");
+  assert.deepEqual(card.images, ["https://x.public.blob.vercel-storage.com/keratin.jpg"]);
+  await call("PATCH", `/website/services/${svc._id}/public`, { images: [] });
+  card = (await call("GET", "/public/services?for=her")).body.services.find((c) => c.slug === "keratin");
+  assert.deepEqual(card.images, []);
+});
+
+test("meet the owner (D32): starting draft, owner edits win, can be hidden", async () => {
+  let site = (await call("GET", "/public/site")).body;
+  assert.equal(site.owner.name, "Ajit Singh");
+  assert.equal(site.owner.photo, "/images/owner/ajit-singh.webp");
+  assert.equal((await call("GET", "/website/settings")).body.owner.name, "Ajit Singh");
+  assert.equal((await call("PATCH", "/website/settings", { owner: { photo: "javascript:alert(1)" } })).status, 400);
+  assert.equal((await call("PATCH", "/website/settings", { owner: { bio: "Twenty years of colour work.", photo: "https://x.public.blob.vercel-storage.com/ajit.jpg" } })).status, 200);
+  site = (await call("GET", "/public/site")).body;
+  assert.equal(site.owner.bio, "Twenty years of colour work.");
+  assert.equal(site.owner.name, "Ajit Singh"); // untouched field keeps the draft
+  assert.equal(site.owner.photo, "https://x.public.blob.vercel-storage.com/ajit.jpg");
+  await call("PATCH", "/website/settings", { owner: { visible: false } });
+  assert.equal((await call("GET", "/public/site")).body.owner, null);
+});
+
+test("salon gallery (D33): starting photos, owner list wins, [] hides", async () => {
+  let site = (await call("GET", "/public/site")).body;
+  assert.equal(site.media.gallery.length, 3);
+  assert.equal(site.media.gallery[0].url, "/images/gallery/salon-floor.webp");
+  assert.equal((await call("GET", "/website/settings")).body.media.gallery.length, 3);
+  assert.equal((await call("PATCH", "/website/settings", { media: { gallery: [{ url: "javascript:x", caption: "bad" }] } })).status, 400);
+  await call("PATCH", "/website/settings", { media: { gallery: [{ url: "https://x.public.blob.vercel-storage.com/a.jpg", caption: "Bridal room" }] } });
+  site = (await call("GET", "/public/site")).body;
+  assert.deepEqual(site.media.gallery, [{ url: "https://x.public.blob.vercel-storage.com/a.jpg", caption: "Bridal room" }]);
+  await call("PATCH", "/website/settings", { media: { gallery: [] } });
+  assert.deepEqual((await call("GET", "/public/site")).body.media.gallery, []);
+});

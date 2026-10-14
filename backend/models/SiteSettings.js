@@ -130,6 +130,49 @@ const siteSettingsSchema = new mongoose.Schema(
       forHerImage: { type: String, default: null },
       forHimImage: { type: String, default: null },
       salonImages: { type: [String], default: [] },     // ladies' area, chairs (Visit us)
+      /**
+       * Hero slider (CF D31): the salon's own short videos and photos, played
+       * in this order on the home page. Each video plays to its end, each photo
+       * shows for 5 s, then the next one; visitors can also step through.
+       * Never saved (undefined): the single `heroVideoUrl` above if set, else
+       * the starting slides in config/heroSlides.js (files shipped with the
+       * customer site). Saved: the owner's list (Vercel Blob uploads or site
+       * files); [] hides the slider.
+       */
+      /**
+       * "See us in action" gallery (CF D33): photos with a short caption, shown
+       * as a carousel. Undefined until the owner saves a list, so the public site
+       * can fall back to config/gallery.js; [] hides the section.
+       */
+      gallery: {
+        type: [
+          new mongoose.Schema(
+            {
+              url: { type: String, required: true },
+              caption: { type: String, default: null, trim: true, maxlength: 80 },
+            },
+            { _id: false }
+          ),
+        ],
+        default: undefined,
+      },
+      heroSlides: {
+        type: [
+          new mongoose.Schema(
+            {
+              kind: { type: String, enum: ["video", "image"], required: true },
+              url: { type: String, required: true },
+              poster: { type: String, default: null }, // first frame for videos
+              alt: { type: String, default: null, trim: true, maxlength: 120 },
+              // Optional landscape (16:9) version for wide screens; phones keep `url`.
+              wideUrl: { type: String, default: null },
+              widePoster: { type: String, default: null },
+            },
+            { _id: false }
+          ),
+        ],
+        default: undefined, // undefined = never saved → config/heroSlides.js
+      },
     },
     /** Before/after pairs (DS §6.1 §5). Only pairs with recorded consent are public. */
     transformations: {
@@ -175,6 +218,18 @@ const siteSettingsSchema = new mongoose.Schema(
       },
     },
 
+    /**
+     * "Meet the owner" on the home page (CF D32). Each field falls back to
+     * config/ownerProfile.js until the owner saves their own.
+     */
+    owner: {
+      name: { type: String, default: null, trim: true, maxlength: 60 },
+      title: { type: String, default: null, trim: true, maxlength: 80 },
+      bio: { type: String, default: null, trim: true, maxlength: 1200 },
+      photo: { type: String, default: null },
+      visible: { type: Boolean, default: true },
+    },
+
     /** Website price = round(list × ratio). Mirrors Service.PUBLIC_PRICE_RATIO (D12). */
     publicPriceRatio: { type: Number, default: 0.5, min: 0, max: 1 },
   },
@@ -215,11 +270,45 @@ siteSettingsSchema.methods.toPublic = function () {
       forHerImage: this.media?.forHerImage ?? null,
       forHimImage: this.media?.forHimImage ?? null,
       salonImages: this.media?.salonImages ?? [],
+      gallery: (Array.isArray(this.media?.gallery) ? this.media.gallery : require("../config/gallery")).map((g) => ({
+        url: g.url,
+        caption: g.caption ?? null,
+      })),
+      heroSlides: (Array.isArray(this.media?.heroSlides)
+        ? this.media.heroSlides
+        : this.media?.heroVideoUrl
+          ? [{ kind: "video", url: this.media.heroVideoUrl, poster: this.media.heroPosterUrl ?? null, alt: null }]
+          : require("../config/heroSlides")
+      ).map((s) => ({
+        kind: s.kind,
+        url: s.url,
+        poster: s.poster ?? null,
+        alt: s.alt ?? null,
+        wideUrl: s.wideUrl ?? null,
+        widePoster: s.widePoster ?? null,
+      })),
     },
+    owner: (() => {
+      const o = this.ownerProfile();
+      return o.visible ? { name: o.name, title: o.title, bio: o.bio, photo: o.photo } : null;
+    })(),
     // Consent is required to publish a client's photo (CLAUDE.md, Privacy).
     transformations: (this.transformations || [])
       .filter((t) => t.consent === true)
       .map((t) => ({ id: String(t._id), before: t.before, after: t.after, caption: t.caption ?? null })),
+  };
+};
+
+/** "Meet the owner" content in effect: saved fields over the starting draft (CF D32). */
+siteSettingsSchema.methods.ownerProfile = function () {
+  const base = require("../config/ownerProfile");
+  const o = this.owner || {};
+  return {
+    name: o.name || base.name,
+    title: o.title || base.title,
+    bio: o.bio || base.bio,
+    photo: o.photo || base.photo,
+    visible: o.visible !== false,
   };
 };
 

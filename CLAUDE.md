@@ -127,8 +127,9 @@ ship with tests from day one.
   `cacheTag` + `cacheLife` (Next 16 Cache Components, CF D15). On-demand revalidation via
   `/api/revalidate` (secret) calling `revalidateTag` when the owner edits content.
 - Design tokens live in `customer/app/globals.css` (`@theme`) and mirror DESIGN.md exactly.
-- Motion: Framer Motion (`motion`) for UI, GSAP ScrollTrigger for scroll-scrubbed
-  sections, Lenis on desktop only. Every animation respects `prefers-reduced-motion`.
+- Motion is CSS-first plus small client components (word-rise, reveal, marquee,
+  review drift, hero slider). No GSAP, no Lenis, no pinned sections (CF D26, D31).
+  Every animation respects `prefers-reduced-motion`.
 - Performance budget is a requirement, not a goal (see DESIGN.md §9). Check it on a
   throttled mid-range Android profile before merging any landing-page change.
 

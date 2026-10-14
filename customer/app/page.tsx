@@ -3,7 +3,7 @@
  * doesn't exist yet (hero video, before/after pairs, reels, reviews, packages)
  * is left out rather than filled with placeholders (CP2: "no placeholder text
  * anywhere"). Section rhythm (Option H, CF D25): cream → white →
- * cream → white → sand → white marquee → cream → white → cream → sand → white →
+ * cream → white → sand (meet the owner) → white marquee → cream → white → cream → sand → white →
  * charcoal footer. No black sections; the footer is the only dark surface.
  *
  * Motion: hero headline `word-rise`, sections `rise` (CSS), signature services
@@ -13,21 +13,21 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getArtists, getPackages, getReels, getReviews, getServices, getSite } from "@/lib/api";
+import { getPackages, getReels, getReviews, getServices, getSite } from "@/lib/api";
 import { hoursSummary, phoneLabel, rupees, whatsappHref } from "@/lib/format";
 import type { ServiceCard as Card } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { ServiceCard } from "@/components/ui/ServiceCard";
 import { RequestCta } from "@/components/request/RequestContext";
 import { WordRise } from "@/components/motion/WordRise";
-import { HeroMedia } from "@/components/home/HeroMedia";
+import { HeroSlider } from "@/components/home/HeroSlider";
+import { GalleryCarousel } from "@/components/home/GalleryCarousel";
 import { RatingBadge } from "@/components/home/RatingBadge";
 import { PinnedRow } from "@/components/home/PinnedRow";
 import { BeforeAfter } from "@/components/home/BeforeAfter";
 import { ReelsWall } from "@/components/home/ReelsWall";
 import { ReviewsWall } from "@/components/home/ReviewsWall";
 import { imageBySlug } from "@/lib/serviceImages";
-import { ArtistCard } from "@/components/site/ArtistCard";
 import { Faq } from "@/components/site/Faq";
 import { SalonJsonLd } from "@/components/site/JsonLd";
 
@@ -61,11 +61,10 @@ function Eyebrow({ children, tone = "light" }: { children: React.ReactNode; tone
 const section = "px-4 py-16 md:px-16 md:py-32";
 
 export default async function Home() {
-  const [site, her, him, artists, reels, reviews, packages] = await Promise.all([
+  const [site, her, him, reels, reviews, packages] = await Promise.all([
     getSite(),
     getServices("her"),
     getServices("him"),
-    getArtists(),
     getReels(),
     getReviews(),
     getPackages(),
@@ -76,37 +75,55 @@ export default async function Home() {
   const categories = [...new Set([...herCards, ...himCards].map((c) => c.displayCategory).filter(Boolean))] as string[];
   const whatsapp = whatsappHref(site?.contact.whatsapp, "Hi, I'd like to book an appointment at The Experts.");
   const media = site?.media;
+  const heroSlides = media?.heroSlides ?? [];
+  const owner = site?.owner ?? null;
+  const gallery = media?.gallery ?? [];
+  const bg = heroSlides.length > 0;
 
   return (
     <main className="flex-1 pb-24 md:pb-0">
       {site && <SalonJsonLd site={site} />}
 
-      {/* 1. Hero (cream) */}
-      <section className="bg-ivory-2 px-4 pb-16 pt-16 md:px-16 md:pb-24 md:pt-28">
-        <div className="mx-auto max-w-[1240px]">
-          <Eyebrow tone="accent">The Experts · Patiala</Eyebrow>
-          <h1 className="mt-6 max-w-[12ch] font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[96px]">
+      {/* 1. Hero. With slides (CF D31): the salon's own videos and photos play as the
+          full background, a dark gradient keeps the text readable, and the text turns
+          light. Without slides: the plain cream hero. */}
+      <section
+        className={`relative isolate overflow-hidden px-4 md:px-16 ${
+          bg ? "flex min-h-[max(600px,calc(100svh-112px))] items-end bg-ink pb-24 pt-24 text-ivory md:min-h-[min(720px,calc(100svh-104px))] md:items-center md:pb-24 md:pt-14" : "bg-ivory-2 pb-16 pt-16 md:pb-24 md:pt-28"
+        }`}
+      >
+        {bg && (
+          <>
+            <HeroSlider slides={heroSlides} />
+            {/* Readability: darker where the text sits (bottom on phones, left on desktop). */}
+            {/* Phones: shade only the lower part where the text sits, so faces in the upper half stay clear.
+                Desktop: shade the left, where the text sits; the video plays clear on the right. */}
+            <div aria-hidden className="absolute inset-0 z-10 bg-gradient-to-t from-ink/95 from-0% via-ink/65 via-55% to-ink/10 to-85% md:bg-gradient-to-r md:from-ink/85 md:via-ink/55 md:to-transparent" />
+          </>
+        )}
+        <div className="relative z-10 mx-auto w-full max-w-[1240px]">
+          <p className={`text-xs font-semibold uppercase tracking-[0.18em] md:text-[13px] ${bg ? "text-gold drop-shadow-[0_1px_6px_rgba(0,0,0,0.6)]" : "text-gold-deep"}`}>The Experts · Patiala</p>
+          <h1 className={`mt-6 max-w-[12ch] font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[96px] ${bg ? "drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]" : ""}`}>
             <WordRise text="Hair that *turns* heads." />
           </h1>
-          <p className="mt-8 max-w-[640px] text-[17px] leading-[1.6] text-ink-muted md:text-[19px]">
+          <p className={`mt-8 max-w-[560px] text-[17px] leading-[1.6] md:text-[19px] ${bg ? "text-ivory/90 drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]" : "text-ink-muted"}`}>
             Colour, keratin, skin, makeup and grooming on Sirhind–Patiala Rd. Real prices online — choose your services and
             we&apos;ll fix a time with you.
           </p>
           <div id="hero-cta" className="mt-10 flex flex-wrap items-center gap-3">
-            <RequestCta label="Request a slot" />
+            <RequestCta label="Request a slot" className={bg ? "bg-ivory! text-ink! hover:bg-ivory-2!" : ""} />
             {whatsapp && (
-              <Button variant="whatsapp" href={whatsapp} target="_blank" rel="noopener">
+              <Button variant="whatsapp" tone={bg ? "dark" : "light"} href={whatsapp} target="_blank" rel="noopener" className={bg ? "bg-ink/30 backdrop-blur" : ""}>
                 WhatsApp us
               </Button>
             )}
           </div>
           {site?.rating && (
             <div className="mt-8">
-              <RatingBadge rating={site.rating} tone="light" />
+              <RatingBadge rating={site.rating} tone={bg ? "dark" : "light"} />
             </div>
           )}
         </div>
-        {media?.heroVideoUrl && <HeroMedia video={media.heroVideoUrl} poster={media.heroPosterUrl} />}
       </section>
 
       {/* 2. Offers: the site-wide offer bar and pop-up in the root layout (CF D29). */}
@@ -206,25 +223,69 @@ export default async function Home() {
         </section>
       )}
 
-      {/* 6. Artists (sand) */}
-      {artists && artists.length > 0 && (
+      {/* 6. Meet the owner (sand, CF D32): words on the left, a large photo on the right. */}
+      {owner && (
         <section className={`bg-sand ${section}`}>
-          <div className="mx-auto max-w-[1240px]">
-            <div className="reveal flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <Eyebrow tone="accent">The team</Eyebrow>
-                <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
-                  Meet the <em className="text-gold-deep">artists</em>.
-                </h2>
+          <div className="mx-auto grid max-w-[1240px] items-center gap-10 md:grid-cols-[1.1fr_0.9fr] md:gap-16">
+            <div className="reveal">
+              <Eyebrow tone="accent">Meet the owner</Eyebrow>
+              <h2 className="mt-4 font-serif text-[40px] leading-[1.02] md:text-[72px]">
+                {owner.name.split(" ").slice(0, -1).join(" ") || owner.name}{" "}
+                {owner.name.includes(" ") && <em className="text-gold-deep">{owner.name.split(" ").slice(-1)[0]}</em>}
+              </h2>
+              <p className="mt-3 text-[13px] font-semibold uppercase tracking-[0.16em] text-ink-muted">{owner.title}</p>
+              <div className="mt-8 max-w-[560px] space-y-4 text-[17px] leading-[1.7] text-ink/85">
+                {owner.bio.split(/\n\s*\n/).map((para, k) => (
+                  <p key={k}>{para}</p>
+                ))}
               </div>
-              <Link href="/artists" className="text-[15px] font-semibold text-gold-deep underline-offset-4 hover:underline">
-                All artists →
-              </Link>
+              <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+                <RequestCta label="Request a slot" />
+                <Link href="/artists" className="text-[15px] font-semibold text-gold-deep underline-offset-4 hover:underline">
+                  Meet the team →
+                </Link>
+                {site?.contact.instagram && (
+                  <a href={`https://instagram.com/${site.contact.instagram}`} target="_blank" rel="noopener" className="text-[15px] font-semibold text-gold-deep underline-offset-4 hover:underline">
+                    Instagram →
+                  </a>
+                )}
+              </div>
             </div>
-            <div className="mt-10 grid grid-cols-2 gap-x-4 gap-y-10 md:grid-cols-3 lg:grid-cols-4">
-              {artists.slice(0, 8).map((a) => (
-                <ArtistCard key={a.id} artist={a} />
-              ))}
+            <div className="reveal">
+              {owner.photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={owner.photo}
+                  alt={`${owner.name}, ${owner.title}`}
+                  width={900}
+                  height={1100}
+                  loading="lazy"
+                  decoding="async"
+                  className="aspect-[4/5] w-full rounded-[var(--radius-media)] object-cover object-[50%_30%] shadow-[var(--shadow-sheet)]"
+                />
+              ) : (
+                <div className="flex aspect-[4/5] w-full items-center justify-center rounded-[var(--radius-media)] bg-ivory-2 font-serif text-[96px] text-ink-muted">
+                  {owner.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 6b. See us in action (white, CF D33): real photos of the salon in a coverflow carousel. */}
+      {gallery.length > 0 && (
+        <section className={`overflow-hidden bg-ivory ${section}`}>
+          <div className="mx-auto max-w-[1240px]">
+            <div className="reveal text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep md:text-[13px]">See us in action</p>
+              <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+                Inside the <em className="text-gold">salon</em>.
+              </h2>
+              <p className="mx-auto mt-4 max-w-[520px] text-[17px] text-ink-muted">Our space, our team, our work. No stock photos.</p>
+            </div>
+            <div className="mt-12">
+              <GalleryCarousel items={gallery} />
             </div>
           </div>
         </section>

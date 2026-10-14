@@ -9,7 +9,9 @@
  *   - for her / him / everyone, website category, sort order;
  *   - "Consultation first" and "Patch test 48h before" badges;
  *   - website price — normally half the list price (D12); change it only for
- *     an exception.
+ *     an exception;
+ *   - the service's own photo (uploaded to Vercel Blob). It replaces the
+ *     stock photo on the website; removing it brings the stock photo back.
  *
  * Switching a service on fills in a URL name and the half price if they are
  * empty. Every save is audited and refreshes the website within seconds.
@@ -18,6 +20,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronDown, Loader2, Search, Sparkles, Store } from "lucide-react";
+import MediaInput from "@/components/website/MediaInput";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -47,6 +50,7 @@ interface WebService {
   requiresConsultation?: boolean;
   requiresPatchTest?: boolean;
   sortOrder?: number;
+  images?: string[];
 }
 
 const slugify = (s: string) =>
@@ -276,6 +280,15 @@ function Row({
               maxLength={4000}
               value={v.description ?? ""}
               onChange={(e) => set("description", e.target.value || null)}
+            />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <MediaInput
+              label="Website photo (optional)"
+              folder="services"
+              value={v.images?.[0] ?? null}
+              onChange={(u) => set("images", u ? [u] : [])}
+              hint="Replaces the stock photo on the website. Shown 3:2 (landscape), so keep the face or hands near the centre. Remove it to go back to the stock photo."
             />
           </div>
           <div>
