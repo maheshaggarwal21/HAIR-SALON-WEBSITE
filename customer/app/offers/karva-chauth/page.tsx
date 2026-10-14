@@ -53,9 +53,9 @@ async function Offer() {
 
         {(livePackages.length > 0 || highlights.length > 0) && (
           <section className="bg-ivory px-4 py-16 md:px-16 md:py-32">
-            <div className="mx-auto max-w-[1240px]">
+            <div className="mx-auto max-w-site">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">For the evening</p>
-              <h2 className="mt-4 max-w-[18ch] font-serif text-[34px] leading-[1.05] md:text-[64px]">
+              <h2 className="mt-4 max-w-[18ch] font-serif text-[34px] leading-[1.05] md:text-[56px]">
                 Pick what you <em className="text-gold">love</em>.
               </h2>
               <p className="mt-4 max-w-[640px] text-[15px] leading-[1.6] text-ink-muted md:text-[16px]">
@@ -140,11 +140,11 @@ function Hero({ site, withActions = false }: { site?: SiteInfo | null; withActio
   const whatsapp = whatsappHref(site?.contact.whatsapp, "Hi, I'd like to ask about Karva Chauth appointments.");
   return (
     <section className="bg-ivory-2 px-4 pb-16 pt-20 md:px-16 md:pb-32 md:pt-36">
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-site">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">
           Karva Chauth · The Experts, Patiala
         </p>
-        <h1 className="mt-6 max-w-[12ch] font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[96px]">
+        <h1 className="mt-6 max-w-[12ch] font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[84px]">
           Karva Chauth, <em className="text-gold">sorted</em>.
         </h1>
         <p className="mt-8 max-w-[640px] text-[17px] leading-[1.6] text-ink-muted md:text-[19px]">
@@ -177,9 +177,9 @@ function HowItWorks({ slaMinutes }: { slaMinutes: number }) {
   ];
   return (
     <section className="bg-sand px-4 py-16 md:px-16 md:py-32">
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-site">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep md:text-[13px]">How it works</p>
-        <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+        <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
           Three steps, <em className="text-gold-deep">no fuss</em>.
         </h2>
         <ol className="mt-10 grid gap-6 md:grid-cols-3">
@@ -200,10 +200,10 @@ function VisitUs({ site }: { site: SiteInfo }) {
   const { address, mapUrl, phone } = site.contact;
   return (
     <section className="bg-ivory-2 px-4 py-16 md:px-16 md:py-32">
-      <div className="mx-auto grid max-w-[1240px] gap-10 md:grid-cols-2">
+      <div className="mx-auto grid max-w-site gap-10 md:grid-cols-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">Visit us</p>
-          <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+          <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
             Find us <em className="text-gold">easily</em>.
           </h2>
           {address && <p className="mt-6 text-[17px] leading-[1.6] md:text-[19px]">{address}</p>}
@@ -255,26 +255,34 @@ function Faq({ site }: { site: SiteInfo | null }) {
   ];
   return (
     <section className="bg-ivory px-4 py-16 md:px-16 md:py-32">
-      <div className="mx-auto max-w-[840px]">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">Questions</p>
-        <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
-          Good to <em className="text-gold">know</em>.
-        </h2>
-        <div className="mt-10 divide-y divide-line border-y border-line">
-          {items.map(([q, a]) => (
-            <details key={q} className="group py-5">
-              <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-4 text-[17px] font-semibold">
-                {q}
-                <span aria-hidden className="text-[24px] leading-none text-ink-muted transition-transform group-open:rotate-45">
-                  +
-                </span>
-              </summary>
-              <p className="mt-3 max-w-[640px] text-[16px] leading-[1.6] text-ink-muted">{a}</p>
-            </details>
-          ))}
+      {/* Same layout as the home page FAQ: title left, questions right, one content column. */}
+      <div className="mx-auto grid max-w-site gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">Questions</p>
+          <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
+            Good to <em className="text-gold">know</em>.
+          </h2>
+          <div className="mt-8 hidden lg:block">
+            <RequestCta />
+          </div>
         </div>
-        <div className="mt-12">
-          <RequestCta />
+        <div>
+          <div className="divide-y divide-line border-y border-line">
+            {items.map(([q, a]) => (
+              <details key={q} className="group py-5">
+                <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-4 text-[17px] font-semibold">
+                  {q}
+                  <span aria-hidden className="text-[24px] leading-none text-ink-muted transition-transform group-open:rotate-45">
+                    +
+                  </span>
+                </summary>
+                <p className="mt-3 max-w-[640px] text-[16px] leading-[1.6] text-ink-muted">{a}</p>
+              </details>
+            ))}
+          </div>
+          <div className="mt-12 lg:hidden">
+            <RequestCta />
+          </div>
         </div>
       </div>
     </section>

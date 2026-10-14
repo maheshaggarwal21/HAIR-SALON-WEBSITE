@@ -14,9 +14,9 @@ export default async function ServicesPage() {
   const [her, him, all] = await Promise.all([getServices("her"), getServices("him"), getServices()]);
   return (
     <main className="flex-1 bg-ivory px-4 pb-28 pt-12 md:px-16 md:pb-32 md:pt-20">
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-site">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">The menu</p>
-        <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[80px]">
+        <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[72px]">
           Every service, every <em className="text-gold">price</em>.
         </h1>
         <p className="mt-6 max-w-[640px] text-[17px] leading-[1.6] text-ink-muted">The price shown is the price you pay at the salon.</p>

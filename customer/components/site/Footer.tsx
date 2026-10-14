@@ -9,7 +9,7 @@ export function Footer({ site }: { site: SiteInfo | null }) {
   const c = site?.contact;
   return (
     <footer className="bg-ink px-4 pb-28 pt-16 text-ivory-muted md:px-16 md:pb-16">
-      <div className="mx-auto grid max-w-[1240px] gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-site gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
         <div>
           <div className="font-serif text-[34px] leading-none text-ivory">The Experts</div>
           <p className="mt-3 max-w-[36ch] text-[15px] leading-[1.6]">Hair, colour, skin and bridal in Patiala.</p>
@@ -52,7 +52,7 @@ export function Footer({ site }: { site: SiteInfo | null }) {
           )}
         </div>
       </div>
-      <div className="mx-auto mt-12 flex max-w-[1240px] flex-wrap gap-x-6 gap-y-2 border-t border-line-dark pt-6 text-[13px]">
+      <div className="mx-auto mt-12 flex max-w-site flex-wrap gap-x-6 gap-y-2 border-t border-line-dark pt-6 text-[13px]">
         <Link href="/privacy" className="hover:text-ivory">Privacy</Link>
         <Link href="/terms" className="hover:text-ivory">Terms</Link>
         <Link href="/cancellation-policy" className="hover:text-ivory">Cancellation policy</Link>

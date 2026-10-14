@@ -28,7 +28,7 @@ export function OfferBar({ data }: { data: { today: string; campaigns: PublicCam
   if (!offer) return null;
   const { content } = offer;
   const inner = (
-    <div className="relative z-[1] mx-auto flex max-w-[1240px] items-center justify-center gap-3 md:justify-between">
+    <div className="relative z-[1] mx-auto flex max-w-site items-center justify-center gap-3 md:justify-between">
       <span className="flex min-w-0 items-center gap-3">
         <span aria-hidden className="offer-dot h-2 w-2 shrink-0 rounded-full" />
         {content.eyebrow && (

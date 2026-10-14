@@ -51,7 +51,7 @@ async function ServiceDetail({ params }: { params: PageProps<"/services/[slug]">
         </Link>
         {service.displayCategory && <> · {service.displayCategory}</>}
       </nav>
-      <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[80px]">{service.name}</h1>
+      <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[72px]">{service.name}</h1>
       {service.shortDescription && <p className="mt-6 max-w-[640px] text-[19px] leading-[1.6]">{service.shortDescription}</p>}
 
       {(service.requiresConsultation || service.requiresPatchTest) && (
@@ -106,7 +106,7 @@ async function ServiceDetail({ params }: { params: PageProps<"/services/[slug]">
 export default function ServicePage(props: PageProps<"/services/[slug]">) {
   return (
     <main className="flex-1 bg-ivory px-4 pb-28 pt-12 md:px-16 md:pb-32 md:pt-20">
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-site">
         <Suspense fallback={<div className="h-[60vh]" aria-busy="true" />}>
           <ServiceDetail params={props.params} />
         </Suspense>

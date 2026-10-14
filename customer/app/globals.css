@@ -31,6 +31,11 @@
   --font-sans: var(--font-manrope), system-ui, sans-serif;
 
   /* §3.3 Radius */
+  /* §3.3 One content width for every section, header and footer (`max-w-site`).
+   * 1160px leaves real margins on a 13–15" laptop, so the page reads centred
+   * instead of edge to edge (owner review, 14 Oct 2026). */
+  --container-site: 1160px;
+
   --radius-control: 10px;
   --radius-card: 18px;
   --radius-media: 28px;

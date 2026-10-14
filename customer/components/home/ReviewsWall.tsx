@@ -86,10 +86,10 @@ export function ReviewsWall({ reviews, site }: { reviews: PublicReviews; site: S
     <div>
       {/* Same gutter + 1240px column as every other home section. */}
       <div className="px-4 md:px-16">
-        <div className="mx-auto flex max-w-[1240px] flex-wrap items-end justify-between gap-8">
+        <div className="mx-auto flex max-w-site flex-wrap items-end justify-between gap-8">
           <div className="reveal">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep md:text-[13px]">Reviews</p>
-            <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[64px]">
+            <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
               In their <em className="text-gold">words</em>.
             </h2>
           </div>
@@ -135,7 +135,7 @@ export function ReviewsWall({ reviews, site }: { reviews: PublicReviews; site: S
       )}
 
       <div className="px-4 md:px-16">
-        <p className="mx-auto mt-8 max-w-[1240px] text-[13px] text-ink-muted">
+        <p className="mx-auto mt-8 max-w-site text-[13px] text-ink-muted">
           {reviews.attribution}
           {link && (
             <>
