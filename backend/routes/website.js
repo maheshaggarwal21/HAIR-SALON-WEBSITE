@@ -109,6 +109,7 @@ const SETTINGS_PATHS = [
   "contact.whatsapp",
   "contact.address",
   "contact.mapUrl",
+  "contact.mapEmbedUrl",
   "contact.instagram",
   "contact.placeId",
   ...SiteSettings.DAYS.map((d) => `openingHours.${d}`),
@@ -183,6 +184,18 @@ router.patch(
       .customSanitizer((v) => (v === "" ? null : v))
       .custom((v) => v === null || /^https:\/\/(www\.)?(google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)/.test(v))
       .withMessage("Use a Google Maps link (https://maps.app.goo.gl/…)"),
+    // Google's "Embed a map" gives a whole <iframe …>; keep only its src.
+    body("contact.mapEmbedUrl")
+      .optional({ nullable: true })
+      .customSanitizer((v) => {
+        if (typeof v !== "string") return v;
+        const t = v.trim();
+        if (t === "") return null;
+        const m = t.match(/src=["']([^"']+)["']/i);
+        return (m ? m[1] : t).replace(/&amp;/g, "&");
+      })
+      .custom((v) => v === null || /^https:\/\/(www\.google\.com\/maps\/embed\?pb=|maps\.google\.com\/maps\?[^<>"']*output=embed)/.test(v))
+      .withMessage("Paste the code from Google Maps → Share → Embed a map"),
     body("contact.instagram")
       .optional({ nullable: true })
       .customSanitizer((v) => (v === "" ? null : typeof v === "string" ? v.replace(/^@/, "").trim() : v))

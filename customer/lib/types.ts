@@ -91,6 +91,7 @@ export interface SiteInfo {
     whatsapp: string | null;
     address: string | null;
     mapUrl: string | null;
+    mapEmbedUrl: string | null;
     instagram: string | null;
     parkingNote: string | null;
   };
