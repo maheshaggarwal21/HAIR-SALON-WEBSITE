@@ -8,9 +8,10 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, Scissors, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CUSTOMER_SITE_URL } from "@/lib/customerSite";
 import { useAuth, type Role, type PendingLoginState } from "@/context/AuthContext";
 import LoginGate from "@/components/ui/LoginGate";
 
@@ -342,14 +343,14 @@ export default function SignInForm() {
           </motion.button>
         </form>
 
-        {/* Back to home */}
+        {/* Back to the public website (the staff app has no home page of its own) */}
         <div className="text-center mt-6">
-          <Link
-            to="/"
+          <a
+            href={CUSTOMER_SITE_URL}
             className="inline-flex items-center gap-1.5 text-sm text-white/35 hover:text-white/65 transition-colors duration-200 font-medium tracking-wide"
           >
-            ← Back to home
-          </Link>
+            ← Back to the website
+          </a>
         </div>
       </div>
 
