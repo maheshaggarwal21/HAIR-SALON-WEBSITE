@@ -40,14 +40,17 @@ const REMAINING_CAP = 3;
  * @property {number}   durationMin
  * @property {number}   [bufferMin]
  * @property {string}   [category]       displayCategory, matched against skillCategories
+ * @property {string}   [group]          menu sub-group / card slug, matched against skillGroups (D35)
  * @property {string[]} [resourceIds]
  * @property {boolean}  [requiresPatchTest]
  *
  * @typedef {object} Artist
  * @property {string}   id
  * @property {string}   name
+ * @property {boolean}  [skillAll]        may do every service (D35)
  * @property {Set<string>} skills          service ids
  * @property {Set<string>} skillCategories
+ * @property {Set<string>} [skillGroups]   menu sub-groups (D35)
  * @property {{start:number,end:number}[]} intervals   working ms, already − breaks − time off
  * @property {number}   onlineShare       0–100
  * @property {number}   onlineMinutesSold already sold online that day
@@ -68,7 +71,12 @@ const REMAINING_CAP = 3;
  */
 
 function canDo(artist, item) {
-  return artist.skills.has(String(item.serviceId)) || (item.category && artist.skillCategories.has(item.category));
+  return (
+    artist.skillAll === true ||
+    artist.skills.has(String(item.serviceId)) ||
+    Boolean(item.category && artist.skillCategories.has(item.category)) ||
+    Boolean(item.group && artist.skillGroups?.has(item.group))
+  );
 }
 
 function inside(intervals, start, end) {

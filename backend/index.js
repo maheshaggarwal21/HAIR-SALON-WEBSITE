@@ -758,6 +758,7 @@ app.use("/api/artists", authenticate, require("./routes/artists"));
 app.use("/api/services", authenticate, require("./routes/services"));
 app.use("/api/bookings", authenticate, require("./routes/bookings"));
 app.use("/api/website", authenticate, require("./routes/website"));
+app.use("/api/artist-skills", authenticate, require("./routes/artistSkills"));
 app.use("/api/visits", authenticate, require("./routes/visits"));
 app.use("/api/data-pipeline", authenticate, require("./routes/dataPipeline"));
 

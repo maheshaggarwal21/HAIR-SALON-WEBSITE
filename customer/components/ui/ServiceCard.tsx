@@ -17,7 +17,7 @@
 import { Check } from "lucide-react";
 import type { ServiceCard as Card } from "@/lib/types";
 import { getServiceImage } from "@/lib/serviceImages";
-import { Chip } from "./Chip";
+import { OptionSelect } from "./OptionSelect";
 import { PriceTag } from "./PriceTag";
 
 export function ServiceCard({
@@ -84,17 +84,37 @@ export function ServiceCard({
         ) : (
           <>
             <PriceTag price={service.fromPrice} from />
-            <div className="mt-3 flex flex-wrap gap-2" role={selectable ? "group" : undefined} aria-label={`${service.name} options`}>
-              {service.options.map((o) =>
-                selectable ? (
-                  <Chip key={o.id} tone={tone} selected={isSelected(o.id)} onClick={() => onToggle?.(o.id)}>
-                    {o.label ?? "Option"} · <span className="tabular">₹{o.price.toLocaleString("en-IN")}</span>
-                  </Chip>
-                ) : (
-                  <span key={o.id} className={`text-[13px] ${muted}`}>
-                    {o.label}: <span className="tabular">₹{o.price.toLocaleString("en-IN")}</span>
-                  </span>
-                )
+            <div className="mt-3" aria-label={`${service.name} options`}>
+              {/* Request sheet: an ordered dropdown; tick several where they combine (D34). */}
+              {selectable && (
+                <OptionSelect
+                  multiple={service.pick === "many"}
+                  tone={tone}
+                  label={`${service.name}: choose ${service.pick === "many" ? "options" : "an option"}`}
+                  placeholder={service.pick === "many" ? "Choose one or more" : "Choose an option"}
+                  options={service.options}
+                  value={service.options.filter((o) => isSelected(o.id)).map((o) => o.id)}
+                  onChange={(ids) => {
+                    // Toggle exactly the option that changed.
+                    for (const o of service.options) if (ids.includes(o.id) !== isSelected(o.id)) onToggle?.(o.id);
+                  }}
+                />
+              )}
+              {/* Menu card: a short price list of the first options, then "+ N more" (D34). */}
+              {!selectable && (
+                <ul className={`w-full space-y-1 text-[14px] ${muted}`}>
+                  {service.options.slice(0, PREVIEW_OPTIONS).map((o) => (
+                    <li key={o.id} className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate">{o.label ?? "Option"}</span>
+                      <span className={`tabular shrink-0 font-medium ${tone === "dark" ? "text-ivory" : "text-ink"}`}>₹{o.price.toLocaleString("en-IN")}</span>
+                    </li>
+                  ))}
+                  {service.options.length > PREVIEW_OPTIONS && (
+                    <li className="pt-0.5 text-[13px] font-semibold">
+                      + {service.options.length - PREVIEW_OPTIONS} more {service.options.length - PREVIEW_OPTIONS === 1 ? "option" : "options"}
+                    </li>
+                  )}
+                </ul>
               )}
             </div>
           </>
@@ -125,7 +145,9 @@ export function ServiceCard({
       <div className="flex flex-1 flex-col p-5">{body}</div>
     </>
   );
-  const frame = `flex w-full flex-col overflow-hidden ${fill ? "flex-1" : ""} rounded-[var(--radius-card)] border text-left ${surface} ${
+  // overflow-hidden only clips the photo's corners; without a photo it would also
+  // clip the option dropdown in the request sheet.
+  const frame = `flex w-full flex-col ${img ? "overflow-hidden" : ""} ${fill ? "flex-1" : ""} rounded-[var(--radius-card)] border text-left ${surface} ${
     anySelected ? "border-gold-deep ring-1 ring-gold-deep" : ""
   }`;
 
@@ -147,3 +169,6 @@ export function ServiceCard({
  * mid-range Android (DS §9). Desktop cards are about 400px wide.
  */
 const CARD_SIZES = "(min-width: 1024px) 400px, 213px";
+
+/** How many options a menu card lists before "+ N more" (the rest are on the detail page). */
+const PREVIEW_OPTIONS = 4;

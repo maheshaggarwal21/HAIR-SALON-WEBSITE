@@ -22,6 +22,7 @@ const Resource = require("../models/Resource");
 const SlotLock = require("../models/SlotLock");
 const Appointment = require("../models/Appointment");
 const SiteSettings = require("../models/SiteSettings");
+const { effectiveRule, ruleSets, serviceKeys } = require("./skills");
 const { openingIntervals, intersect, subtract, salonInstant, weekdayKey } = require("./time");
 
 const ONLINE_MODES = ["instant", "request"];
@@ -136,8 +137,8 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
   const engineArtists = artists.map((a) => ({
     id: String(a._id),
     name: a.publicProfile?.displayName || a.name,
-    skills: new Set((a.skills || []).map(String)),
-    skillCategories: new Set(a.skillCategories || []),
+    // Own rule, or the default for the artist's gender (D35).
+    ...ruleSets(effectiveRule(a, settings.artistSkillDefaults)),
     intervals: artistIntervals(a, opening, date, timeOffs.filter((t) => String(t.artistId) === String(a._id))),
     onlineShare: a.onlineShare ?? 100,
     onlineMinutesSold: soldOnline.get(String(a._id)) || 0,
@@ -155,7 +156,9 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
         name: s.publicName || s.name,
         durationMin: s.durationMinutes || 60,
         bufferMin: s.bufferMinutes || 0,
-        category: s.displayCategory || null,
+        // Same section / sub-group as the menu and the skills screen (D35).
+        category: serviceKeys(s).category,
+        group: serviceKeys(s).group,
         resourceIds: (s.resourceIds || []).map(String),
         requiresPatchTest: Boolean(s.requiresPatchTest),
       })),

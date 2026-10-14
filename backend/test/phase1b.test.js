@@ -178,14 +178,15 @@ test("uploads say clearly when Blob storage isn't set up", async () => {
 });
 
 test("owner-entered rating + selected reviews (D27): short names, hidden until the rating is set, live Google wins", async () => {
-  // Nothing saved yet: the starting list shows, but no rating is invented.
+  // Nothing saved yet: the starting list and the owner's figures (4.5, 1,000+).
   let reviews = await call("GET", "/public/reviews");
   assert.equal(reviews.body.curated, true);
-  assert.equal(reviews.body.rating, null);
+  assert.equal(reviews.body.rating, 4.5);
+  assert.equal(reviews.body.count, 1000);
   assert.equal(reviews.body.attribution, "Selected from our Google reviews");
   assert.deepEqual(reviews.body.reviews.map((r) => r.author), ["Naman T.", "Joban M.", "Leven A.", "Dilpreet K."]);
   assert.ok(!JSON.stringify(reviews.body).includes("Toor"), "full surname never leaves the server");
-  assert.equal((await call("GET", "/public/site")).body.rating, null);
+  assert.equal((await call("GET", "/public/site")).body.rating.value, 4.5);
 
   // The staff editor sees the starting list with full names, so it can save it.
   const settings = await call("GET", "/website/settings");

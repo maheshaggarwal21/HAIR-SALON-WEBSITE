@@ -10,7 +10,7 @@
  *   0. the owner's own photo for that service (Service.images[0]) wins;
  *   1. exact name match (case, spacing and punctuation ignored);
  *   2. men's cards: beard / moustache / Grooming → "for-him", other men-only
- *      hair cards → "duo-haircut";
+ *      hair cards → "mens-haircut";
  *   3. keyword rules, MOST SPECIFIC FIRST ("Split Ends (… Blow Dry)" is hair
  *      spa, not blow-dry; "Organic Bleach Neck" is face bleach, not body;
  *      "Bridal Draping" is draping, not bridal make-up);
@@ -59,7 +59,13 @@ export type ImageSlug =
   | "wax-arms"
   | "wax-legs"
   | "wax-back"
-  | "wax-tools";
+  | "wax-tools"
+  | "keratin"
+  | "botox"
+  | "nanoplastia"
+  | "hair-perming"
+  | "olaplex-bond-repair"
+  | "mens-haircut";
 
 /** Short, specific alt text: what the photo shows, never the file name. */
 const ALT: Record<ImageSlug, string> = {
@@ -98,6 +104,12 @@ const ALT: Record<ImageSlug, string> = {
   "wax-legs": "Wax strip being applied to a client's calf",
   "wax-back": "Warm wax being applied across the shoulder blade",
   "wax-tools": "Wax heater, spatulas and strips laid out on marble",
+  keratin: "Stylist smoothing long hair with a comb and flat iron after keratin",
+  botox: "Stylist brushing a nourishing hair botox treatment through long hair",
+  nanoplastia: "Stylist applying a nanoplastia smoothing treatment section by section",
+  "hair-perming": "Stylist setting perm rods for curls",
+  "olaplex-bond-repair": "Bond-repair treatment being applied at the wash basin",
+  "mens-haircut": "Barber giving a scissor-over-comb haircut",
 };
 
 /** Lowercase, "&" → "and", every run of punctuation/space → one space. */
@@ -158,11 +170,24 @@ const EXACT_LIST: [ImageSlug, string[]][] = [
   ["glossy-waves", ["Open Hair Styling (crimping)", "Open Hair Styling (curls)", "Open Hair Styling (waves)"]],
   [
     "silky-straight",
-    ["Flat Iron Straightening (Wash, Conditioning)", "Smoothening", "Olaplex spa", "Botox", "Silk Therapy/Straight Therapy", "Nanoplastia", "Hair Perming", "Keratin"],
+    ["Flat Iron Straightening (Wash, Conditioning)", "Smoothening", "Silk Therapy/Straight Therapy"],
   ],
   ["balayage", ["Global Highlights Balayage Ombre Baby Light"]],
   ["root-colour", ["Root touchup", "Color Remove (Henna, Dye)"]],
   ["hair-spa", ["Hair spa", "Split Ends (Wash, Conditioning, Blow Dry)"]],
+  // Treatment photos from the salon (14 Oct 2026).
+  ["keratin", ["Keratin"]],
+  ["botox", ["Botox"]],
+  ["nanoplastia", ["Nanoplastia"]],
+  ["hair-perming", ["Hair Perming"]],
+  ["olaplex-bond-repair", ["Olaplex spa"]],
+  // Menu group cards (backend/config/menuGroups.js, CF D34) whose title the keyword rules would miss.
+  ["facial", ["Facials", "Advanced facials"]],
+  ["wax-arms", ["Arms & underarms waxing"]],
+  ["celebrity-makeup", ["Reception make-up"]],
+  ["haircut", ["Haircut"]],
+  ["mens-haircut", ["Men's haircut"]],
+  ["duo-haircut", ["Couple haircut"]],
   ["wax-face", ["Forehead (wax) Women", "Chin (wax)", "Nose (wax)", "Upper lips (wax)", "Side locks (wax)", "Face Wax"]],
   ["wax-underarm", ["Under arms wax (honey)", "Under arms wax (rica)"]],
   ["wax-arms", ["Half Arms wax (honey)", "Half Arms wax (rica)", "Full Arms wax (honey)", "Full Arms wax (rica)"]],
@@ -206,9 +231,15 @@ const KEYWORDS: [RegExp, ImageSlug][] = [
   [/\bhead massage\b/, "head-massage"],
   [/\bbraid\b|\bbun\b|\bhairdo\b/, "braid-bun"],
   [/\bcrimp(ing)?\b|\bcurls?\b|\bwaves?\b/, "glossy-waves"],
-  [/\bstraight(ening)?\b|\bsmooth(ening)?\b|\bkeratin\b|\bbotox\b|\bnanoplast|\bperm(ing)?\b|\bsilk\b|\bolaplex\b/, "silky-straight"],
+  [/\bkeratin\b/, "keratin"],
+  [/\bbotox\b/, "botox"],
+  [/\bnanoplast/, "nanoplastia"],
+  [/\bperm(ing)?\b/, "hair-perming"],
+  [/\bolaplex\b|\bbond repair\b/, "olaplex-bond-repair"],
+  [/\bstraight(ening)?\b|\bsmooth(ening)?\b|\bsilk\b/, "silky-straight"],
   [/\bhighlight|\bbalayage\b|\bombre\b|\bglobal colou?r\b/, "balayage"],
   [/\broot\b|\bhenna\b|\bcolou?r\b/, "root-colour"],
+  [/\bcouples?\b/, "duo-haircut"],
   [/\bbaby girls?\b/, "kids-haircut"],
   [/\bhair ?cut\b/, "haircut"],
   [/\bblow ?dry\b|\bshampoo\b|\bstyl(e|ing)\b/, "blow-dry"],
@@ -262,7 +293,7 @@ export function getServiceImage(service: ImageInput): ServiceImage {
 
   if (service.audience === "him") {
     if (category === "grooming" || /\b(beard|moustache|mustache)\b/.test(name)) return pick("for-him", "men");
-    if (category === "hair") return pick("duo-haircut", "men");
+    if (category === "hair") return pick("mens-haircut", "men");
   }
 
   for (const [re, slug] of KEYWORDS) if (re.test(name)) return pick(slug, "keyword");

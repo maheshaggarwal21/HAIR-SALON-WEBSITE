@@ -45,7 +45,8 @@ const ReviewCache = require("../models/ReviewCache");
 const Campaign = require("../models/Campaign");
 const { clientsServed } = require("../utils/publicStats");
 const packages = require("../config/packages");
-const { PUBLIC_SERVICE_FILTER, PUBLIC_ARTIST_FILTER, audienceFilter, serviceCards, publicArtist, assignPublicSlugs } =
+const { groupBySlug } = require("../config/menuGroups");
+const { PUBLIC_SERVICE_FILTER, PUBLIC_ARTIST_FILTER, audienceFilter, serviceCards, cardSlugFor, publicArtist, assignPublicSlugs } =
   require("../utils/publicCatalogue");
 const { mongoRateLimit, hit } = require("../middleware/mongoRateLimit");
 const { verifyTurnstile } = require("../utils/turnstile");
@@ -148,11 +149,21 @@ router.get(
         ...PUBLIC_SERVICE_FILTER,
         $or: [{ slug }, { variantGroup: slug }],
       }).lean();
-      if (!hitDoc) return res.status(404).json({ error: "NOT_FOUND" });
 
-      const members = hitDoc.variantGroup
-        ? await Service.find({ ...PUBLIC_SERVICE_FILTER, variantGroup: hitDoc.variantGroup }).lean()
-        : [hitDoc];
+      let members;
+      if (hitDoc?.variantGroup) {
+        members = await Service.find({ ...PUBLIC_SERVICE_FILTER, variantGroup: hitDoc.variantGroup }).lean();
+      } else {
+        // A website menu group (D34): by its own slug, or by any member's old URL.
+        const groupSlug = hitDoc ? cardSlugFor(hitDoc) : groupBySlug(slug) ? slug : null;
+        if (groupSlug && groupBySlug(groupSlug)) {
+          const all = await Service.find({ ...PUBLIC_SERVICE_FILTER, variantGroup: null }).lean();
+          members = all.filter((s) => cardSlugFor(s) === groupSlug);
+        } else {
+          members = hitDoc ? [hitDoc] : [];
+        }
+      }
+      if (!members.length) return res.status(404).json({ error: "NOT_FOUND" });
       cacheFor(res, 60);
       return res.json({ service: serviceCards(members, { detail: true })[0] });
     } catch (err) {
@@ -309,7 +320,7 @@ router.get("/reels", readLimit, async (_req, res) => {
           permalink: r.permalink ?? null,
           caption: r.caption ?? null,
           // "Book this look" — only when the tagged service is on the menu.
-          service: s ? { slug: s.variantGroup || s.slug, name: s.publicName || s.name, optionId: String(s._id) } : null,
+          service: s ? { slug: cardSlugFor(s), name: s.publicName || s.name, optionId: String(s._id) } : null,
         };
       }),
     });

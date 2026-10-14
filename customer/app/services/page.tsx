@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ServicesPage() {
-  const [her, him] = await Promise.all([getServices("her"), getServices("him")]);
+  const [her, him, all] = await Promise.all([getServices("her"), getServices("him"), getServices()]);
   return (
     <main className="flex-1 bg-ivory px-4 pb-28 pt-12 md:px-16 md:pb-32 md:pt-20">
       <div className="mx-auto max-w-[1240px]">
@@ -21,8 +21,8 @@ export default async function ServicesPage() {
         </h1>
         <p className="mt-6 max-w-[640px] text-[17px] leading-[1.6] text-ink-muted">The price shown is the price you pay at the salon.</p>
         <div className="mt-10">
-          {her && him ? (
-            <MenuBrowser her={her} him={him} />
+          {her && him && all ? (
+            <MenuBrowser her={her} him={him} all={all} />
           ) : (
             <p className="text-[16px] text-ink-muted">The menu couldn&apos;t load just now. Refresh in a minute, or message us on WhatsApp.</p>
           )}

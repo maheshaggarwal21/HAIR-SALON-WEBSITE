@@ -84,13 +84,24 @@ const artistSchema = new mongoose.Schema(
     onlineBookable: { type: Boolean, default: false },
 
     // ── Booking engine (Phase 2, CF §2.1, §4) ─────────────────────────────────
-    /** Exact services this artist can do online. */
+    /**
+     * Which services this artist may be booked for (CF D35, utils/skills.js).
+     * "inherit" (default) = follow the salon's rule for the artist's gender
+     * (SiteSettings.artistSkillDefaults, "all services" to start with);
+     * "custom" = the four fields below.
+     */
+    skillMode: { type: String, enum: ["inherit", "custom"], default: "inherit" },
+    /** Custom rule: every service. */
+    skillAll: { type: Boolean, default: false },
+    /** Custom rule: whole menu sub-groups / cards (config/menuGroups.js slugs or a variantGroup). */
+    skillGroups: { type: [String], default: [] },
+    /** Custom rule: exact services. */
     skills: { type: [mongoose.Schema.Types.ObjectId], ref: "Service", default: [] },
     /**
      * Whole website categories this artist can do ("Threading", "Makeup", …).
      * A service is in the artist's skills if it is listed in `skills` OR its
      * displayCategory is here — so the owner ticks a few categories instead of
-     * 182 services (D21). Both empty = not bookable online.
+     * 182 services (D21). Custom rule with nothing ticked = not bookable online.
      */
     skillCategories: { type: [String], default: [] },
     /** Max % of this artist's working minutes per day that may be sold online. */

@@ -30,6 +30,8 @@ export interface ServiceCard {
   requiresConsultation: boolean;
   requiresPatchTest: boolean;
   fromPrice: number;
+  /** "many": options can be combined in a request (threading areas); "one": alternatives (D34). */
+  pick?: "one" | "many";
   options: ServiceOption[];
   /** Detail responses only (GET /services/:slug). */
   description?: string | null;

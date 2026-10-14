@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Public menu (DS §6.2 `/services`): For her / For him tabs, category chips,
+ * Public menu (DS §6.2 `/services`): For her / For him / Everyone tabs, category chips,
  * search. Both menus arrive prerendered; the tab follows `?for=` in the URL
  * and is written back so a shared link opens the same tab.
  *
@@ -21,17 +21,24 @@ import { Chip } from "@/components/ui/Chip";
 import { ServiceCard } from "@/components/ui/ServiceCard";
 import { RequestCta } from "@/components/request/RequestContext";
 
-export function MenuBrowser({ her, him }: { her: Card[]; him: Card[] }) {
-  const [tab, setTab] = useState<"her" | "him">("her");
+type Tab = "her" | "him" | "all";
+const TABS: [Tab, string][] = [
+  ["her", "For her"],
+  ["him", "For him"],
+  ["all", "Everyone"],
+];
+
+export function MenuBrowser({ her, him, all }: { her: Card[]; him: Card[]; all: Card[] }) {
+  const [tab, setTab] = useState<Tab>("her");
   const [category, setCategory] = useState<string | null>(null);
   const [q, setQ] = useState("");
 
-  const showTab = useCallback((t: "her" | "him") => {
+  const showTab = useCallback((t: Tab) => {
     setTab(t);
     setCategory(null);
   }, []);
 
-  const choose = (t: "her" | "him") => {
+  const choose = (t: Tab) => {
     showTab(t);
     try {
       const url = new URL(window.location.href);
@@ -42,7 +49,7 @@ export function MenuBrowser({ her, him }: { her: Card[]; him: Card[] }) {
     }
   };
 
-  const list = tab === "her" ? her : him;
+  const list = tab === "her" ? her : tab === "him" ? him : all;
   const categories = useMemo(() => [...new Set(list.map((c) => c.displayCategory).filter(Boolean))] as string[], [list]);
   const needle = q.trim().toLowerCase();
   const shown = list.filter(
@@ -62,9 +69,9 @@ export function MenuBrowser({ her, him }: { her: Card[]; him: Card[] }) {
       </Suspense>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-2" role="tablist" aria-label="Menu">
-          {(["her", "him"] as const).map((t) => (
+          {TABS.map(([t, label]) => (
             <Chip key={t} role="tab" aria-selected={tab === t} aria-pressed={undefined} selected={tab === t} onClick={() => choose(t)} className="h-11 px-5 text-[15px]">
-              {t === "her" ? "For her" : "For him"}
+              {label}
             </Chip>
           ))}
         </div>
@@ -108,7 +115,7 @@ export function MenuBrowser({ her, him }: { her: Card[]; him: Card[] }) {
                       Details →
                     </Link>
                     <RequestCta
-                      preset={{ audience: tab, optionIds: c.options.length === 1 ? [c.options[0].id] : [] }}
+                      preset={{ audience: tab === "all" ? (c.audience === "him" ? "him" : "her") : tab, optionIds: c.options.length === 1 ? [c.options[0].id] : [] }}
                       label="Request"
                       variant="secondary"
                       className="h-10! px-4! md:h-10!"
@@ -125,11 +132,11 @@ export function MenuBrowser({ her, him }: { her: Card[]; him: Card[] }) {
   );
 }
 
-/** Mirrors `?for=her|him` into the tab whenever the URL changes. */
-function TabFromUrl({ onTab }: { onTab: (t: "her" | "him") => void }) {
+/** Mirrors `?for=her|him|all` into the tab whenever the URL changes. */
+function TabFromUrl({ onTab }: { onTab: (t: Tab) => void }) {
   const f = useSearchParams().get("for");
   useEffect(() => {
-    if (f === "her" || f === "him") onTab(f);
+    if (f === "her" || f === "him" || f === "all") onTab(f);
   }, [f, onTab]);
   return null;
 }

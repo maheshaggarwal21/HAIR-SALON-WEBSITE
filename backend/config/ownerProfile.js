@@ -4,9 +4,9 @@
  * Used until the owner saves their own in Website Settings → Meet the owner;
  * after that SiteSettings.owner wins field by field.
  *
- * DRAFT for the owner to confirm: the text says only what the site already
- * stands for (honest advice, real prices, a trained team). No years, awards or
- * training claims are invented here; add real ones in Website Settings.
+ * Confirmed by the owner (14 Oct 2026). The text says only what the site
+ * already stands for (honest advice, real prices, a trained team). No years,
+ * awards or training claims; add real ones in Website Settings.
  */
 
 module.exports = {

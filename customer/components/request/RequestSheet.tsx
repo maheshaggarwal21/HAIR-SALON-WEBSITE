@@ -176,8 +176,9 @@ export function RequestSheet({ site, services, artists, packages }: Props) {
     setSelected((s) => {
       if (s.includes(id)) return s.filter((x) => x !== id);
       // Variants of one service are alternatives: picking Medium replaces Short.
+      // Cards marked pick "many" (threading, waxing areas…) can be combined (D34).
       const card = optionIndex.get(id)?.card;
-      const siblings = new Set(card?.options.map((o) => o.id) ?? []);
+      const siblings = new Set(card?.pick === "many" ? [] : card?.options.map((o) => o.id) ?? []);
       const next = s.filter((x) => !siblings.has(x));
       if (next.length >= MAX_ITEMS) {
         setError(`You can request up to ${MAX_ITEMS} services at once.`);

@@ -47,6 +47,17 @@ const openingHoursDefinition = Object.fromEntries(
   ])
 );
 
+/** A skills rule (utils/skills.js): all, or any of these sections / sub-groups / services. */
+const skillRuleSchema = new mongoose.Schema(
+  {
+    all: { type: Boolean, default: true },
+    categories: { type: [String], default: [] },
+    groups: { type: [String], default: [] },
+    services: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+  },
+  { _id: false }
+);
+
 const siteSettingsSchema = new mongoose.Schema(
   {
     key: { type: String, default: "default", unique: true, immutable: true },
@@ -109,10 +120,8 @@ const siteSettingsSchema = new mongoose.Schema(
       phone: { type: String, default: "9814830550", match: /^[6-9]\d{9}$/ },
       whatsapp: { type: String, default: "9814830550", match: /^[6-9]\d{9}$/ },
       address: { type: String, default: "Green Park Colony, near Sunrise Hotel, Sirhind–Patiala Rd, Patiala" },
-      mapUrl: {
-        type: String,
-        default: "https://www.google.com/maps/place/The+Experts+salon/@30.3667632,76.3999075,17z/data=!4m14!1m7!3m6!1s0x39102757e7ccda15:0xd8f54ef350097317!2sThe+Experts+salon!8m2!3d30.3667632!4d76.4024824!16s%2Fg%2F11ytxs85kp!3m5!1s0x39102757e7ccda15:0xd8f54ef350097317!8m2!3d30.3667632!4d76.4024824!16s%2Fg%2F11ytxs85kp",
-      },
+      /** The owner's Google Maps share link (confirmed 14 Oct 2026). */
+      mapUrl: { type: String, default: "https://maps.app.goo.gl/3crtqx58iqAG4S568" },
       placeId: { type: String, default: null },
       instagram: { type: String, default: "theexpertssalonpatiala" },
       /** Optional line under the address, e.g. "Free parking in front". */
@@ -198,9 +207,11 @@ const siteSettingsSchema = new mongoose.Schema(
      * means "show no reviews".
      */
     reviews: {
-      rating: { type: Number, default: null, min: 1, max: 5 },
-      count: { type: Number, default: null, min: 0 },
-      url: { type: String, default: null }, // the salon's Google reviews page
+      // Owner's figures (14 Oct 2026): "4.5+" rating, "1000+" reviews. Stored
+      // as the floors and always shown as floors ("4.5 ★", "1,000+").
+      rating: { type: Number, default: 4.5, min: 1, max: 5 },
+      count: { type: Number, default: 1000, min: 0 },
+      url: { type: String, default: "https://maps.app.goo.gl/3crtqx58iqAG4S568" }, // the salon's Google listing
       featured: {
         type: [
           new mongoose.Schema(
@@ -228,6 +239,17 @@ const siteSettingsSchema = new mongoose.Schema(
       bio: { type: String, default: null, trim: true, maxlength: 1200 },
       photo: { type: String, default: null },
       visible: { type: Boolean, default: true },
+    },
+
+    /**
+     * Which services artists may be booked for, by gender (CF D35). An artist
+     * follows their gender's rule unless they have their own (Artist.skillMode).
+     * Every gender starts with "all services".
+     */
+    artistSkillDefaults: {
+      female: { type: skillRuleSchema, default: () => ({ all: true }) },
+      male: { type: skillRuleSchema, default: () => ({ all: true }) },
+      other: { type: skillRuleSchema, default: () => ({ all: true }) },
     },
 
     /** Website price = round(list × ratio). Mirrors Service.PUBLIC_PRICE_RATIO (D12). */

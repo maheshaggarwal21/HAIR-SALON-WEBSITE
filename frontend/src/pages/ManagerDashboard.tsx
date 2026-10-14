@@ -11,10 +11,11 @@
  *   /dashboard/manager/requests  → Website requests (bookings.view)
  *   /dashboard/manager/website   → Website settings (website.manage)
  *   /dashboard/manager/website-offers → Offers: bar + pop-up (website.manage, CF D29)
+ *   /dashboard/manager/artist-skills → Artist skills (artists.view to see, artists.crud to change; CF D35)
  */
 
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Inbox, Globe, Store, Clapperboard, Megaphone } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Inbox, Globe, Store, Clapperboard, Megaphone, UserCog } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
@@ -29,6 +30,7 @@ import WebsiteSettings from "@/pages/dashboard/WebsiteSettings";
 import WebsiteMenu from "@/pages/dashboard/WebsiteMenu";
 import WebsiteReels from "@/pages/dashboard/WebsiteReels";
 import WebsiteOffers from "@/pages/dashboard/WebsiteOffers";
+import ArtistSkills from "@/pages/dashboard/ArtistSkills";
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
@@ -41,6 +43,7 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
+  { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: "artists.view" },
   { to: "/dashboard/manager/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
   { to: "/dashboard/manager/website", label: "Website Settings", icon: Globe, requiredPermission: "website.manage" },
   { to: "/dashboard/manager/website-menu", label: "Website Menu", icon: Store, requiredPermission: "website.manage" },
@@ -147,6 +150,14 @@ export default function ManagerDashboard() {
           element={
             <RequirePermission permission="website.manage" backTo={HOME}>
               <WebsiteReels />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="artist-skills"
+          element={
+            <RequirePermission permission="artists.view" backTo={HOME}>
+              <ArtistSkills />
             </RequirePermission>
           }
         />

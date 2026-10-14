@@ -13,6 +13,7 @@
  *   /dashboard/owner/website-menu  → Website menu: what each service shows (T1.18)
  *   /dashboard/owner/website-reels → Reels wall (T1.20)
  *   /dashboard/owner/website-offers → Offers: bar + pop-up (CF D29)
+ *   /dashboard/owner/artist-skills → Who can be booked for which services (CF D35)
  */
 
 import { Routes, Route } from "react-router-dom";
@@ -31,6 +32,7 @@ import {
   Store,
   Clapperboard,
   Megaphone,
+  UserCog,
 } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import Management from "@/pages/dashboard/Management";
@@ -47,6 +49,7 @@ import WebsiteSettings from "@/pages/dashboard/WebsiteSettings";
 import WebsiteMenu from "@/pages/dashboard/WebsiteMenu";
 import WebsiteReels from "@/pages/dashboard/WebsiteReels";
 import WebsiteOffers from "@/pages/dashboard/WebsiteOffers";
+import ArtistSkills from "@/pages/dashboard/ArtistSkills";
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
@@ -56,6 +59,7 @@ const ownerLinks = [
   { to: "/dashboard/owner/data-pipeline", label: "Data Pipeline", icon: Database },
   { to: "/dashboard/owner/services", label: "Services", icon: Scissors },
   { to: "/dashboard/owner/artists", label: "Artists", icon: Palette },
+  { to: "/dashboard/owner/artist-skills", label: "Artist Skills", icon: UserCog },
   { to: "/dashboard/owner/team", label: "Team", icon: Users },
   { to: "/dashboard/owner/management", label: "Management", icon: Network },
   { to: "/dashboard/owner/website", label: "Website Settings", icon: Globe },
@@ -75,6 +79,7 @@ export default function OwnerDashboard() {
         <Route path="data-pipeline" element={<DataPipeline />} />
         <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />
+        <Route path="artist-skills" element={<ArtistSkills />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />
         <Route path="team" element={<TeamManagement />} />
         <Route path="management" element={<Management />} />
