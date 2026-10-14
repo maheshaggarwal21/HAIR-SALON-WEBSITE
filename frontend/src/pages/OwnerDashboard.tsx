@@ -8,6 +8,12 @@
  *   /dashboard/owner/services  → Service catalogue (full CRUD)
  *   /dashboard/owner/artists   → Artist directory (CRUD)
  *   /dashboard/owner/team      → Team management (CRUD users)
+ *   /dashboard/owner/requests  → Website requests (T1.10)
+ *   /dashboard/owner/website   → Website settings: contact, hours, media (T1.5)
+ *   /dashboard/owner/website-menu  → Website menu: what each service shows (T1.18)
+ *   /dashboard/owner/website-reels → Reels wall (T1.20)
+ *   /dashboard/owner/website-offers → Offers: bar + pop-up (CF D29)
+ *   /dashboard/owner/artist-skills → Who can be booked for which services (CF D35)
  */
 
 import { Routes, Route } from "react-router-dom";
@@ -21,6 +27,12 @@ import {
   Receipt,
   Database,
   Network,
+  Inbox,
+  Globe,
+  Store,
+  Clapperboard,
+  Megaphone,
+  UserCog,
 } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import Management from "@/pages/dashboard/Management";
@@ -32,16 +44,28 @@ import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
 import DataPipeline from "@/pages/dashboard/DataPipeline";
+import BookingRequests from "@/pages/dashboard/BookingRequests";
+import WebsiteSettings from "@/pages/dashboard/WebsiteSettings";
+import WebsiteMenu from "@/pages/dashboard/WebsiteMenu";
+import WebsiteReels from "@/pages/dashboard/WebsiteReels";
+import WebsiteOffers from "@/pages/dashboard/WebsiteOffers";
+import ArtistSkills from "@/pages/dashboard/ArtistSkills";
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
+  { to: "/dashboard/owner/requests", label: "Website Requests", icon: Inbox },
   { to: "/dashboard/owner/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/owner/payments", label: "Payments", icon: Receipt },
   { to: "/dashboard/owner/data-pipeline", label: "Data Pipeline", icon: Database },
   { to: "/dashboard/owner/services", label: "Services", icon: Scissors },
   { to: "/dashboard/owner/artists", label: "Artists", icon: Palette },
+  { to: "/dashboard/owner/artist-skills", label: "Artist Skills", icon: UserCog },
   { to: "/dashboard/owner/team", label: "Team", icon: Users },
   { to: "/dashboard/owner/management", label: "Management", icon: Network },
+  { to: "/dashboard/owner/website", label: "Website Settings", icon: Globe },
+  { to: "/dashboard/owner/website-menu", label: "Website Menu", icon: Store },
+  { to: "/dashboard/owner/website-reels", label: "Website Reels", icon: Clapperboard },
+  { to: "/dashboard/owner/website-offers", label: "Website Offers", icon: Megaphone },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus },
 ];
 
@@ -55,9 +79,15 @@ export default function OwnerDashboard() {
         <Route path="data-pipeline" element={<DataPipeline />} />
         <Route path="services" element={<ServiceManagement />} />
         <Route path="artists" element={<ArtistManagement />} />
+        <Route path="artist-skills" element={<ArtistSkills />} />
         <Route path="artist-view/:id" element={<ArtistDashboardView />} />
         <Route path="team" element={<TeamManagement />} />
         <Route path="management" element={<Management />} />
+        <Route path="requests" element={<BookingRequests />} />
+        <Route path="website" element={<WebsiteSettings />} />
+        <Route path="website-menu" element={<WebsiteMenu />} />
+        <Route path="website-reels" element={<WebsiteReels />} />
+        <Route path="website-offers" element={<WebsiteOffers />} />
       </Routes>
     </DashboardLayout>
   );

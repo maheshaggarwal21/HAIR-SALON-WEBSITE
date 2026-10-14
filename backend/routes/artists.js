@@ -23,6 +23,9 @@ const { PERMISSIONS } = require('../constants/permissions');
 const validateId = require("../middleware/validateId");
 const { invalidateUserSessions } = require("../utils/sessionUtils");
 
+// The website lists active artists (K6): refresh it after every change (T1.24).
+const { revalidateSite } = require("../utils/revalidate");
+
 const router = express.Router();
 
 // ── Ensure DB on every request (Vercel cold-start) ─────────────────────────
@@ -145,6 +148,7 @@ router.post(
         userId,
       });
 
+      await revalidateSite(["artists"]);
       return res.status(201).json(artist);
     } catch (err) {
       console.error("[artists] Create error:", err);
@@ -315,6 +319,7 @@ router.patch(
 
       // Re-fetch with populated userId so response matches GET /all shape
       const populated = await Artist.findById(updated._id).populate("userId", "permissions isActive");
+      await revalidateSite(["artists"]);
       return res.json(populated);
     } catch (err) {
       console.error("[artists] Update error:", err);
@@ -342,6 +347,7 @@ router.delete("/:id", validateId, authorizePermission(PERMISSIONS.ARTISTS_CRUD),
       await invalidateUserSessions(req.sessionStore, artist.userId.toString());
     }
 
+    await revalidateSite(["artists"]);
     return res.json({ ok: true, message: "Artist deactivated successfully" });
   } catch (err) {
     console.error("[artists] Delete error:", err);
@@ -367,6 +373,7 @@ router.delete("/:id/permanent", validateId, authorizePermission(PERMISSIONS.ARTI
     }
 
     await Artist.findByIdAndDelete(id);
+    await revalidateSite(["artists"]);
     return res.json({ ok: true, message: "Artist permanently deleted" });
   } catch (err) {
     console.error("[artists] Permanent delete error:", err);

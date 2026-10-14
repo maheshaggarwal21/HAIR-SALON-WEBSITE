@@ -40,6 +40,24 @@ const ACTIONS = [
   "device.revoked",
   "telegram.linked",
   "telegram.unlinked",
+  // Catalogue
+  "service.created",
+  "service.updated",
+  "service.deactivated",
+  "service.deleted",
+  // Website + bookings (customer platform)
+  "website.settings_changed",
+  "website.artist_profile_changed",
+  "website.reel_changed",
+  "website.campaign_changed",
+  "artist.skills_changed",
+  "artist.skills_default_changed",
+  "booking.confirmed",
+  "booking.declined",
+  "booking.cancelled",
+  "booking.note_changed",
+  // Data
+  "migration.applied",
 ];
 
 const auditLogSchema = new mongoose.Schema(

@@ -8,10 +8,14 @@
  *   /dashboard/manager/services  → Service catalogue (read-only)
  *   /dashboard/manager/artists   → Artist directory (CRUD)
  *   /dashboard/manager/team      → Team management (if granted team.view)
+ *   /dashboard/manager/requests  → Website requests (bookings.view)
+ *   /dashboard/manager/website   → Website settings (website.manage)
+ *   /dashboard/manager/website-offers → Offers: bar + pop-up (website.manage, CF D29)
+ *   /dashboard/manager/artist-skills → Artist skills (artists.view to see, artists.crud to change; CF D35)
  */
 
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Inbox, Globe, Store, Clapperboard, Megaphone, UserCog } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
 import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
@@ -21,18 +25,30 @@ import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
 import DataPipeline from "@/pages/dashboard/DataPipeline";
 import TeamManagement from "@/pages/dashboard/TeamManagement";
+import BookingRequests from "@/pages/dashboard/BookingRequests";
+import WebsiteSettings from "@/pages/dashboard/WebsiteSettings";
+import WebsiteMenu from "@/pages/dashboard/WebsiteMenu";
+import WebsiteReels from "@/pages/dashboard/WebsiteReels";
+import WebsiteOffers from "@/pages/dashboard/WebsiteOffers";
+import ArtistSkills from "@/pages/dashboard/ArtistSkills";
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
+  { to: "/dashboard/manager/requests", label: "Website Requests", icon: Inbox, requiredPermission: "bookings.view" },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
+  { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: "artists.view" },
   { to: "/dashboard/manager/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
+  { to: "/dashboard/manager/website", label: "Website Settings", icon: Globe, requiredPermission: "website.manage" },
+  { to: "/dashboard/manager/website-menu", label: "Website Menu", icon: Store, requiredPermission: "website.manage" },
+  { to: "/dashboard/manager/website-reels", label: "Website Reels", icon: Clapperboard, requiredPermission: "website.manage" },
+  { to: "/dashboard/manager/website-offers", label: "Website Offers", icon: Megaphone, requiredPermission: "website.manage" },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus, requiredPermission: "visit.create" },
 ];
 
@@ -102,6 +118,54 @@ export default function ManagerDashboard() {
           element={
             <RequirePermission permission={["team.view", "team.manage"]} backTo={HOME}>
               <TeamManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="requests"
+          element={
+            <RequirePermission permission="bookings.view" backTo={HOME}>
+              <BookingRequests />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="website"
+          element={
+            <RequirePermission permission="website.manage" backTo={HOME}>
+              <WebsiteSettings />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="website-menu"
+          element={
+            <RequirePermission permission="website.manage" backTo={HOME}>
+              <WebsiteMenu />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="website-reels"
+          element={
+            <RequirePermission permission="website.manage" backTo={HOME}>
+              <WebsiteReels />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="artist-skills"
+          element={
+            <RequirePermission permission="artists.view" backTo={HOME}>
+              <ArtistSkills />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="website-offers"
+          element={
+            <RequirePermission permission="website.manage" backTo={HOME}>
+              <WebsiteOffers />
             </RequirePermission>
           }
         />

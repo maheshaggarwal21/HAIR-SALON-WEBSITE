@@ -18,6 +18,10 @@ const PERMISSIONS = Object.freeze({
   TEAM_VIEW:             'team.view',
   TEAM_MANAGE:           'team.manage',
   VISIT_CREATE:          'visit.create',
+  // Customer platform (CONTROL_FLOW_AND_DATA_LOGIC.md §19)
+  BOOKINGS_VIEW:         'bookings.view',
+  BOOKINGS_MANAGE:       'bookings.manage',
+  WEBSITE_MANAGE:        'website.manage',
 });
 
 // Default permission sets assigned when a new account is created.
@@ -34,10 +38,14 @@ const ROLE_DEFAULTS = {
     'artists.crud',
     'artist_dashboard.view',
     'visit.create',
+    'bookings.view',
+    'bookings.manage',
   ],
   receptionist: [
     'payments.view',
     'visit.create',
+    'bookings.view',
+    'bookings.manage',
   ],
   artist:       [], // starts empty — owner grants permissions individually via Artist directory
   owner:        [], // bypasses PBAC — this array is intentionally unused
@@ -64,6 +72,9 @@ const PERMISSION_LABELS = {
   'team.view':             'View Team Management',
   'team.manage':           'Manage Team Accounts (Create / Edit / Deactivate)',
   'visit.create':          'Create Visit Entries',
+  'bookings.view':         'View Website Requests & Bookings',
+  'bookings.manage':       'Handle Requests & Bookings (Confirm / Decline / Notes)',
+  'website.manage':        'Manage Website (Settings, Public Menu, Artist Profiles)',
 };
 
 // UI groupings for the permission editor checklist — purely cosmetic.
@@ -89,6 +100,14 @@ const PERMISSION_GROUPS = [
   {
     label: 'Services',
     keys:  ['services.view', 'services.crud'],
+  },
+  {
+    label: 'Bookings',
+    keys:  ['bookings.view', 'bookings.manage'],
+  },
+  {
+    label: 'Website',
+    keys:  ['website.manage'],
   },
   {
     label: 'Administration',

@@ -11,6 +11,17 @@
  *   POST /            — owner only
  *   PATCH /:id        — owner only
  *   DELETE /:id       — owner only (soft-delete)
+ *
+ * Website fields kept in step here (owner rules, 13 Oct 2026):
+ *   - publicPrice is half the list price (Service.defaultPublicPrice). When the
+ *     list price changes, publicPrice follows — unless the owner has already
+ *     set a different public price, which is an exception and is left alone.
+ *   - durationMinutes starts at one hour for a new service (durationConfirmed
+ *     false). Once the owner types a time, it is confirmed and artist
+ *     time-performance starts using it. Online booking uses either.
+ *
+ * Every create / edit / deactivate / delete is audited (CLAUDE.md: owner
+ * changes to services and prices go through utils/audit.js).
  */
 
 const express = require("express");
@@ -20,6 +31,20 @@ const Service = require("../models/Service");
 const { authorizePermission } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require('../constants/permissions');
 const validateId = require("../middleware/validateId");
+const audit = require("../utils/audit");
+// Website menu refreshes within seconds of an edit (T1.24).
+const { revalidateSite } = require("../utils/revalidate");
+
+/** Fields whose before → after values are worth keeping in the audit line. */
+const AUDITED_FIELDS = ["name", "price", "publicPrice", "category", "isActive", "durationMinutes", "durationConfirmed"];
+
+function changedFields(before, after) {
+  const diff = {};
+  for (const f of AUDITED_FIELDS) {
+    if (before[f] !== after[f]) diff[f] = { from: before[f] ?? null, to: after[f] ?? null };
+  }
+  return diff;
+}
 
 const router = express.Router();
 
@@ -114,14 +139,31 @@ router.post(
           .json({ error: "A service with this name already exists" });
       }
 
+      const price = Number(req.body.price);
+      const typedDuration = req.body.durationMinutes != null;
       const service = await Service.create({
         name: req.body.name.trim(),
-        price: Number(req.body.price),
+        price,
+        publicPrice: Service.defaultPublicPrice(price),
         category: req.body.category?.trim() || "",
-        // undefined means "don't set" — Mongoose will use the schema default (null)
-        durationMinutes: req.body.durationMinutes != null ? Number(req.body.durationMinutes) : null,
+        // Not given → the one-hour placeholder, unconfirmed, for the owner to fix later.
+        durationMinutes: typedDuration ? Number(req.body.durationMinutes) : Service.DEFAULT_DURATION_MINUTES,
+        durationConfirmed: typedDuration,
       });
 
+      await audit.record({
+        action: "service.created",
+        req,
+        target: { name: service.name },
+        meta: {
+          serviceId: String(service._id),
+          price: service.price,
+          publicPrice: service.publicPrice,
+          durationMinutes: service.durationMinutes,
+          durationConfirmed: service.durationConfirmed,
+        },
+      });
+      await revalidateSite(["services", "packages"]);
       return res.status(201).json(service);
     } catch (err) {
       console.error("[services] Create error:", err);
@@ -183,14 +225,33 @@ router.patch(
         }
         updateObj.name = trimmed;
       }
-      if (req.body.price !== undefined) updateObj.price = Number(req.body.price);
+      if (req.body.price !== undefined) {
+        updateObj.price = Number(req.body.price);
+        // publicPrice tracks the half-price rule unless the owner overrode it.
+        const followsRule =
+          service.publicPrice == null || service.publicPrice === Service.defaultPublicPrice(service.price);
+        if (followsRule) updateObj.publicPrice = Service.defaultPublicPrice(updateObj.price);
+      }
       if (req.body.category !== undefined) updateObj.category = req.body.category.trim();
       if (req.body.isActive !== undefined) updateObj.isActive = req.body.isActive;
-      // Allow setting to null (clear) or a new number
-      if (req.body.durationMinutes !== undefined)
-        updateObj.durationMinutes = req.body.durationMinutes === null ? null : Number(req.body.durationMinutes);
+      // A typed time is the owner's real time → confirmed. null clears it.
+      if (req.body.durationMinutes !== undefined) {
+        const cleared = req.body.durationMinutes === null;
+        updateObj.durationMinutes = cleared ? null : Number(req.body.durationMinutes);
+        updateObj.durationConfirmed = !cleared;
+      }
 
       const updated = await Service.findByIdAndUpdate(id, updateObj, { new: true, runValidators: true });
+      const changes = changedFields(service.toObject(), updated.toObject());
+      if (Object.keys(changes).length) {
+        await audit.record({
+          action: "service.updated",
+          req,
+          target: { name: updated.name },
+          meta: { serviceId: String(updated._id), changes },
+        });
+      }
+      await revalidateSite(["services", "packages"]);
       return res.json(updated);
     } catch (err) {
       console.error("[services] Update error:", err);
@@ -211,6 +272,13 @@ router.delete("/:id", validateId, authorizePermission(PERMISSIONS.SERVICES_CRUD)
     }
 
     await Service.findByIdAndUpdate(id, { isActive: false });
+    await audit.record({
+      action: "service.deactivated",
+      req,
+      target: { name: service.name },
+      meta: { serviceId: String(service._id) },
+    });
+    await revalidateSite(["services", "packages"]);
     return res.json({ ok: true, message: "Service deactivated successfully" });
   } catch (err) {
     console.error("[services] Delete error:", err);
@@ -230,6 +298,13 @@ router.delete("/:id/permanent", validateId, authorizePermission(PERMISSIONS.SERV
     }
 
     await Service.findByIdAndDelete(id);
+    await audit.record({
+      action: "service.deleted",
+      req,
+      target: { name: service.name },
+      meta: { serviceId: String(service._id), price: service.price, category: service.category },
+    });
+    await revalidateSite(["services", "packages"]);
     return res.json({ ok: true, message: "Service permanently deleted" });
   } catch (err) {
     console.error("[services] Permanent delete error:", err);
