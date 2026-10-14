@@ -8,5 +8,5 @@
  */
 
 export const CUSTOMER_SITE_URL = (
-  (import.meta.env.VITE_CUSTOMER_SITE_URL as string | undefined) || "https://thexpertshair.com"
+  (import.meta.env.VITE_CUSTOMER_SITE_URL as string | undefined) || "https://www.thexpertshair.com"
 ).replace(/\/+$/, "");
