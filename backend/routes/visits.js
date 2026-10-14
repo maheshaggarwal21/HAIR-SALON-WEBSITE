@@ -193,9 +193,11 @@ router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, asy
       price: s.price,
       serviceId: s._id,
       // Snapshot the expected duration at visit creation time.
-      // If this service has no durationMinutes set, store null — this visit
-      // will be excluded from time-performance calculations (not penalised).
-      duration: s.durationMinutes ?? null,
+      // Only an owner-CONFIRMED time counts. No time, or the one-hour
+      // placeholder (Service.durationConfirmed false), stores null — this visit
+      // is then excluded from time-performance calculations (not penalised,
+      // not rewarded).
+      duration: Service.performanceDuration(s),
     }));
 
     // ── Compute billing server-side ───────────────────────────────────────
@@ -382,7 +384,8 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       serviceId: s._id,
       name: s.name,
       price: s.price,
-      duration: s.durationMinutes ?? null,
+      // Confirmed times only — see the note in the cash-visit handler above.
+      duration: Service.performanceDuration(s),
       artistId: null,
       artistName: null,
       startTime: null,

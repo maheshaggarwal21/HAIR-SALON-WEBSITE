@@ -1,0 +1,256 @@
+/**
+ * @file SiteSettings.js
+ * @description Singleton of salon-wide settings the website and booking rules
+ * read (CONTROL_FLOW_AND_DATA_LOGIC.md §2.2, T1.5).
+ *
+ * One document, `key: "default"`. `SiteSettings.getSingleton()` creates it on first use
+ * with the defaults below, so there is no separate seed step to forget on a new
+ * deployment — and because creation is an upsert with $setOnInsert, two cold
+ * serverless instances racing on first use still end up with one document and
+ * never overwrite anything the owner has saved.
+ *
+ * ── Defaults come from the owner's answers (T0.2, 14 Oct 2026) ─────────────────
+ * Open 09:00–21:00, closed Tuesdays (CF §24 Q6/K2); one number for WhatsApp and
+ * calls; address "near Sunrise Hotel"; the salon's Google Maps place; Instagram
+ * handle. The owner changes any of it in Website Settings without a deploy.
+ * Any contact field set back to empty hides that button on the website.
+ */
+
+const mongoose = require("mongoose");
+const { TIME_RE } = require("../utils/time");
+
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+const intervalSchema = new mongoose.Schema(
+  {
+    open: { type: String, required: true, match: TIME_RE },
+    close: { type: String, required: true, match: TIME_RE },
+  },
+  { _id: false }
+);
+
+const windowSchema = new mongoose.Schema(
+  {
+    label: { type: String, required: true },
+    start: { type: String, required: true, match: TIME_RE },
+    end: { type: String, required: true, match: TIME_RE },
+  },
+  { _id: false }
+);
+
+/** Owner, 14 Oct 2026: 9 am – 9 pm, weekly off on Tuesday. */
+const CLOSED_DAYS = ["tue"];
+const openingHoursDefinition = Object.fromEntries(
+  DAYS.map((d) => [
+    d,
+    { type: [intervalSchema], default: () => (CLOSED_DAYS.includes(d) ? [] : [{ open: "09:00", close: "21:00" }]) },
+  ])
+);
+
+const siteSettingsSchema = new mongoose.Schema(
+  {
+    key: { type: String, default: "default", unique: true, immutable: true },
+    timezone: { type: String, default: "Asia/Kolkata", immutable: true },
+
+    /** IST wall clock. An empty array means closed that weekday. */
+    openingHours: openingHoursDefinition,
+    /** "YYYY-MM-DD" dates the salon is closed. */
+    holidays: { type: [String], default: [] },
+    specialHours: {
+      type: [
+        new mongoose.Schema(
+          { date: { type: String, required: true }, open: String, close: String },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
+    /**
+     * Phase 1 request windows. Shown on the request form and used by staff to
+     * pick a time inside what the customer asked for.
+     */
+    requestWindows: {
+      morning: { type: windowSchema, default: () => ({ label: "Morning", start: "09:00", end: "12:00" }) },
+      afternoon: { type: windowSchema, default: () => ({ label: "Afternoon", start: "12:00", end: "16:00" }) },
+      evening: { type: windowSchema, default: () => ({ label: "Evening", start: "16:00", end: "21:00" }) },
+    },
+
+    // Booking rules (§2.2). Phase 1 uses horizonDays, requestSlaMinutes and
+    // maxActiveBookingsPerPhone; the rest wait for the slot engine.
+    slotMinutes: { type: Number, default: 15 },
+    minLeadMinutes: { type: Number, default: 120 },
+    horizonDays: { type: Number, default: 30, min: 1, max: 120 },
+    holdMinutes: { type: Number, default: 10 },
+    requestSlaMinutes: { type: Number, default: 120 },
+    cancellationCutoffHours: { type: Number, default: 24 },
+    maxActiveBookingsPerPhone: { type: Number, default: 3, min: 1 },
+    maxGuests: { type: Number, default: 4 },
+    maxOnlineReschedules: { type: Number, default: 2 },
+    noShowGraceMinutes: { type: Number, default: 15 },
+    deposit: {
+      /** D18: the "pay ₹500 now, rest at the salon" amount. */
+      amount: { type: Number, default: 500, min: 0 },
+      peakDates: { type: [String], default: [] },
+      peakDayAmount: { type: Number, default: 200 },
+      repeatNoShowAmount: { type: Number, default: 200 },
+      repeatNoShowThreshold: { type: Number, default: 2 },
+    },
+    /** D18: kept on a customer cancellation or no-show; the rest is refunded. */
+    cancellationFee: { type: Number, default: 500, min: 0 },
+    /** Hours before the appointment within which cancelling is free. null = never free (D18). */
+    freeCancellationHours: { type: Number, default: null, min: 0 },
+    /** Google review link sent 2h after a completed visit (T2.12). */
+    reviewUrl: { type: String, default: null },
+    policyVersion: { type: String, default: "2026-10-v1" },
+
+    contact: {
+      /** 10-digit numbers, no +91. */
+      phone: { type: String, default: "9814830550", match: /^[6-9]\d{9}$/ },
+      whatsapp: { type: String, default: "9814830550", match: /^[6-9]\d{9}$/ },
+      address: { type: String, default: "Green Park Colony, near Sunrise Hotel, Sirhind–Patiala Rd, Patiala" },
+      mapUrl: {
+        type: String,
+        default: "https://www.google.com/maps/place/The+Experts+salon/@30.3667632,76.3999075,17z/data=!4m14!1m7!3m6!1s0x39102757e7ccda15:0xd8f54ef350097317!2sThe+Experts+salon!8m2!3d30.3667632!4d76.4024824!16s%2Fg%2F11ytxs85kp!3m5!1s0x39102757e7ccda15:0xd8f54ef350097317!8m2!3d30.3667632!4d76.4024824!16s%2Fg%2F11ytxs85kp",
+      },
+      placeId: { type: String, default: null },
+      instagram: { type: String, default: "theexpertssalonpatiala" },
+      /** Optional line under the address, e.g. "Free parking in front". */
+      parkingNote: { type: String, default: null, maxlength: 140 },
+    },
+
+    /**
+     * Website media (DS §6.1). All optional: a section whose media is missing
+     * is laid out without it — never filled with stock photos (DS §3.4).
+     * URLs are Vercel Blob uploads from the staff app, or any https link.
+     */
+    media: {
+      heroVideoUrl: { type: String, default: null },   // 720p MP4, ≤ 1.5 MB (DS §9)
+      heroPosterUrl: { type: String, default: null },
+      forHerImage: { type: String, default: null },
+      forHimImage: { type: String, default: null },
+      salonImages: { type: [String], default: [] },     // ladies' area, chairs (Visit us)
+    },
+    /** Before/after pairs (DS §6.1 §5). Only pairs with recorded consent are public. */
+    transformations: {
+      type: [
+        new mongoose.Schema(
+          {
+            before: { type: String, required: true },
+            after: { type: String, required: true },
+            caption: { type: String, default: null, maxlength: 80 },
+            consent: { type: Boolean, required: true },
+          },
+          { _id: true }
+        ),
+      ],
+      default: [],
+    },
+
+    /**
+     * Google rating and selected reviews, entered by the owner (CF D27). Used
+     * while the Places API feed (ReviewCache) is off; a live Google rating
+     * always wins. `featured` is left undefined until the first save, so the
+     * public API can fall back to config/featuredReviews.js; an empty array
+     * means "show no reviews".
+     */
+    reviews: {
+      rating: { type: Number, default: null, min: 1, max: 5 },
+      count: { type: Number, default: null, min: 0 },
+      url: { type: String, default: null }, // the salon's Google reviews page
+      featured: {
+        type: [
+          new mongoose.Schema(
+            {
+              author: { type: String, required: true, trim: true, maxlength: 60 },
+              rating: { type: Number, required: true, min: 1, max: 5 },
+              text: { type: String, required: true, trim: true, maxlength: 600 },
+              service: { type: String, default: null, trim: true, maxlength: 80 },
+              visible: { type: Boolean, default: true },
+            },
+            { _id: true }
+          ),
+        ],
+        default: undefined,
+      },
+    },
+
+    /** Website price = round(list × ratio). Mirrors Service.PUBLIC_PRICE_RATIO (D12). */
+    publicPriceRatio: { type: Number, default: 0.5, min: 0, max: 1 },
+  },
+  { timestamps: true, minimize: false }
+);
+
+/** The one settings document, created with defaults on first use. */
+siteSettingsSchema.statics.getSingleton = async function () {
+  return this.findOneAndUpdate(
+    { key: "default" },
+    { $setOnInsert: { key: "default" } },
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
+  );
+};
+
+/** What GET /api/public/site may show. Everything else stays server-side. */
+siteSettingsSchema.methods.toPublic = function () {
+  return {
+    timezone: this.timezone,
+    openingHours: Object.fromEntries(DAYS.map((d) => [d, this.openingHours?.[d] ?? []])),
+    holidays: this.holidays,
+    specialHours: this.specialHours,
+    requestWindows: this.requestWindows,
+    horizonDays: this.horizonDays,
+    requestSlaMinutes: this.requestSlaMinutes,
+    policyVersion: this.policyVersion,
+    contact: {
+      phone: this.contact?.phone ?? null,
+      whatsapp: this.contact?.whatsapp ?? null,
+      address: this.contact?.address ?? null,
+      mapUrl: this.contact?.mapUrl ?? null,
+      instagram: this.contact?.instagram ?? null,
+      parkingNote: this.contact?.parkingNote ?? null,
+    },
+    media: {
+      heroVideoUrl: this.media?.heroVideoUrl ?? null,
+      heroPosterUrl: this.media?.heroPosterUrl ?? null,
+      forHerImage: this.media?.forHerImage ?? null,
+      forHimImage: this.media?.forHimImage ?? null,
+      salonImages: this.media?.salonImages ?? [],
+    },
+    // Consent is required to publish a client's photo (CLAUDE.md, Privacy).
+    transformations: (this.transformations || [])
+      .filter((t) => t.consent === true)
+      .map((t) => ({ id: String(t._id), before: t.before, after: t.after, caption: t.caption ?? null })),
+  };
+};
+
+/** "Naman Toor" → "Naman T.": the website never shows a customer's full name. */
+function shortName(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts[0] || "Guest";
+  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+}
+
+/** The featured list in effect: the owner's saved list, else the starting list. */
+siteSettingsSchema.methods.featuredReviews = function () {
+  const saved = this.reviews?.featured;
+  if (Array.isArray(saved)) return saved.map((r) => (typeof r.toObject === "function" ? r.toObject() : r));
+  return require("../config/featuredReviews").map((r) => ({ ...r, visible: true }));
+};
+
+/**
+ * Owner-entered rating + visible featured reviews, in public shape (CF D27).
+ * Rating is null unless both the score and the count are set.
+ */
+siteSettingsSchema.methods.manualReviewsPublic = function () {
+  const r = this.reviews || {};
+  const rating = r.rating && r.count != null ? { value: r.rating, count: r.count, mapsUri: r.url ?? null } : null;
+  const reviews = this.featuredReviews()
+    .filter((x) => x.visible !== false)
+    .slice(0, 12)
+    .map((x) => ({ author: shortName(x.author), rating: x.rating, text: x.text, service: x.service ?? null }));
+  return { rating, reviews };
+};
+
+module.exports = mongoose.model("SiteSettings", siteSettingsSchema);
+module.exports.shortName = shortName;
+module.exports.DAYS = DAYS;

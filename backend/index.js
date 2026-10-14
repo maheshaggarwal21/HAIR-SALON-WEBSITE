@@ -49,6 +49,8 @@ const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL || "http://localhost:5173",
   "https://www.thexpertshair.com",
   "https://thexpertshair.com",
+  // Staff app's target home once the customer site takes the apex (T1.9, T1.23).
+  "https://app.thexpertshair.com",
   "https://api.thexpertshair.com",
   "http://localhost:5173",
   "http://localhost:5174",
@@ -221,6 +223,23 @@ app.use(express.json());
 
 // Security headers
 app.use(helmet());
+
+/**
+ * Customer website API — mounted HERE, before the global limiter and the
+ * session, on purpose (CONTROL_FLOW_AND_DATA_LOGIC.md §14):
+ *   - no session middleware runs, so a public visitor never gets a session
+ *     cookie and staff sessions are never reachable from public routes;
+ *   - the global limiter assumes one shared salon IP; public routes carry
+ *     their own Mongo-backed per-visitor limits (middleware/mongoRateLimit.js).
+ */
+app.use("/api/public", require("./routes/public"));
+
+/**
+ * Scheduled jobs, called by the outside timer (cron-job.org, D19) with
+ * `Authorization: Bearer $CRON_SECRET`. Same early mount as /api/public: no
+ * session for a machine caller, and a timer must never be rate-limited.
+ */
+app.use("/api/cron", require("./routes/cron"));
 
 /**
  * Global rate limiter — 200 requests per 15 min per IP.
@@ -737,6 +756,8 @@ app.use("/api/management", authenticate, require("./routes/management"));
 app.use("/api/admin", authenticate, require("./routes/admin"));
 app.use("/api/artists", authenticate, require("./routes/artists"));
 app.use("/api/services", authenticate, require("./routes/services"));
+app.use("/api/bookings", authenticate, require("./routes/bookings"));
+app.use("/api/website", authenticate, require("./routes/website"));
 app.use("/api/visits", authenticate, require("./routes/visits"));
 app.use("/api/data-pipeline", authenticate, require("./routes/dataPipeline"));
 

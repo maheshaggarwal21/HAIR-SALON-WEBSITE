@@ -9,6 +9,14 @@
  *   - Deactivate / reactivate (soft delete)
  *
  * Follows the same design language as ArtistManagement.tsx.
+ *
+ * The customer website reads two things from here (owner rules, 13 Oct 2026):
+ *   - Website price = half the list price. The server keeps it in step when the
+ *     list price changes; this screen only shows it.
+ *   - Duration = how long online booking blocks the artist. New services start
+ *     at a one-hour ESTIMATE. Typing a time confirms it, and only confirmed
+ *     times are used for artist time-performance — an estimate never rewards or
+ *     penalises an artist. Leaving an estimate's box blank keeps the estimate.
  */
 
 import { useEffect, useState } from "react";
@@ -36,6 +44,8 @@ interface ServiceRecord {
   price: number;
   category: string;
   durationMinutes?: number | null; // Phase 3: expected duration
+  durationConfirmed?: boolean; // false = one-hour estimate, not used for performance
+  publicPrice?: number | null; // what the customer website shows and charges
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -52,7 +62,18 @@ interface ServiceFormData {
 const inputClass =
   "w-full h-11 px-4 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 placeholder:text-stone-400 transition-all duration-150";
 
+/** Placeholder until the owner enters the real time — mirrors Service.DEFAULT_DURATION_MINUTES. */
+const DEFAULT_DURATION_MINUTES = 60;
+
+/** Mirrors Service.defaultPublicPrice on the server; display only. */
+const websitePrice = (price: string) => {
+  const n = Number(price);
+  return price.trim() && !isNaN(n) && n >= 0 ? Math.round(n * 0.5) : null;
+};
+
 const EMPTY_FORM: ServiceFormData = { name: "", price: "", category: "", duration: "" };
+
+const isEstimate = (s: ServiceRecord | null) => !!s && s.durationMinutes != null && !s.durationConfirmed;
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function ServiceManagement() {
@@ -102,7 +123,11 @@ export default function ServiceManagement() {
         name: editingService.name,
         price: String(editingService.price),
         category: editingService.category || "",
-        duration: editingService.durationMinutes != null ? String(editingService.durationMinutes) : "",
+        // An estimate starts blank so saving other fields never "confirms" it by accident.
+        duration:
+          editingService.durationMinutes != null && !isEstimate(editingService)
+            ? String(editingService.durationMinutes)
+            : "",
       });
       setEditFormError("");
     }
@@ -233,7 +258,12 @@ export default function ServiceManagement() {
           name: editForm.name.trim(),
           price: Number(editForm.price),
           category: editForm.category.trim(),
-          durationMinutes: editForm.duration.trim() ? Number(editForm.duration) : null,
+          // Typed → confirmed real time. Blank → keep the estimate, or clear a confirmed time.
+          ...(editForm.duration.trim()
+            ? { durationMinutes: Number(editForm.duration) }
+            : isEstimate(editingService)
+              ? {}
+              : { durationMinutes: null }),
         }),
       });
       const data = await res.json();
@@ -363,19 +393,24 @@ export default function ServiceManagement() {
                   }
                   className={inputClass}
                 />
+                {websitePrice(formData.price) != null && (
+                  <p className="mt-1 text-[11px] text-stone-500">
+                    Website price: ₹{websitePrice(formData.price)!.toLocaleString("en-IN")} (50% off)
+                  </p>
+                )}
               </div>
 
               {/* Duration (optional) */}
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
-                  Duration (min) <span className="text-stone-400 font-normal normal-case tracking-normal">optional</span>
+                  Duration (min) <span className="text-stone-400 font-normal normal-case tracking-normal">used for online booking</span>
                 </label>
                 <input
                   type="number"
                   inputMode="numeric"
                   min={1}
                   step={5}
-                  placeholder="e.g. 30"
+                  placeholder={`Blank = ${DEFAULT_DURATION_MINUTES} min estimate`}
                   value={formData.duration}
                   onChange={(e) =>
                     setFormData((p) => ({ ...p, duration: e.target.value }))
@@ -537,12 +572,27 @@ export default function ServiceManagement() {
                           <IndianRupee className="w-3.5 h-3.5" />
                           {s.price.toLocaleString("en-IN")}
                         </span>
+                        {s.publicPrice != null && (
+                          <div className="text-[11px] text-stone-500 mt-0.5">
+                            Website ₹{s.publicPrice.toLocaleString("en-IN")}
+                          </div>
+                        )}
                       </td>
 
                       {/* Duration */}
                       <td className="px-6 py-4">
                         {s.durationMinutes != null ? (
-                          <span className="text-stone-700 text-sm font-medium">{s.durationMinutes} min</span>
+                          isEstimate(s) ? (
+                            <span
+                              className="text-stone-400 text-sm"
+                              title="One-hour estimate. Not used for artist performance until you enter the real time."
+                            >
+                              {s.durationMinutes} min{" "}
+                              <span className="text-[10px] uppercase tracking-wider text-amber-600">estimate</span>
+                            </span>
+                          ) : (
+                            <span className="text-stone-700 text-sm font-medium">{s.durationMinutes} min</span>
+                          )
                         ) : (
                           <span className="text-stone-400 text-xs">—</span>
                         )}
@@ -676,17 +726,26 @@ export default function ServiceManagement() {
                     }
                     className={inputClass}
                   />
+                  {websitePrice(editForm.price) != null && (
+                    <p className="mt-1 text-[11px] text-stone-500">
+                      Website price: ₹{websitePrice(editForm.price)!.toLocaleString("en-IN")} (50% off)
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider">
-                    Duration (min) <span className="text-stone-400 font-normal normal-case tracking-normal">optional</span>
+                    Duration (min) <span className="text-stone-400 font-normal normal-case tracking-normal">used for online booking</span>
                   </label>
                   <input
                     type="number"
                     inputMode="numeric"
                     min={1}
                     step={5}
-                    placeholder="e.g. 30"
+                    placeholder={
+                      isEstimate(editingService)
+                        ? `Estimate ${editingService!.durationMinutes} min — type the real time`
+                        : "e.g. 45"
+                    }
                     value={editForm.duration}
                     onChange={(e) =>
                       setEditForm((p) => ({ ...p, duration: e.target.value }))

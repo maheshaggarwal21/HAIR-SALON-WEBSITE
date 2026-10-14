@@ -55,11 +55,18 @@ const paymentEventSchema = new mongoose.Schema(
      */
     reconcileStatus: {
       type: String,
-      enum: ["matched", "unmatched", "ignored"],
+      enum: ["matched", "unmatched", "ignored", "matched_appointment"],
       default: "unmatched",
       index: true,
     },
     reconciledVisitId: { type: mongoose.Schema.Types.ObjectId, ref: "Visit", default: null },
+    /**
+     * What the money was for, from the Razorpay order's notes.kind (CF §2.1):
+     * "visit" (desk payment, the original flow) or "booking" (an online
+     * booking's deposit or full payment, D18). Gift cards join in Phase 1.5.
+     */
+    purpose: { type: String, enum: ["visit", "booking", "giftcard"], default: "visit" },
+    appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Appointment", default: null },
     reconciledAt: { type: Date, default: null },
     note: { type: String, default: null },
 

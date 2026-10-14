@@ -1,0 +1,172 @@
+/**
+ * Shapes returned by the salon API's public routes (backend/routes/public.js,
+ * backend/utils/publicCatalogue.js). Keep in step with those files — they are
+ * the only fields the API will ever send.
+ */
+
+export type Audience = "her" | "him" | "unisex";
+export type WindowKey = "morning" | "afternoon" | "evening";
+export type BookingMode = "instant" | "request" | "walkin_only" | "hidden";
+
+export interface ServiceOption {
+  id: string;
+  slug: string | null;
+  label: string | null;
+  price: number;
+  /** Only set when the owner has confirmed the time (D14). */
+  durationMinutes: number | null;
+  bookingMode: BookingMode;
+}
+
+export interface ServiceCard {
+  slug: string;
+  name: string;
+  displayCategory: string | null;
+  audience: Audience | null;
+  shortDescription: string | null;
+  images: string[];
+  featured: boolean;
+  sortOrder: number;
+  requiresConsultation: boolean;
+  requiresPatchTest: boolean;
+  fromPrice: number;
+  options: ServiceOption[];
+  /** Detail responses only (GET /services/:slug). */
+  description?: string | null;
+  seo?: { title: string | null; description: string | null };
+}
+
+export interface PublicArtist {
+  id: string;
+  slug: string | null;
+  name: string;
+  level: "senior" | "stylist" | "junior" | null;
+  gender: "female" | "male" | "other" | null;
+  bio: string | null;
+  specialties: string[];
+  photo: string | null;
+  portfolio: string[];
+  instagram: string | null;
+  sortOrder: number;
+  onlineBookable: boolean;
+}
+
+export interface PublicPackage {
+  slug: string;
+  name: string;
+  description: string | null;
+  audience: Audience | null;
+  image: string | null;
+  price: number;
+  /** IST dates, or null when the offer has no fixed dates. */
+  validFrom: string | null;
+  validTo: string | null;
+  items: { id: string; name: string; price: number }[];
+}
+
+export interface Interval {
+  open: string;
+  close: string;
+}
+
+export interface RequestWindow {
+  label: string;
+  start: string;
+  end: string;
+}
+
+export interface SiteInfo {
+  timezone: string;
+  openingHours: Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", Interval[]>;
+  holidays: string[];
+  specialHours: { date: string; open?: string; close?: string }[];
+  requestWindows: Record<WindowKey, RequestWindow>;
+  horizonDays: number;
+  requestSlaMinutes: number;
+  policyVersion: string;
+  contact: {
+    phone: string | null;
+    whatsapp: string | null;
+    address: string | null;
+    mapUrl: string | null;
+    instagram: string | null;
+    parkingNote: string | null;
+  };
+  media: {
+    heroVideoUrl: string | null;
+    heroPosterUrl: string | null;
+    forHerImage: string | null;
+    forHimImage: string | null;
+    salonImages: string[];
+  };
+  /** Only pairs with the client's recorded consent reach the API. */
+  transformations: { id: string; before: string; after: string; caption: string | null }[];
+  /** Google rating: live from the Places feed, else as the owner copied it from Google (CF D27). Null until known. */
+  rating: { value: number; count: number; mapsUri: string | null; source: "Google" } | null;
+  /** Counted from paid visits and already rounded down by the server (CF D28). Null below 100. */
+  stats?: { clientsServed: number | null };
+}
+
+export interface PublicReel {
+  id: string;
+  mediaType: "video" | "image";
+  mediaUrl: string;
+  thumbnailUrl: string | null;
+  permalink: string | null;
+  caption: string | null;
+  service: { slug: string; name: string; optionId: string } | null;
+}
+
+export interface PublicReviews {
+  rating: number | null;
+  count: number | null;
+  mapsUri?: string | null;
+  attribution: string | null;
+  /** True when these are reviews the owner selected (CF D27), not Google's live feed. */
+  curated?: boolean;
+  reviews: {
+    author: string | null;
+    authorUri: string | null;
+    profilePhoto: string | null;
+    rating: number;
+    text: string;
+    relativeTime: string | null;
+    /** Services Google lists under the review, when the owner copied them. */
+    service?: string | null;
+  }[];
+}
+
+export interface RequestResult {
+  ref: string;
+  status: "requested";
+  requestedWindow: { date: string; window: WindowKey };
+  items: { name: string; price: number }[];
+  packageName: string | null;
+  total: number;
+  slaMinutes: number;
+}
+
+export interface ApiError {
+  error: string;
+  message?: string;
+  fields?: string[];
+}
+
+/** A website offer (CF D29): top bar + optional pop-up, between two IST dates (inclusive). */
+export interface PublicCampaign {
+  id: string;
+  startDate: string;
+  endDate: string;
+  theme: "festive" | "rose" | "emerald" | "midnight";
+  showBar: boolean;
+  showPopup: boolean;
+  content: {
+    eyebrow: string | null;
+    headline: string;
+    body: string | null;
+    image: string | null;
+    ctaLabel: string;
+    ctaHref: string;
+  };
+  popup: { delaySeconds: number; frequency: "session" | "day" };
+}

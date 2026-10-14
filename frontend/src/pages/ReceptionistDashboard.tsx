@@ -9,13 +9,14 @@
  *   /dashboard/receptionist/artists  → Artist Directory (if granted artists.view)
  *   /dashboard/receptionist/services → Services (if granted services.view)
  *   /dashboard/receptionist/team     → Team Management (if granted team.view)
+ *   /dashboard/receptionist/requests → Website requests (if granted bookings.view)
  *
  * Receptionists can view payment records and navigate to New Visit Entry.
  * Additional sidebar links appear when the owner grants extra permissions.
  */
 
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users , Database} from "lucide-react";
+import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, Inbox } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import { useAuth } from "@/context/AuthContext";
 import PaymentHistory from "@/pages/dashboard/PaymentHistory";
@@ -25,11 +26,13 @@ import ArtistManagement from "@/pages/dashboard/ArtistManagement";
 import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
 import ServiceManagement from "@/pages/dashboard/ServiceManagement";
 import TeamManagement from "@/pages/dashboard/TeamManagement";
+import BookingRequests from "@/pages/dashboard/BookingRequests";
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const receptionistLinks: SidebarLink[] = [
+  { to: "/dashboard/receptionist/requests", label: "Website Requests", icon: Inbox, requiredPermission: "bookings.view" },
   { to: "/dashboard/receptionist/payments", label: "Payment History", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/receptionist/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/receptionist/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
@@ -124,6 +127,14 @@ export default function ReceptionistDashboard() {
           element={
             <RequirePermission permission={["team.view", "team.manage"]} backTo={HOME}>
               <TeamManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="requests"
+          element={
+            <RequirePermission permission="bookings.view" backTo={HOME}>
+              <BookingRequests />
             </RequirePermission>
           }
         />

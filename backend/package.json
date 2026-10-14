@@ -7,17 +7,26 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "seed:owner": "node scripts/seedOwner.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test --test-concurrency=1 --test-force-exit \"test/**/*.test.js\"",
+    "migrate:m1": "node migrations/m1-customers.js",
+    "migrate:m2": "node migrations/m2-durations.js",
+    "migrate:m3": "node migrations/m3-public-price.js",
+    "migrate:m4": "node migrations/m4-categories.js",
+    "migrate:m6": "node migrations/m6-import-catalogue.js",
+    "export:catalogue": "node scripts/exportCatalogue.js",
+    "find:place": "node scripts/findPlace.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@vercel/blob": "^2.8.1",
     "bcryptjs": "^3.0.3",
     "connect-mongo": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
+    "dayjs": "^1.11.23",
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "express-rate-limit": "^8.2.1",
@@ -27,5 +36,8 @@
     "mongoose": "^9.2.1",
     "razorpay": "^2.9.6",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.3.0"
   }
 }

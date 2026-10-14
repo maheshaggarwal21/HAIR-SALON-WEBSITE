@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — DESIGN.md §3. These mirror the spec exactly; change the spec
+ * first, then this file. Components never hardcode a hex value.
+ *
+ * There is deliberately no prefers-color-scheme switch: the site's light/dark
+ * rhythm (ivory ↔ ink sections) is part of the design, not a theme preference.
+ */
+@theme {
+  /* §3.1 Colour — "Cream & Champagne Gold" (owner's choice, 14 Oct 2026, CF D25).
+   * White pages, cream and sand tints instead of black sections, charcoal text
+   * and buttons, champagne gold for accent words and details. The footer is the
+   * only dark surface. Token names describe the role, not the old hue. */
+  --color-ivory: #ffffff;
+  --color-ivory-2: #f7f1e6;
+  --color-sand: #f3eada;
+  --color-ink: #2b2722;
+  --color-ink-2: #403a33;
+  --color-ink-muted: #6e685f;
+  --color-ivory-muted: #cfc6b8;
+  --color-gold: #b08d57;
+  --color-gold-deep: #8a6a3a;
+  --color-line: rgba(43, 39, 34, 0.12);
+  --color-line-dark: rgba(255, 255, 255, 0.14);
+  --color-success: #2e7d5b;
+  --color-danger: #b3261e;
+
+  /* §3.2 Typography — variables come from next/font in app/layout.tsx */
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
+  --font-sans: var(--font-manrope), system-ui, sans-serif;
+
+  /* §3.3 Radius */
+  --radius-control: 10px;
+  --radius-card: 18px;
+  --radius-media: 28px;
+
+  /* §3.3 Elevation: the booking sheet is the only shadow on the site */
+  --shadow-sheet: 0 24px 60px rgba(43, 39, 34, 0.16);
+
+  /* §4 Motion */
+  --ease-rise: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+  background: var(--color-ivory);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* §10 Accessibility: visible focus ring, 2px gold-deep, 2px offset */
+:focus-visible {
+  outline: 2px solid var(--color-gold-deep);
+  outline-offset: 2px;
+}
+
+/* §3.2 Prices and times always use tabular figures */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* §4 Rules: reduced motion means fades only — kill transforms and long transitions */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── §4 Motion: CSS-first so phones never download a motion library ─────────
+ * `rise`: sections below the fold fade up as they enter. Only armed when the
+ * inline boot script in layout.tsx has added `.motion-ok` to <html> (JS on, and
+ * no reduced-motion preference), so without JS — or for crawlers and the
+ * prerendered HTML — every section is simply visible. */
+.motion-ok .reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 600ms var(--ease-rise),
+    transform 600ms var(--ease-rise);
+}
+.motion-ok .reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* `word-rise`: each headline word slides up inside a mask, 70ms apart. */
+.word-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-bottom: 0.08em;
+}
+.word-mask > span {
+  display: inline-block;
+  animation: word-rise 700ms var(--ease-rise) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+@keyframes word-rise {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+/* `marquee`: 40s per loop, outlined serif. Off entirely with reduced motion. */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 40s linear infinite;
+}
+@keyframes marquee {
+  to { transform: translateX(-50%); }
+}
+.text-outline {
+  color: transparent;
+  -webkit-text-stroke: 1px var(--color-gold);
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none; }
+  /* The global rule shortens durations but not the 70ms-per-word delays, so later
+     headline words would sit hidden in their masks for a moment. Show them at once. */
+  .word-mask > span { animation: none; }
+}
+
+/* ── Offers (CF D29): bar on every page + pop-up, only while an offer runs ───
+ * Deliberately outside the cream/gold palette so a live offer stands out.
+ * White text is ≥ 4.5:1 on both stops of every theme. The "blink" is a soft
+ * gold↔white swap on the label (0.6 Hz) plus a pulsing dot: eye-catching, but
+ * far below WCAG 2.3.1's three-flashes-a-second limit. Reduced motion: still. */
+.offer-theme-festive { --offer-a: #5c0b26; --offer-b: #9d1747; --offer-glow: #f2c66d; }
+.offer-theme-rose { --offer-a: #8a1846; --offer-b: #b62a63; --offer-glow: #ffd3e3; }
+.offer-theme-emerald { --offer-a: #08402f; --offer-b: #0f6e50; --offer-glow: #f2c66d; }
+.offer-theme-midnight { --offer-a: #17153a; --offer-b: #3b2d78; --offer-glow: #f2c66d; }
+.offer-surface {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(110deg, var(--offer-a), var(--offer-b) 45%, var(--offer-a));
+  background-size: 220% 100%;
+  animation: offer-drift 8s ease-in-out infinite alternate;
+}
+.offer-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.24) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: offer-shine 3.6s ease-in-out infinite;
+}
+.offer-blink { background: var(--offer-glow); color: var(--offer-a); animation: offer-blink 1.6s ease-in-out infinite; }
+.offer-dot { background: var(--offer-glow); animation: offer-pulse 1.6s ease-out infinite; }
+.offer-cta { background: var(--offer-b); color: #fff; }
+.offer-cta:hover { background: var(--offer-a); }
+.offer-pop { animation: offer-pop 380ms var(--ease-rise) both; }
+@keyframes offer-drift { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@keyframes offer-shine { 0%, 55% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+@keyframes offer-blink { 0%, 100% { background: var(--offer-glow); } 50% { background: #fff; } }
+@keyframes offer-pulse {
+  0% { box-shadow: 0 0 0 0 var(--offer-glow); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+@keyframes offer-pop { from { opacity: 0; transform: translateY(16px) scale(0.96); } }
+@media (prefers-reduced-motion: reduce) {
+  .offer-surface, .offer-blink, .offer-dot, .offer-pop { animation: none; }
+  .offer-surface::after { display: none; }
+}
+
+/* `review-marquee` (CF D27): review cards drift left in a seamless loop. Two
+ * copies of the list; each copy carries its own trailing gap, so sliding by
+ * exactly -50% lands copy two where copy one started. Pauses on hover/focus so
+ * a review can be read; soft fade at both edges. */
+.review-marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+}
+.review-track {
+  display: flex;
+  width: max-content;
+  animation: marquee var(--review-duration, 40s) linear infinite;
+}
+.review-group {
+  display: flex;
+  gap: 16px;
+  padding-right: 16px;
+}
+.review-marquee:hover .review-track,
+.review-marquee:focus-within .review-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No drift: a plain swipeable row, and only the first copy. */
+  .review-marquee { overflow-x: auto; -webkit-mask-image: none; mask-image: none; padding-inline: 16px; }
+  .review-track { animation: none; }
+  .review-group[aria-hidden] { display: none; }
+}
+
+/* `snap-carousel`: native scroll-snap, no JS. */
+.snap-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: min(82%, 340px);
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.snap-row::-webkit-scrollbar { display: none; }
+.snap-row > * { scroll-snap-align: start; }
+@media (min-width: 768px) {
+  .snap-row { grid-auto-columns: 360px; gap: 20px; }
+}
