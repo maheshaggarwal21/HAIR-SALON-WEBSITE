@@ -2,8 +2,9 @@
 
 Generated 14 Oct 2026 from the draft menu in a local test copy (125 "For her" + 123 "For him" cards, 154 distinct) by
 `customer/lib/serviceImages.ts` (CF D30). *How* = which rule picked the photo: `exact` name, `men` (him-only
-Hair → duo-haircut, beard/moustache/Grooming → for-him), `keyword`, or `category` fallback (Waxing only: no
-waxing photo exists yet, body-scrub stands in). An owner-uploaded photo for a service (Service.images) always wins.
+Hair → duo-haircut, beard/moustache/Grooming → for-him), `keyword`, or `category` fallback. An owner-uploaded
+photo for a service (Service.images) always wins. Waxing has its own six photos (face, underarm, arms, legs, back,
+tools); no card uses a category fallback.
 
 | Category | Audience | Card | Photo (slug) | How |
 |---|---|---|---|---|
@@ -78,30 +79,30 @@ waxing photo exists yet, body-scrub stands in). An owner-uploaded photo for a se
 | Skin | unisex | Sensi-Age | facial | exact |
 | Skin | unisex | Hydra Facial | facial | exact |
 | Skin | unisex | Save The Date (Instant Glow For Bride & Groom) | facial | exact |
-| Waxing | her | Forehead (wax) Women | body-scrub | category |
-| Waxing | unisex | Chin (wax) | body-scrub | category |
-| Waxing | unisex | Nose (wax) | body-scrub | category |
-| Waxing | unisex | Upper lips (wax) | body-scrub | category |
-| Waxing | unisex | Under arms wax (honey) | body-scrub | category |
-| Waxing | unisex | Half Arms wax (honey) | body-scrub | category |
-| Waxing | unisex | Side locks (wax) | body-scrub | category |
-| Waxing | unisex | Half back wax (rica) | body-scrub | category |
-| Waxing | unisex | Under arms wax (rica) | body-scrub | category |
-| Waxing | unisex | Half Arms wax (rica) | body-scrub | category |
-| Waxing | unisex | Stomach wax (honey) | body-scrub | category |
-| Waxing | unisex | Full Arms wax ( honey) | body-scrub | category |
-| Waxing | unisex | Half legs wax (honey) | body-scrub | category |
-| Waxing | unisex | Back wax (honey) | body-scrub | category |
-| Waxing | unisex | Half legs wax (rica) | body-scrub | category |
-| Waxing | unisex | Stomach wax (rica) | body-scrub | category |
-| Waxing | unisex | Full Arms wax (rica) | body-scrub | category |
-| Waxing | unisex | Face Wax | body-scrub | category |
-| Waxing | unisex | Back wax (rica) | body-scrub | category |
-| Waxing | unisex | Full legs wax (honey) | body-scrub | category |
-| Waxing | unisex | Full legs wax (rica) | body-scrub | category |
-| Waxing | her | Bikini wax (honey) | body-scrub | category |
-| Waxing | her | Bikini wax (rica) | body-scrub | category |
-| Waxing | her | Body wax (excluded bikini) (honey) | body-scrub | category |
+| Waxing | her | Forehead (wax) Women | wax-face | exact |
+| Waxing | unisex | Chin (wax) | wax-face | exact |
+| Waxing | unisex | Nose (wax) | wax-face | exact |
+| Waxing | unisex | Upper lips (wax) | wax-face | exact |
+| Waxing | unisex | Under arms wax (honey) | wax-underarm | exact |
+| Waxing | unisex | Half Arms wax (honey) | wax-arms | exact |
+| Waxing | unisex | Side locks (wax) | wax-face | exact |
+| Waxing | unisex | Half back wax (rica) | wax-back | exact |
+| Waxing | unisex | Under arms wax (rica) | wax-underarm | exact |
+| Waxing | unisex | Half Arms wax (rica) | wax-arms | exact |
+| Waxing | unisex | Stomach wax (honey) | wax-tools | exact |
+| Waxing | unisex | Full Arms wax ( honey) | wax-arms | exact |
+| Waxing | unisex | Half legs wax (honey) | wax-legs | exact |
+| Waxing | unisex | Back wax (honey) | wax-back | exact |
+| Waxing | unisex | Half legs wax (rica) | wax-legs | exact |
+| Waxing | unisex | Stomach wax (rica) | wax-tools | exact |
+| Waxing | unisex | Full Arms wax (rica) | wax-arms | exact |
+| Waxing | unisex | Face Wax | wax-face | exact |
+| Waxing | unisex | Back wax (rica) | wax-back | exact |
+| Waxing | unisex | Full legs wax (honey) | wax-legs | exact |
+| Waxing | unisex | Full legs wax (rica) | wax-legs | exact |
+| Waxing | her | Bikini wax (honey) | wax-tools | exact |
+| Waxing | her | Bikini wax (rica) | wax-tools | exact |
+| Waxing | her | Body wax (excluded bikini) (honey) | wax-tools | exact |
 | Threading | unisex | Chin (Thread) | threading-lip | exact |
 | Threading | unisex | Forehead ( Thread) | threading-eyebrow | exact |
 | Threading | unisex | Upper Lips ( Thread) | threading-lip | exact |
@@ -150,11 +151,11 @@ waxing photo exists yet, body-scrub stands in). An owner-uploaded photo for a se
 | Skin | him | Face Bleach | bleach-face | keyword |
 | Skin | him | D-tan | detan-mask | keyword |
 | Skin | him | Dtan paragon | detan-mask | keyword |
-| Waxing | him | Nose wax (inner) | body-scrub | category |
-| Waxing | him | Nose wax (outer) | body-scrub | category |
-| Waxing | him | Ear wax | body-scrub | category |
-| Waxing | him | Forehead wax | body-scrub | category |
-| Waxing | him | Full Face wax | body-scrub | category |
+| Waxing | him | Nose wax (inner) | wax-face | keyword |
+| Waxing | him | Nose wax (outer) | wax-face | keyword |
+| Waxing | him | Ear wax | wax-face | keyword |
+| Waxing | him | Forehead wax | wax-face | keyword |
+| Waxing | him | Full Face wax | wax-face | keyword |
 | Threading | him | Men thread | threading-eyebrow | keyword |
 | Grooming | him | Beard cut | for-him | men |
 | Grooming | him | Moustache Pasting (Color) | for-him | men |
@@ -162,4 +163,4 @@ waxing photo exists yet, body-scrub stands in). An owner-uploaded photo for a se
 | Grooming | him | Beard Color | for-him | men |
 | Grooming | him | Moustache Pasting | for-him | men |
 
-Totals: exact 94, keyword 20, category 29, men 11.
+Totals: exact 118, keyword 25, men 11.

@@ -16,6 +16,10 @@
  *      "Bridal Draping" is draping, not bridal make-up);
  *   4. category fallback, with a console warning in development so a new
  *      service without a good match is noticed.
+ *
+ * Waxing (added 14 Oct 2026): six photos by body area. Wax rules only fire on
+ * names containing "wax" and run before every other keyword rule, ordered
+ * "under arms" before "arms" and "half back"/"back" before the generic ones.
  */
 
 import type { ServiceCard } from "./types";
@@ -49,7 +53,13 @@ export type ImageSlug =
   | "hair-spa"
   | "for-her"
   | "for-him"
-  | "duo-haircut";
+  | "duo-haircut"
+  | "wax-face"
+  | "wax-underarm"
+  | "wax-arms"
+  | "wax-legs"
+  | "wax-back"
+  | "wax-tools";
 
 /** Short, specific alt text: what the photo shows, never the file name. */
 const ALT: Record<ImageSlug, string> = {
@@ -82,6 +92,12 @@ const ALT: Record<ImageSlug, string> = {
   "for-her": "Smiling woman with freshly styled long hair",
   "for-him": "Barber trimming a client's beard",
   "duo-haircut": "A man and a woman getting haircuts side by side",
+  "wax-face": "Beautician waxing a client's upper lip",
+  "wax-underarm": "Warm wax being applied to a client's underarm",
+  "wax-arms": "Wax strip being pressed onto a client's forearm",
+  "wax-legs": "Wax strip being applied to a client's calf",
+  "wax-back": "Warm wax being applied across the shoulder blade",
+  "wax-tools": "Wax heater, spatulas and strips laid out on marble",
 };
 
 /** Lowercase, "&" → "and", every run of punctuation/space → one space. */
@@ -147,11 +163,27 @@ const EXACT_LIST: [ImageSlug, string[]][] = [
   ["balayage", ["Global Highlights Balayage Ombre Baby Light"]],
   ["root-colour", ["Root touchup", "Color Remove (Henna, Dye)"]],
   ["hair-spa", ["Hair spa", "Split Ends (Wash, Conditioning, Blow Dry)"]],
+  ["wax-face", ["Forehead (wax) Women", "Chin (wax)", "Nose (wax)", "Upper lips (wax)", "Side locks (wax)", "Face Wax"]],
+  ["wax-underarm", ["Under arms wax (honey)", "Under arms wax (rica)"]],
+  ["wax-arms", ["Half Arms wax (honey)", "Half Arms wax (rica)", "Full Arms wax (honey)", "Full Arms wax (rica)"]],
+  ["wax-legs", ["Half legs wax (honey)", "Half legs wax (rica)", "Full legs wax (honey)", "Full legs wax (rica)"]],
+  ["wax-back", ["Half back wax (rica)", "Back wax (honey)", "Back wax (rica)"]],
+  ["wax-tools", ["Stomach wax (honey)", "Stomach wax (rica)", "Bikini wax (honey)", "Bikini wax (rica)", "Body wax (excluded bikini) (honey)"]],
 ];
 const EXACT = new Map<string, ImageSlug>(EXACT_LIST.flatMap(([slug, names]) => names.map((n) => [normaliseName(n), slug] as const)));
 
 /** 3. Keyword rules on the normalised name, most specific first. First match wins. */
 const KEYWORDS: [RegExp, ImageSlug][] = [
+  // Waxing first, most specific first: "under arms" before "arms", backs before body.
+  [/\bwax(ing)?\b.*\bunder ?arms?\b|\bunder ?arms?\b.*\bwax(ing)?\b/, "wax-underarm"],
+  [/\bwax(ing)?\b.*\barms?\b|\barms?\b.*\bwax(ing)?\b/, "wax-arms"],
+  [/\bwax(ing)?\b.*\b(legs?|calf|calves)\b|\b(legs?|calf|calves)\b.*\bwax(ing)?\b/, "wax-legs"],
+  [/\bwax(ing)?\b.*\b(half back|back)\b|\b(half back|back)\b.*\bwax(ing)?\b/, "wax-back"],
+  [/\bwax(ing)?\b.*\b(stomach|bikini|body|tummy)\b|\b(stomach|bikini|body|tummy)\b.*\bwax(ing)?\b/, "wax-tools"],
+  [
+    /\bwax(ing)?\b.*\b(face|forehead|chin|nose|lips?|side ?locks?|ears?|eyebrows?|cheeks?)\b|\b(face|forehead|chin|nose|lips?|side ?locks?|ears?|eyebrows?|cheeks?)\b.*\bwax(ing)?\b/,
+    "wax-face",
+  ],
   [/\bsplit ends?\b/, "hair-spa"],
   [/\bhair spa\b/, "hair-spa"],
   [/\bdraping\b|\bsaree\b/, "saree-draping"],
@@ -182,7 +214,7 @@ const KEYWORDS: [RegExp, ImageSlug][] = [
   [/\bblow ?dry\b|\bshampoo\b|\bstyl(e|ing)\b/, "blow-dry"],
 ];
 
-/** 4. Category fallbacks (Waxing has no photo yet: body scrub stands in). */
+/** 4. Category fallbacks. */
 const CATEGORY: Record<string, ImageSlug> = {
   makeup: "soft-glam-makeup",
   "hands and feet": "manicure",
@@ -192,7 +224,7 @@ const CATEGORY: Record<string, ImageSlug> = {
   colour: "balayage",
   color: "balayage",
   treatments: "silky-straight",
-  waxing: "body-scrub",
+  waxing: "wax-legs",
   grooming: "for-him",
 };
 const DEFAULT_SLUG: ImageSlug = "blow-dry";
