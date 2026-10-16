@@ -5,7 +5,7 @@
  * The owner's ask, 14 Oct 2026: regulars don't want to read out their number
  * every visit, so the receptionist must be able to find them BY NAME, see what
  * that one client has paid since their first visit, and see yesterday's
- * payments as well as today's — but never the salon's revenue totals.
+ * payments as well as today's — and the totals for just those two days, never older revenue.
  *
  * Everything that keeps the receptionist away from revenue is enforced by the
  * server, so that is what these tests pin down: the date clamp, the per-client
@@ -190,16 +190,19 @@ test("front desk sees today and yesterday, nothing older, whatever dates it asks
   assert.equal(onlyOld.body.visits.length, 0);
 });
 
-test("front desk never receives revenue totals", async () => {
+test("front desk gets totals for today and yesterday only, never older money", async () => {
   await visit("Today Client", "9876500001", TODAY, 100);
+  await visit("Yesterday Client", "9876500002", YESTERDAY, 250);
+  await visit("Old Client", "9876500003", LAST_MONTH, 9000);
   await staff("receptionist", DESK);
 
-  const { body } = await get(`/history?from=${TODAY}&to=${TODAY}`);
-  assert.equal(body.summary, null);
-  assert.equal(body.visits.length, 1);
+  const { body } = await get(`/history?from=${LAST_MONTH}&to=${TODAY}`);
+  assert.equal(body.visits.length, 2);
+  assert.equal(body.summary.totalRevenue, 350);
+  assert.equal(body.summary.count, 2);
 });
 
-test("front desk sees ONE client's history since their first visit, still without totals", async () => {
+test("front desk sees ONE client's history since their first visit, without totals", async () => {
   await visit("Rahul Sharma", "9876500001", LAST_MONTH, 500);
   await visit("Rahul Sharma", "9876500001", TODAY, 700);
   await visit("Someone Else", "9876500002", LAST_MONTH, 900);

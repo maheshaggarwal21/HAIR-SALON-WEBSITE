@@ -806,8 +806,12 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
      *      everything that person has paid since their first visit. It is one
      *      exact phone number at a time, found through the name/phone lookup,
      *      so it cannot be widened into browsing the whole book.
-     *   3. No revenue totals, ever — not for the day, not for a customer. The
-     *      summary aggregation is not even run. Rows only.
+     *   3. Revenue totals for today and yesterday ARE shown (owner, 16 Oct
+     *      2026 — the desk wanted the day's takings). They can only ever cover
+     *      that two-day window because `from`/`to` are clamped above. A single
+     *      customer's history (`contact`) has NO totals: that view spans every
+     *      date, so a sum there would be the salon's lifetime figure for one
+     *      person, and the desk only needs the rows.
      *
      * Enforced HERE, not in the UI. Hiding the date buttons stops an honest
      * receptionist browsing last month's takings; it does nothing about someone
@@ -910,9 +914,10 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
         .select(selectFields)
         .lean(),
       Visit.countDocuments(filter),
-      // Aggregate summary for the filtered range. Never computed for the
-      // front-desk view — see `restricted` above.
-      restricted ? Promise.resolve(null) : Visit.aggregate([
+      // Aggregate summary for the filtered range. For the front-desk view the
+      // range is already clamped to today + yesterday; a one-customer history
+      // gets none — see `restricted` above.
+      restricted && contact ? Promise.resolve(null) : Visit.aggregate([
         { $match: filter },
         {
           $group: {
@@ -960,7 +965,7 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
     return res.json({
       visits,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      summary: restricted
+      summary: restricted && contact
         ? null
         : summary[0] || { totalRevenue: 0, totalCash: 0, totalCard: 0, totalOnline: 0, totalDiscount: 0, count: 0 },
       schemaCounts,
