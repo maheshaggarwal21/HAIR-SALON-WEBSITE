@@ -15,18 +15,19 @@
  * Additional sidebar links appear when the owner grants extra permissions.
  */
 
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, Inbox } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import { useAuth } from "@/context/AuthContext";
-import PaymentHistory from "@/pages/dashboard/PaymentHistory";
-import DataPipeline from "@/pages/dashboard/DataPipeline";
-import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
-import ArtistManagement from "@/pages/dashboard/ArtistManagement";
-import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
-import ServiceManagement from "@/pages/dashboard/ServiceManagement";
-import TeamManagement from "@/pages/dashboard/TeamManagement";
-import BookingRequests from "@/pages/dashboard/BookingRequests";
+const PaymentHistory = lazy(() => import("@/pages/dashboard/PaymentHistory"));
+const DataPipeline = lazy(() => import("@/pages/dashboard/DataPipeline"));
+const DashboardAnalyticsView = lazy(() => import("@/pages/dashboard/shared/DashboardAnalyticsView"));
+const ArtistManagement = lazy(() => import("@/pages/dashboard/ArtistManagement"));
+const ArtistDashboardView = lazy(() => import("@/pages/dashboard/ArtistDashboardView"));
+const ServiceManagement = lazy(() => import("@/pages/dashboard/ServiceManagement"));
+const TeamManagement = lazy(() => import("@/pages/dashboard/TeamManagement"));
+const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
@@ -69,9 +70,20 @@ function DefaultRedirect() {
 const HOME = "/dashboard/receptionist";
 
 /** Same URL-typing gap as the manager shell — see RequirePermission. */
+/**
+ * Each page below is its own chunk, fetched when its route opens. They used to
+ * be imported eagerly, so every staff member downloaded the chart libraries
+ * and the Excel writer before the first screen (the receptionist never opens
+ * either).
+ */
+function PageFallback() {
+  return <div className="py-16 text-center text-sm text-stone-400">Loading…</div>;
+}
+
 export default function ReceptionistDashboard() {
   return (
     <DashboardLayout sidebarLinks={receptionistLinks} pageTitle="Receptionist Dashboard">
+      <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route index element={<DefaultRedirect />} />
         <Route
@@ -139,6 +151,7 @@ export default function ReceptionistDashboard() {
           }
         />
       </Routes>
+      </Suspense>
     </DashboardLayout>
   );
 }
