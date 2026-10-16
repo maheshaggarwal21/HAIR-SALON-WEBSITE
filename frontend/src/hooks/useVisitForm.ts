@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type {
   VisitFormData,
@@ -14,7 +14,7 @@ import {
   createOrder,
   verifyOrderPayment,
   createVisitDraftV2,
-  searchCustomersByPhone,
+  searchCustomers,
   fetchOrderStatus,
   fetchRecoverablePayment,
   type RecoverablePayment,
@@ -106,7 +106,11 @@ export function useVisitForm() {
   const [dropdownLoading, setDropdownLoading] = useState(true);
   const [dropdownError, setDropdownError] = useState(false);
   const [customerSuggestions, setCustomerSuggestions] = useState<CustomerSuggestion[]>([]);
+  /** Which field the open suggestion list belongs to, so it renders under it. */
+  const [customerLookupBy, setCustomerLookupBy] = useState<"phone" | "name">("phone");
   const [searchingCustomers, setSearchingCustomers] = useState(false);
+  /** The number just filled from a suggestion — don't search it again. */
+  const appliedPhone = useRef<string | null>(null);
 
   useEffect(() => {
     setDropdownLoading(true);
@@ -215,27 +219,55 @@ export function useVisitForm() {
     });
   }, [payable]);
 
+  // The name only matters while the phone box is empty; with digits in it,
+  // re-running on every name keystroke would just repeat the same search.
+  const nameQuery = formData.phone.trim() ? "" : formData.name.trim();
+
+  /**
+   * Returning-customer lookup.
+   *
+   * Digits in the phone box search by number, as before. With the phone box
+   * empty, typing a name searches by name instead — regulars don't want to
+   * read their number out on every visit (owner, 14 Oct 2026), so the desk
+   * types "rahul sh", picks the right Rahul, and the number fills itself in.
+   */
   useEffect(() => {
     const phone = formData.phone.trim();
-    if (!/^[0-9]{3,10}$/.test(phone)) {
+    const name = nameQuery;
+    if (phone && phone === appliedPhone.current) {
       setCustomerSuggestions([]);
       return;
     }
 
+    let query: { phone: string } | { name: string } | null = null;
+    if (/^[0-9]{3,10}$/.test(phone)) query = { phone };
+    else if (!phone && name.replace(/\s/g, "").length >= 2) query = { name };
+    if (!query) {
+      setCustomerSuggestions([]);
+      return;
+    }
+
+    const lookupBy = "phone" in query ? "phone" : "name";
+    let stale = false;
     const timeout = window.setTimeout(async () => {
       try {
+        setCustomerLookupBy(lookupBy);
         setSearchingCustomers(true);
-        const customers = await searchCustomersByPhone(phone);
+        const customers = await searchCustomers(query);
+        if (stale) return;
         setCustomerSuggestions(customers);
       } catch {
-        setCustomerSuggestions([]);
+        if (!stale) setCustomerSuggestions([]);
       } finally {
         setSearchingCustomers(false);
       }
     }, 250);
 
-    return () => window.clearTimeout(timeout);
-  }, [formData.phone]);
+    return () => {
+      stale = true;
+      window.clearTimeout(timeout);
+    };
+  }, [formData.phone, nameQuery]);
 
   // ── Validation ─────────────────────────────────────────────────────────────
   const validate = (): boolean => {
@@ -335,6 +367,7 @@ export function useVisitForm() {
   };
 
   const applyCustomerSuggestion = (customer: CustomerSuggestion) => {
+    appliedPhone.current = customer.contact;
     setFormData((prev) => ({
       ...prev,
       name: customer.name || prev.name,
@@ -350,6 +383,7 @@ export function useVisitForm() {
     setErrors({});
     setPaymentError(null);
     setCustomerSuggestions([]);
+    appliedPhone.current = null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -648,6 +682,7 @@ export function useVisitForm() {
     cashAmountNum,
     onlinePayable,
     customerSuggestions,
+    customerLookupBy,
     searchingCustomers,
     recovery,
     recoveryLoading,

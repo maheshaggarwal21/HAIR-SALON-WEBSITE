@@ -5,11 +5,13 @@
  * Access: receptionist, manager, owner (all three roles).
  *
  * Features:
- *   - Date range filter (today / this month / 3 months / year / custom)
+ *   - Date range filter (today / yesterday / this month / 3 months / year / custom)
+ *   - Client lookup by name or phone → that client's full history, all dates
  *   - Artist name filter (free text)
  *   - Payment method filter (all / cash / card / online / partial)
  *   - Schema filter (all / legacy / v2)
  *   - Summary cards: Revenue, Cash, Card, Online, Discounts, Visit count
+ *     (never for the front-desk view — the server doesn't send them)
  *   - Paginated visits table
  *   - Client-side CSV export for the current filtered + loaded page
  */
@@ -19,6 +21,8 @@ import { motion } from "framer-motion";
 import { toLocalDateKey } from "@/lib/utils";
 import UnreconciledPayments from "@/pages/dashboard/shared/UnreconciledPayments";
 import { useRestriction } from "@/hooks/usePermission";
+import { searchCustomers } from "@/services/api";
+import type { CustomerSuggestion } from "@/types/visit";
 import {
   Receipt,
   Filter,
@@ -28,6 +32,8 @@ import {
   IndianRupee,
   Search,
   RefreshCw,
+  ArrowLeft,
+  UserRound,
 } from "lucide-react";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
@@ -78,7 +84,7 @@ interface Summary {
   count: number;
 }
 
-type DatePreset = "today" | "month" | "3months" | "year" | "custom";
+type DatePreset = "today" | "yesterday" | "month" | "3months" | "year" | "custom";
 type MethodFilter = "all" | "cash" | "card" | "online" | "partial";
 type SchemaFilter = "all" | "legacy" | "v2";
 
@@ -98,6 +104,10 @@ function getPresetDates(preset: DatePreset): { from: string; to: string } {
   switch (preset) {
     case "today":
       return { from: today, to: today };
+    case "yesterday": {
+      const y = formatDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+      return { from: y, to: y };
+    }
     case "month":
       return {
         from: formatDate(new Date(now.getFullYear(), now.getMonth(), 1)),
@@ -125,11 +135,13 @@ function fmtCurrency(n: number): string {
   return "₹" + n.toLocaleString("en-IN");
 }
 
-function fmtDate(iso: string): string {
+/** Visit.date is the calendar day at UTC midnight — read it back in UTC. */
+function fmtVisitDay(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 
@@ -160,27 +172,38 @@ const STATUS_COLORS: Record<string, string> = {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PaymentHistory() {
   /**
-   * `payments.today_only` narrows this page to the current day.
+   * `payments.today_only` is the front-desk view (CF D39): today and yesterday,
+   * one client's full history through the lookup, and no revenue totals.
    *
-   * The server clamps the range regardless of what we send (see /history in
+   * The server enforces all of it regardless of what we send (see /history in
    * routes/visits.js) — this only keeps the UI honest, so a restricted user
    * sees a page that makes sense rather than date buttons that silently do
    * nothing.
    *
    * useRestriction, NOT usePermission: the latter reports true for the owner on
-   * every key, which would restrict the owner to today. See the note on
-   * useRestriction.
+   * every key, which would restrict the owner. See the note on useRestriction.
    */
-  const todayOnly = useRestriction("payments.today_only");
+  const deskView = useRestriction("payments.today_only");
 
   // Date preset + custom
-  const [preset, setPreset] = useState<DatePreset>(todayOnly ? "today" : "month");
+  const [preset, setPreset] = useState<DatePreset>(deskView ? "today" : "month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const effectivePreset: DatePreset = todayOnly ? "today" : preset;
+  const effectivePreset: DatePreset =
+    deskView && preset !== "today" && preset !== "yesterday" ? "today" : preset;
   const { from: pFrom, to: pTo } = getPresetDates(effectivePreset);
   const from = effectivePreset === "custom" ? customFrom : pFrom;
   const to = effectivePreset === "custom" ? customTo : pTo;
+
+  /**
+   * Client lookup. Typing shows matching previous clients (name or phone);
+   * picking one switches the page to THAT client's history across all dates.
+   * Enter without picking keeps the old behaviour: filter the date range by
+   * name.
+   */
+  const [client, setClient] = useState<CustomerSuggestion | null>(null);
+  const [clientMatches, setClientMatches] = useState<CustomerSuggestion[]>([]);
+  const [clientMatchesOpen, setClientMatchesOpen] = useState(false);
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState("");
@@ -201,15 +224,60 @@ export default function PaymentHistory() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
 
+  useEffect(() => {
+    const q = customerInput.trim();
+    const query = /^[0-9]{3,10}$/.test(q)
+      ? { phone: q }
+      : q.replace(/\s/g, "").length >= 2 && !/\d/.test(q)
+        ? { name: q }
+        : null;
+    if (!query || client) {
+      setClientMatches([]);
+      return;
+    }
+    let stale = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const found = await searchCustomers(query);
+        if (!stale) setClientMatches(found);
+      } catch {
+        if (!stale) setClientMatches([]);
+      }
+    }, 250);
+    return () => {
+      stale = true;
+      window.clearTimeout(timeout);
+    };
+  }, [customerInput, client]);
+
+  const pickClient = (c: CustomerSuggestion) => {
+    setClient(c);
+    setCustomerInput(c.name);
+    setCustomerFilter("");
+    setClientMatches([]);
+    setClientMatchesOpen(false);
+  };
+
+  const clearClient = () => {
+    setClient(null);
+    setCustomerInput("");
+    setCustomerFilter("");
+  };
+
   const fetchHistory = useCallback(async () => {
-    if (!from || !to) return;
+    if (!client && (!from || !to)) return;
     setLoading(true);
     setFetchError("");
 
-    const params = new URLSearchParams({ from, to, page: String(page), limit: String(LIMIT) });
+    // A client's history ignores dates on the server; don't send them.
+    const params = new URLSearchParams(
+      client
+        ? { contact: client.contact, page: String(page), limit: String(LIMIT) }
+        : { from, to, page: String(page), limit: String(LIMIT) }
+    );
     // Always send schema filter so backend and UI stay in sync for mixed legacy/V2 views.
     params.set("schema", schemaFilter);
-    if (customerFilter) params.set("customer", customerFilter);
+    if (customerFilter && !client) params.set("customer", customerFilter);
     if (artistFilter) params.set("artist", artistFilter);
     if (methodFilter !== "all") params.set("method", methodFilter);
 
@@ -223,18 +291,18 @@ export default function PaymentHistory() {
       setVisits(data.visits);
       setPagination(data.pagination);
       setSummary(data.summary);
-    } catch (err: unknown) {
+    } catch {
       setFetchError("Failed to load payment history. Please check your connection and try again.");
       setVisits([]);
     } finally {
       setLoading(false);
     }
-  }, [from, to, page, schemaFilter, customerFilter, artistFilter, methodFilter]);
+  }, [client, from, to, page, schemaFilter, customerFilter, artistFilter, methodFilter]);
 
   // Reset to page 1 when any filter changes
   useEffect(() => {
     setPage(1);
-  }, [from, to, schemaFilter, customerFilter, artistFilter, methodFilter]);
+  }, [client, from, to, schemaFilter, customerFilter, artistFilter, methodFilter]);
 
   useEffect(() => {
     fetchHistory();
@@ -249,7 +317,7 @@ export default function PaymentHistory() {
     const XLSX = await import("xlsx");
 
     const rows = visits.map((v) => ({
-      Date: fmtDate(v.date),
+      Date: fmtVisitDay(v.date),
       Client: v.name,
       Contact: v.contact,
       Artist: (() => {
@@ -284,21 +352,34 @@ export default function PaymentHistory() {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Payment History");
-    XLSX.writeFile(workbook, `payments_${from}_to_${to}.xlsx`);
+    XLSX.writeFile(
+      workbook,
+      client ? `payments_${client.contact}.xlsx` : `payments_${from}_to_${to}.xlsx`
+    );
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
   const presets: { key: DatePreset; label: string }[] = [
     { key: "today", label: "Today" },
+    { key: "yesterday", label: "Yesterday" },
     { key: "month", label: "This Month" },
     { key: "3months", label: "3 Months" },
     { key: "year", label: "This Year" },
     { key: "custom", label: "Custom" },
   ];
 
+  const visiblePresets = deskView
+    ? presets.filter((p) => p.key === "today" || p.key === "yesterday")
+    : presets;
+
+  // `summary` is null for the front-desk view: no revenue on that account.
   const summaryCards = summary
     ? [
-        { label: "Total Revenue", value: fmtCurrency(summary.totalRevenue), sub: `${summary.count} visits` },
+        {
+          label: client ? "Total Spent" : "Total Revenue",
+          value: fmtCurrency(summary.totalRevenue),
+          sub: `${summary.count} visits`,
+        },
         { label: "Cash Collected", value: fmtCurrency(summary.totalCash) },
         { label: "Card Collected", value: fmtCurrency(summary.totalCard) },
         { label: "Online Collected", value: fmtCurrency(summary.totalOnline) },
@@ -319,8 +400,8 @@ export default function PaymentHistory() {
             <Receipt className="w-6 h-6 text-amber-500" /> Payment History
           </h2>
           <p className="text-sm text-stone-500 mt-0.5">
-            {todayOnly
-              ? "Today's payments. Older records aren't available on your account."
+            {deskView
+              ? "Today's and yesterday's payments. Search a client to see everything they've paid since their first visit."
               : "Browse and export all visit payment records"}
           </p>
         </div>
@@ -343,29 +424,50 @@ export default function PaymentHistory() {
 
       {/* ── Date Preset Tabs ── */}
       <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm p-5 mb-4">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <Filter className="w-4 h-4 text-stone-400" />
-          {todayOnly && (
-            <span className="px-4 py-1.5 rounded-lg text-sm font-medium bg-stone-900 text-white">
-              Today
-            </span>
-          )}
-          {!todayOnly && presets.map(({ key, label }) => (
+        {client ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <UserRound className="w-5 h-5 text-amber-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold text-stone-900 truncate">
+                  {client.name} · {client.contact}
+                </p>
+                <p className="text-xs text-stone-500">
+                  All visits
+                  {client.firstVisitDate ? ` since ${fmtVisitDay(client.firstVisitDate)}` : ""}
+                  {client.visitCount
+                    ? ` · ${client.visitCount} visit${client.visitCount === 1 ? "" : "s"}`
+                    : ""}
+                </p>
+              </div>
+            </div>
             <button
-              key={key}
-              onClick={() => setPreset(key)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                preset === key
-                  ? "bg-stone-900 text-white"
-                  : "bg-stone-100 text-stone-600 hover:bg-stone-200"
-              }`}
+              onClick={clearClient}
+              className="flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-stone-900"
             >
-              {label}
+              <ArrowLeft className="w-4 h-4" /> Back to all payments
             </button>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <Filter className="w-4 h-4 text-stone-400" />
+            {visiblePresets.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setPreset(key)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  effectivePreset === key
+                    ? "bg-stone-900 text-white"
+                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {!todayOnly && preset === "custom" && (
+        {!client && !deskView && preset === "custom" && (
           <div className="flex flex-wrap gap-3 mt-2">
             <div>
               <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1">From</label>
@@ -390,28 +492,67 @@ export default function PaymentHistory() {
 
         {/* Additional filters */}
         <div className="flex flex-wrap gap-3 mt-3">
-          {/* Customer name search */}
+          {/* Client lookup: name or phone */}
           <div className="flex gap-2 items-end">
-            <div>
-              <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1">Customer Name</label>
+            <div className="relative">
+              <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1">Client</label>
               <input
                 type="text"
-                placeholder="Search customer…"
+                placeholder="Name or phone…"
                 value={customerInput}
-                onChange={(e) => setCustomerInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") setCustomerFilter(customerInput.trim()); }}
-                className="h-10 w-full sm:w-44 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400"
+                onChange={(e) => {
+                  setCustomerInput(e.target.value);
+                  setClientMatchesOpen(true);
+                  if (client) setClient(null);
+                }}
+                onFocus={() => setClientMatchesOpen(true)}
+                onBlur={() => setClientMatchesOpen(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setCustomerFilter(customerInput.trim());
+                    setClientMatchesOpen(false);
+                  }
+                  if (e.key === "Escape") setClientMatchesOpen(false);
+                }}
+                autoComplete="off"
+                className="h-10 w-full sm:w-56 px-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400"
               />
+              {clientMatchesOpen && clientMatches.length > 0 && (
+                <div className="absolute left-0 top-full z-20 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-stone-200 bg-white shadow-lg overflow-hidden">
+                  <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                    See a client's full history
+                  </p>
+                  {clientMatches.map((c) => (
+                    <button
+                      key={`${c.contact}-${c.name}`}
+                      type="button"
+                      // mousedown, not click: the input's blur closes this list first.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pickClient(c);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-stone-50 transition-colors border-t border-stone-100"
+                    >
+                      <p className="text-sm font-medium text-stone-800">{c.name} · {c.contact}</p>
+                      <p className="text-xs text-stone-500">
+                        {c.visitCount ? `${c.visitCount} visit${c.visitCount === 1 ? "" : "s"}` : ""}
+                        {c.lastVisitDate ? ` · last ${fmtVisitDay(c.lastVisitDate)}` : ""}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               onClick={() => setCustomerFilter(customerInput.trim())}
+              title="Filter these dates by name"
               className="h-10 w-10 flex items-center justify-center rounded-xl border border-stone-200 hover:border-amber-400 hover:text-amber-600 transition-all text-stone-500"
             >
               <Search className="w-4 h-4" />
             </button>
-            {customerFilter && (
+            {(customerFilter || client) && (
               <button
-                onClick={() => { setCustomerFilter(""); setCustomerInput(""); }}
+                onClick={clearClient}
                 className="text-xs text-red-500 hover:text-red-700 ml-1"
               >
                 Clear
@@ -545,7 +686,9 @@ export default function PaymentHistory() {
               ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-16 text-center text-stone-400 text-sm">
-                      No visits found for the selected filters.
+                      {client
+                        ? "No paid visits found for this client."
+                        : "No visits found for the selected filters."}
                     </td>
                   </tr>
                 )
@@ -557,7 +700,7 @@ export default function PaymentHistory() {
                     {/* Date */}
                     <td className="px-4 py-3.5">
                       <p className="font-medium text-stone-800 whitespace-nowrap">
-                        {fmtDate(v.date)}
+                        {fmtVisitDay(v.date)}
                       </p>
                       <p className="text-[11px] text-stone-400 mt-0.5 whitespace-nowrap">
                         {v.startTime}–{v.endTime}
