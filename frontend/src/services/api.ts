@@ -265,8 +265,14 @@ export async function getVisitAssignmentDraft(visitId: string): Promise<Assignme
   return data;
 }
 
-export async function searchCustomersByPhone(phone: string): Promise<CustomerSuggestion[]> {
-  const qs = new URLSearchParams({ phone });
+/**
+ * Returning customers by the start of their phone number or by name.
+ * Name: every word typed must start a word of the name ("rahul sh").
+ */
+export async function searchCustomers(
+  query: { phone: string } | { name: string }
+): Promise<CustomerSuggestion[]> {
+  const qs = new URLSearchParams(query);
   const res = await fetch(`${BASE}/api/visits/customers/search?${qs.toString()}`, {
     credentials: "include",
   });

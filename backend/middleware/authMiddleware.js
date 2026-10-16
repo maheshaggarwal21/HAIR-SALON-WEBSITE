@@ -98,7 +98,11 @@ function authorize(...roles) {
 //   router.get('/analytics', authenticate, authorize('manager', 'owner'),
 //              authorizePermission(PERMISSIONS.ANALYTICS_VIEW), handler);
 //
+// Pass an array to allow ANY of several keys — e.g. the customer lookup serves
+// both the visit form (visit.create) and Payment History (payments.view).
+//
 function authorizePermission(requiredKey) {
+  const anyOf = Array.isArray(requiredKey) ? requiredKey : [requiredKey];
   return async function(req, res, next) {
     // Owner is always exempt from permission checks
     if (req.session.role === 'owner') return next();
@@ -106,7 +110,7 @@ function authorizePermission(requiredKey) {
     try {
       const permissions = await getUserPermissions(req.session.userId);
 
-      if (!permissions.includes(requiredKey)) {
+      if (!anyOf.some((key) => permissions.includes(key))) {
         return res.status(403).json({
           error:    'Permission denied',
           required: requiredKey,

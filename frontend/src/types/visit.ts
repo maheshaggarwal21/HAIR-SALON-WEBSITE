@@ -72,6 +72,8 @@ export interface CustomerSuggestion {
   gender: "male" | "female" | "other" | "prefer_not";
   lastVisitDate?: string;
   lastSeenAt?: string;
+  firstVisitDate?: string;
+  visitCount?: number;
 }
 
 // ─── Form state types ─────────────────────────────────────────────────────────
