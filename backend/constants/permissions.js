@@ -9,7 +9,7 @@ const PERMISSIONS = Object.freeze({
   // Narrows PAYMENTS_VIEW rather than granting anything on its own — see the
   // note above PERMISSION_LABELS. Useless without payments.view.
   // The name is historical: since D39 it means "front-desk view" — today AND
-  // yesterday, one customer's full history by lookup, no revenue totals.
+  // yesterday, one customer's full history by lookup; totals for those two days only.
   PAYMENTS_TODAY_ONLY:   'payments.today_only',
   DATAPIPELINE_VIEW:     'datapipeline.view',
   SERVICES_VIEW:         'services.view',
@@ -58,14 +58,14 @@ const ROLE_DEFAULTS = {
 //
 // Almost every key here GRANTS access. `payments.today_only` is the exception:
 // it RESTRICTS payments.view to the front-desk view (today and yesterday, one
-// customer's history at a time, never revenue totals — CF D39). It is written as an
+// customer's history at a time, totals for those two days only — CF D39). It is written as an
 // opt-in restriction rather than making payments.view mean "today" and adding a
 // payments.view_history key, because the latter would silently strip history
 // from every account that already holds payments.view today.
 const PERMISSION_LABELS = {
   'analytics.view':        'View Analytics Dashboard',
   'payments.view':         'View Payment History',
-  'payments.today_only':   "↳ Front-desk view: today & yesterday only, no revenue totals (a client's own history stays searchable)",
+  'payments.today_only':   "↳ Front-desk view: today & yesterday only, totals for those days (a client's own history stays searchable)",
   'datapipeline.view':     'View Data Pipeline (includes per-artist revenue)',
   'services.view':         'View Services List',
   'services.crud':         'Manage Services (Create / Edit / Delete)',

@@ -173,7 +173,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function PaymentHistory() {
   /**
    * `payments.today_only` is the front-desk view (CF D39): today and yesterday,
-   * one client's full history through the lookup, and no revenue totals.
+   * one client's full history through the lookup (rows only, no totals).
    *
    * The server enforces all of it regardless of what we send (see /history in
    * routes/visits.js) — this only keeps the UI honest, so a restricted user
@@ -372,7 +372,7 @@ export default function PaymentHistory() {
     ? presets.filter((p) => p.key === "today" || p.key === "yesterday")
     : presets;
 
-  // `summary` is null for the front-desk view: no revenue on that account.
+  // `summary` is null only for a single client's history; the day view has totals.
   const summaryCards = summary
     ? [
         {
