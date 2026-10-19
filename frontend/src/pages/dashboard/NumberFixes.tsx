@@ -106,7 +106,7 @@ export default function NumberFixes() {
 
   useEffect(() => {
     let live = true;
-    api<Reply>(`/?kind=${kind}&status=${status}&days=${days}&q=${encodeURIComponent(query)}`)
+    api<Reply>(`?kind=${kind}&status=${status}&days=${days}&q=${encodeURIComponent(query)}`)
       .then((data) => live && setReply({ sig, data, error: "" }))
       .catch((e) => live && setReply({ sig, data: null, error: e.message }));
     return () => {
