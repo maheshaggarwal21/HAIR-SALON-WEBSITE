@@ -154,7 +154,8 @@ export default function DashboardLayout({
       </AnimatePresence>
 
       {/* ── Main area ── */}
-      <div className="flex-1 flex flex-col lg:ml-64">
+      {/* min-w-0: wide pages (the Today board timeline) scroll inside their own box instead of widening the whole layout. */}
+      <div className="flex-1 min-w-0 flex flex-col lg:ml-64">
         {/* Top bar */}
         <header
           className="h-16 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-8"

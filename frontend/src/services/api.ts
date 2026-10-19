@@ -26,6 +26,8 @@ export interface CreateOrderPayload {
   discountPercent: number;
   paymentMode?: "online" | "partial";
   cashAmount?: number;
+  /** An online booking at checkout: the server charges only what is still due (CF §8). */
+  appointmentId?: string;
 }
 
 export interface CreateOrderResult {
@@ -158,6 +160,41 @@ export interface CreateVisitPayload {
    */
   recoveredPaymentId?: string;
   lockUntilAssigned?: boolean;
+  /** Closes this online booking; the server prices it from the booking and deducts the deposit (CF §8). */
+  appointmentId?: string;
+}
+
+/** What GET /api/visits/appointment-bill/:id returns (T2.16). */
+export interface AppointmentBill {
+  appointment: {
+    _id: string;
+    ref: string;
+    status: string;
+    name: string;
+    contact: string;
+    gender: "male" | "female" | "other" | "prefer_not" | null;
+    startAt: string | null;
+    channel: string | null;
+    bookedServiceIds: string[];
+  };
+  services: { serviceId: string; name: string; price: number; artistName: string | null; booked: boolean }[];
+  removed: { serviceId: string; name: string; price: number }[];
+  subtotal: number;
+  discountAmount: number;
+  discountReason: string | null;
+  finalTotal: number;
+  depositPaid: number;
+  depositApplied: number;
+  depositExcess: number;
+  remainder: number;
+}
+
+export async function fetchAppointmentBill(appointmentId: string, serviceIds?: string[]): Promise<AppointmentBill> {
+  const q = serviceIds && serviceIds.length ? `?serviceIds=${serviceIds.join(",")}` : "";
+  const res = await fetch(`${BASE}/api/visits/appointment-bill/${appointmentId}${q}`, { credentials: "include" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Could not load the booking");
+  return data;
 }
 
 export interface CreateVisitResult {

@@ -16,7 +16,7 @@
 
 import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Inbox, Globe, Store, Clapperboard, Megaphone, UserCog } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Inbox, Globe, Store, Clapperboard, Megaphone, UserCog, CalendarDays, CalendarClock, RotateCcw } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 const DashboardOverview = lazy(() => import("@/pages/dashboard/shared/DashboardOverview"));
 const DashboardAnalyticsView = lazy(() => import("@/pages/dashboard/shared/DashboardAnalyticsView"));
@@ -32,13 +32,19 @@ const WebsiteMenu = lazy(() => import("@/pages/dashboard/WebsiteMenu"));
 const WebsiteReels = lazy(() => import("@/pages/dashboard/WebsiteReels"));
 const WebsiteOffers = lazy(() => import("@/pages/dashboard/WebsiteOffers"));
 const ArtistSkills = lazy(() => import("@/pages/dashboard/ArtistSkills"));
+const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
+const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
+const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
+  { to: "/dashboard/manager/today", label: "Today", icon: CalendarDays, requiredPermission: "bookings.view" },
   { to: "/dashboard/manager/requests", label: "Website Requests", icon: Inbox, requiredPermission: "bookings.view" },
+  { to: "/dashboard/manager/online-booking", label: "Online Booking", icon: CalendarClock, requiredPermission: "bookings.view" },
+  { to: "/dashboard/manager/refunds", label: "Refunds", icon: RotateCcw, requiredPermission: "bookings.refund" },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
@@ -130,6 +136,30 @@ export default function ManagerDashboard() {
           element={
             <RequirePermission permission={["team.view", "team.manage"]} backTo={HOME}>
               <TeamManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="today"
+          element={
+            <RequirePermission permission="bookings.view" backTo={HOME}>
+              <TodayBoard />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="online-booking"
+          element={
+            <RequirePermission permission="bookings.view" backTo={HOME}>
+              <OnlineBooking />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="refunds"
+          element={
+            <RequirePermission permission="bookings.refund" backTo={HOME}>
+              <Refunds />
             </RequirePermission>
           }
         />

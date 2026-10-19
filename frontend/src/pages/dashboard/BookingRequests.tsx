@@ -10,8 +10,10 @@
  *     two taps (time → Confirm);
  *   - refreshes itself every 30s so a new request shows up without reloading.
  *
- * Confirming takes no slot lock yet — that arrives with the Phase 2 engine —
- * so check the artist's day as you would for a phone booking.
+ * Phase 1 requests hold no time, so check the artist's day as you would for a
+ * phone booking. Phase 2 requests made through the booking engine already
+ * HOLD their time and are paid (deposit or full, D18): they show "Holds …"
+ * and a one-tap Approve; Decline refunds everything (CF §6, T2.10).
  *
  * Permissions: bookings.view to see, bookings.manage to act. All times shown
  * in IST regardless of the device's timezone.
@@ -67,6 +69,10 @@ interface BookingRequest {
   utm: { source?: string; medium?: string; campaign?: string } | null;
   createdAt: string;
   lastChange: { to: string; by: string | null; at: string; reason: string | null } | null;
+  /** Phase 2: an engine request holds its time until this moment. */
+  requestExpiresAt?: string | null;
+  deposit?: { kind: string; amount: number; status: string } | null;
+  refund?: { amount: number; status: string; error: string | null } | null;
 }
 
 interface RequestWindow {
@@ -394,11 +400,24 @@ function RequestCard({
             <span className="tabular-nums">{rupees(r.total)}</span>
           </div>
           <div className="text-xs text-stone-400 mt-1">About {Math.round(totalMins / 15) * 15} min in total</div>
+          {r.deposit && (
+            <div className="text-xs text-sky-700 mt-1">
+              {r.deposit.kind === "full" ? "Paid in full" : "Deposit"} {rupees(r.deposit.amount)} online ({r.deposit.status})
+            </div>
+          )}
+          {r.refund && <div className="text-xs text-amber-700 mt-0.5">Refund {rupees(r.refund.amount)} — {r.refund.status}</div>}
         </div>
 
         {/* When */}
         <div className="text-sm space-y-1.5">
-          {r.status === "confirmed" && r.startAt ? (
+          {r.status === "requested" && r.startAt && r.requestExpiresAt ? (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 text-amber-700 font-medium">
+                <CalendarCheck className="w-4 h-4" /> Holds {istDateTime(r.startAt)}
+              </div>
+              <div className="text-xs text-stone-500">Approve by {istDateTime(r.requestExpiresAt)}, or it expires and is refunded.</div>
+            </div>
+          ) : r.status === "confirmed" && r.startAt ? (
             <div className="flex items-center gap-2 text-emerald-700 font-medium">
               <CalendarCheck className="w-4 h-4" /> {istDateTime(r.startAt)}
               {r.endAt && <span className="font-normal text-stone-400">→ {istTime(r.endAt)}</span>}
@@ -452,12 +471,22 @@ function RequestCard({
       {/* Actions */}
       {canManage && r.status === "requested" && mode === "none" && (
         <div className="flex flex-wrap gap-2 mt-4">
+          {r.startAt && r.requestExpiresAt ? (
+            <button
+              disabled={busy}
+              onClick={() => act("confirm", "POST", {})}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-40"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarCheck className="w-4 h-4" />} Approve {istTime(r.startAt)}
+            </button>
+          ) : (
           <button
             onClick={() => setMode("confirm")}
             className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-800"
           >
             <CalendarCheck className="w-4 h-4" /> Confirm with time
           </button>
+          )}
           <button
             onClick={() => setMode("decline")}
             className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-stone-200 text-sm text-stone-600 hover:bg-stone-50"

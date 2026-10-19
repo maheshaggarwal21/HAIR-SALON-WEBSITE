@@ -14,6 +14,9 @@
  *   /dashboard/owner/website-reels → Reels wall (T1.20)
  *   /dashboard/owner/website-offers → Offers: bar + pop-up (CF D29)
  *   /dashboard/owner/artist-skills → Who can be booked for which services (CF D35)
+ *   /dashboard/owner/today          → Today board: timeline, walk-ins, desk actions (T2.14)
+ *   /dashboard/owner/online-booking → Artists on/off online, hours, leave (T2.1, T2.22)
+ *   /dashboard/owner/refunds        → Refunds owed to online customers (T2.17)
  */
 
 import { lazy, Suspense } from "react";
@@ -34,6 +37,9 @@ import {
   Clapperboard,
   Megaphone,
   UserCog,
+  CalendarDays,
+  CalendarClock,
+  RotateCcw,
 } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 const Management = lazy(() => import("@/pages/dashboard/Management"));
@@ -51,10 +57,16 @@ const WebsiteMenu = lazy(() => import("@/pages/dashboard/WebsiteMenu"));
 const WebsiteReels = lazy(() => import("@/pages/dashboard/WebsiteReels"));
 const WebsiteOffers = lazy(() => import("@/pages/dashboard/WebsiteOffers"));
 const ArtistSkills = lazy(() => import("@/pages/dashboard/ArtistSkills"));
+const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
+const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
+const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
+  { to: "/dashboard/owner/today", label: "Today", icon: CalendarDays },
   { to: "/dashboard/owner/requests", label: "Website Requests", icon: Inbox },
+  { to: "/dashboard/owner/online-booking", label: "Online Booking", icon: CalendarClock },
+  { to: "/dashboard/owner/refunds", label: "Refunds", icon: RotateCcw },
   { to: "/dashboard/owner/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/owner/payments", label: "Payments", icon: Receipt },
   { to: "/dashboard/owner/data-pipeline", label: "Data Pipeline", icon: Database },
@@ -96,6 +108,9 @@ export default function OwnerDashboard() {
         <Route path="team" element={<TeamManagement />} />
         <Route path="management" element={<Management />} />
         <Route path="requests" element={<BookingRequests />} />
+        <Route path="today" element={<TodayBoard />} />
+        <Route path="online-booking" element={<OnlineBooking />} />
+        <Route path="refunds" element={<Refunds />} />
         <Route path="website" element={<WebsiteSettings />} />
         <Route path="website-menu" element={<WebsiteMenu />} />
         <Route path="website-reels" element={<WebsiteReels />} />

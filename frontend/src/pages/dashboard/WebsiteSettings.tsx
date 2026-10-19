@@ -106,6 +106,8 @@ export default function WebsiteSettings() {
   const [newHoliday, setNewHoliday] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  /** E23: bookings on a newly added holiday, shown before it is saved. */
+  const [holidayConflicts, setHolidayConflicts] = useState<{ ref: string; name: string; contact: string; date: string }[] | null>(null);
 
   useEffect(() => {
     fetch(`${API}/api/website/settings`, { credentials: "include" })
@@ -204,10 +206,11 @@ export default function WebsiteSettings() {
   const setReview = (i: number, patch: Partial<FeaturedReview>) =>
     setReviews({ featured: form.reviews.featured.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
 
-  async function save() {
+  async function save(forceHolidays = false) {
     if (!form) return;
     setSaving(true);
     setMessage(null);
+    setHolidayConflicts(null);
     try {
       const res = await fetch(`${API}/api/website/settings`, {
         method: "PATCH",
@@ -216,6 +219,7 @@ export default function WebsiteSettings() {
         // Half-filled before/after pairs and reviews aren't sent; they'd be refused anyway.
         body: JSON.stringify({
           ...form,
+          forceHolidays,
           transformations: form.transformations.filter((t) => t.before && t.after),
           media: { ...form.media, heroSlides: form.media.heroSlides.filter((x) => x.url), gallery: form.media.gallery.filter((g) => g.url) },
           reviews: {
@@ -234,6 +238,7 @@ export default function WebsiteSettings() {
         }),
       });
       const d = await res.json();
+      if (res.status === 409 && Array.isArray(d.conflicts)) setHolidayConflicts(d.conflicts);
       if (!res.ok) throw new Error(d.error || "Failed to save");
       setMessage({ ok: true, text: "Saved. The website picks this up within a few minutes." });
     } catch (e) {
@@ -733,7 +738,7 @@ export default function WebsiteSettings() {
 
       <div className="flex items-center gap-3">
         <button
-          onClick={save}
+          onClick={() => save()}
           disabled={saving}
           className="inline-flex items-center gap-2 bg-stone-900 text-white text-sm rounded-xl px-5 py-2.5 hover:bg-stone-800 disabled:opacity-50"
         >
@@ -741,6 +746,21 @@ export default function WebsiteSettings() {
         </button>
         {message && <span className={`text-sm ${message.ok ? "text-emerald-700" : "text-red-600"}`}>{message.text}</span>}
       </div>
+      {holidayConflicts && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm space-y-2">
+          <p className="font-medium text-amber-900">Bookings on the new holiday — move or cancel them on the Today board:</p>
+          <ul className="space-y-1 text-stone-700">
+            {holidayConflicts.map((c) => (
+              <li key={c.ref}>
+                {c.date} · {c.ref} · {c.name} · {c.contact}
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => save(true)} disabled={saving} className="h-9 px-3 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700">
+            Save anyway — I'll handle them
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }
