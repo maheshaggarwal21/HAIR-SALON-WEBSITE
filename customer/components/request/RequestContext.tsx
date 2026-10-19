@@ -7,6 +7,11 @@
  *
  * In the CP1 rollback mode (NEXT_PUBLIC_BOOKING_MODE=whatsapp) the same
  * buttons become WhatsApp links and the form never opens.
+ *
+ * Phase 2 (T2.22): when the API says live booking is on (an artist is online
+ * and payments work), the same buttons open the BookingSheet instead —
+ * `kind: "book"`. Switching every artist off in the staff app flips the site
+ * back to the request form within a minute (CP4 rollback).
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
@@ -21,6 +26,8 @@ export interface RequestPreset {
   /** "Book with {artist}" deep links pre-fill the preference (DS §5 ArtistCard). */
   artistSlug?: string;
 }
+
+export type SheetKind = "book" | "request";
 
 interface RequestState {
   isOpen: boolean;
@@ -37,6 +44,8 @@ interface RequestState {
   whatsapp: string | null;
   /** False when the form can't be used: rollback mode, or the menu didn't load. */
   formEnabled: boolean;
+  /** Which sheet the buttons open: live booking, or the Phase 1 request form. */
+  kind: SheetKind;
 }
 
 const Ctx = createContext<RequestState | null>(null);
@@ -44,12 +53,15 @@ const Ctx = createContext<RequestState | null>(null);
 export function RequestProvider({
   whatsappNumber,
   formAvailable,
+  bookingEnabled = false,
   children,
 }: {
   whatsappNumber: string | null;
   formAvailable: boolean;
+  bookingEnabled?: boolean;
   children: ReactNode;
 }) {
+  const kind: SheetKind = bookingEnabled ? "book" : "request";
   const [isOpen, setOpen] = useState(false);
   const [preset, setPreset] = useState<RequestPreset>({});
   const [openedAt, setOpenedAt] = useState<Date | null>(null);
@@ -68,8 +80,8 @@ export function RequestProvider({
   const whatsapp = whatsappHref(whatsappNumber, "Hi, I'd like to book an appointment at The Experts.");
 
   const value = useMemo(
-    () => ({ isOpen, preset, openedAt, open, close, whatsapp, formEnabled }),
-    [isOpen, preset, openedAt, open, close, whatsapp, formEnabled]
+    () => ({ isOpen, preset, openedAt, open, close, whatsapp, formEnabled, kind }),
+    [isOpen, preset, openedAt, open, close, whatsapp, formEnabled, kind]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -87,7 +99,7 @@ export function useRequest() {
  */
 export function RequestCta({
   preset,
-  label = "Request your slot",
+  label,
   variant = "primary",
   tone = "light",
   className = "",
@@ -98,11 +110,12 @@ export function RequestCta({
   tone?: "light" | "dark";
   className?: string;
 }) {
-  const { open, formEnabled, whatsapp } = useRequest();
+  const { open, formEnabled, whatsapp, kind } = useRequest();
   if (formEnabled) {
     return (
       <Button variant={variant} tone={tone} className={className} onClick={() => open(preset)} aria-haspopup="dialog">
-        {label}
+        {/* Request mode must say "request" (CP1); live booking says "book". */}
+        {label ? (kind === "book" ? label.replace(/^Request/, "Book") : label) : kind === "book" ? "Book your slot" : "Request your slot"}
       </Button>
     );
   }

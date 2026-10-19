@@ -122,6 +122,69 @@ export interface SiteInfo {
   owner?: { name: string; title: string; bio: string; photo: string | null } | null;
   /** Counted from paid visits and already rounded down by the server (CF D28). Null below 100. */
   stats?: { clientsServed: number | null };
+  /**
+   * Phase 2 live booking (T2.22). `enabled` only when at least one artist is
+   * switched on and payments + WhatsApp codes work; otherwise the site uses
+   * the request form.
+   */
+  onlineBooking?: {
+    enabled: boolean;
+    maxGuests: number;
+    holdMinutes: number;
+    cancellationFeePercent: number;
+    cancellationFeeMin: number;
+    noticeHours: number;
+    razorpayKeyId: string | null;
+  };
+}
+
+// ── Phase 2: live booking (backend/routes/publicBooking.js) ──────────────────
+
+export interface Slot {
+  startAt: string;
+  endAt: string;
+  /** "16:30", salon time. */
+  time: string;
+  period: "morning" | "afternoon" | "evening";
+  /** How many different artists could take it, capped at 3 — the honest "N left". */
+  remaining: number;
+  guests: { key: string; items: { serviceId: string; name: string; artistName: string; startAt: string; endAt: string }[] }[];
+}
+
+export interface Quote {
+  lines: { guestKey: string; serviceId: string; name: string; price: number; durationMinutes: number | null; inPackage: boolean }[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  mode: "instant" | "request";
+  payment: { options: { kind: "full" | "deposit"; amount: number; label: string }[]; cancellationFee: number; noticeHours: number; note: string };
+}
+
+export interface PublicBooking {
+  ref: string;
+  status: "pending_payment" | "requested" | "confirmed" | "checked_in" | "completed" | "cancelled" | "declined" | "expired" | "no_show";
+  mode: "instant" | "request";
+  startAt: string | null;
+  endAt: string | null;
+  holdExpiresAt: string | null;
+  guests: { key: string; name: string | null; items: { name: string; price: number; artistName: string | null; startAt: string | null; endAt: string | null }[] }[];
+  pricing: { subtotal: number; discount: number; total: number };
+  payment: { kind: "full" | "deposit"; amount: number; status: string };
+}
+
+export interface ManageView {
+  booking: PublicBooking;
+  rules: {
+    canCancel: boolean;
+    canReschedule: boolean;
+    rescheduleBefore: string | null;
+    reschedulesLeft: number;
+    cancel: { refund: number; kept: number };
+    needsOtp: boolean;
+  };
+  refund: { amount: number; status: string } | null;
+  phoneHint: string;
+  salon: { phone: string | null; whatsapp: string | null; mapUrl: string | null; address: string | null; openingHours: SiteInfo["openingHours"]; holidays: string[] };
 }
 
 export interface PublicReel {
