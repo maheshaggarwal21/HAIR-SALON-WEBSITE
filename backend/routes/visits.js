@@ -286,9 +286,205 @@ router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, asy
 });
 
 // ─── POST /v2 — create paid draft (assignment pending) ─────────────────────
+// ─── Online bookings at checkout (CF §8, T2.16) ─────────────────────────────
+
+const { appointmentBill, appointmentBuckets, CheckoutError } = require("../utils/checkout");
+const Appointment = require("../models/Appointment");
+
+/**
+ * GET /appointment-bill/:id?serviceIds=a,b — what Visit Entry shows for a
+ * booking: prefill (name, phone, gender, services, artists, times) and the
+ * server's bill with the deposit taken off. Recomputed whenever staff add or
+ * remove a service, so the screen and the charge always agree.
+ */
+router.get("/appointment-bill/:id", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, res) => {
+  try {
+    const ids = req.query.serviceIds ? String(req.query.serviceIds).split(",").filter(Boolean) : null;
+    const bill = await appointmentBill({ appointmentId: req.params.id, serviceIds: ids });
+    const a = bill.appt;
+    return res.json({
+      appointment: {
+        _id: a._id,
+        ref: a.ref,
+        status: a.status,
+        name: a.name,
+        contact: a.contact,
+        gender: a.guests?.[0]?.gender || null,
+        startAt: a.startAt,
+        channel: a.source?.channel || null,
+        bookedServiceIds: a.guests.flatMap((g) => g.items.map((i) => String(i.serviceId))),
+      },
+      services: bill.services,
+      removed: bill.removed,
+      subtotal: bill.subtotal,
+      discountAmount: bill.discountAmount,
+      discountReason: bill.discountReason,
+      finalTotal: bill.finalTotal,
+      depositPaid: bill.depositPaid,
+      depositApplied: bill.depositApplied,
+      depositExcess: bill.depositExcess,
+      remainder: bill.remainder,
+    });
+  } catch (err) {
+    if (err instanceof CheckoutError) return res.status(err.status).json({ error: err.message });
+    console.error("[visits] appointment bill error:", err);
+    return res.status(500).json({ error: "Failed to load the booking" });
+  }
+});
+
+/**
+ * POST /v2 with `appointmentId`: the visit for a booking. One transaction:
+ * the Visit is written AND the booking becomes `completed` with `visitId`
+ * and `deposit.status = applied`. If anything fails, neither happens.
+ * Example C / E16: a deposit bigger than the bill queues the excess as a refund.
+ */
+async function createAppointmentVisit(req, res) {
+  const { appointmentId, serviceIds, paymentMethod = "online", cashAmount = 0, razorpayPaymentId = null, gender, date, serviceType, lockUntilAssigned = true } = req.body;
+  if (!["online", "cash", "card", "partial"].includes(paymentMethod)) return res.status(400).json({ error: "Invalid payment method" });
+
+  // Retried after success (lost response)? Same answer, nothing new written.
+  const already = await Visit.findOne({ appointmentId }).lean();
+  if (already) {
+    return res.status(200).json({
+      success: true,
+      duplicate: true,
+      visitId: already._id,
+      finalTotal: already.finalTotal,
+      assignmentStatus: already.assignmentStatus,
+      lockUntilAssigned: already.lockUntilAssigned,
+      services: already.services.map((s) => ({ serviceEntryId: s._id, serviceId: s.serviceId, serviceName: s.name, servicePrice: s.price })),
+    });
+  }
+
+  const session = await mongoose.startSession();
+  let visit;
+  let bill;
+  try {
+    await session.withTransaction(async () => {
+      bill = await appointmentBill({ appointmentId, serviceIds, session });
+      const buckets = appointmentBuckets(bill, { paymentMethod, cashAmount });
+      if (bill.remainder > 0 && ["online", "partial"].includes(paymentMethod) && !razorpayPaymentId) {
+        throw new CheckoutError("Razorpay Payment ID is required for the online part");
+      }
+      if (razorpayPaymentId && (await Visit.exists({ razorpayPaymentId }).session(session))) {
+        throw new CheckoutError("That payment is already on another visit", 409);
+      }
+      const a = bill.appt;
+      const g = String(gender || a.guests?.[0]?.gender || "").trim();
+      if (!["male", "female", "other", "prefer_not"].includes(g)) throw new CheckoutError("Gender is required");
+      const onlineMoney = bill.remainder > 0 && ["online", "partial"].includes(paymentMethod) ? razorpayPaymentId : null;
+
+      const services = bill.services.map((x) => ({
+        serviceId: x.serviceId,
+        name: x.name,
+        price: x.price,
+        listPrice: x.listPrice,
+        duration: x.duration,
+        // Prefilled from the booking; staff confirm or change them in the assignment step.
+        artistId: x.artistId,
+        artistName: x.artistName,
+        startTime: x.startTime,
+        endTime: x.endTime,
+        actualDurationMins: null,
+      }));
+
+      [visit] = await Visit.create(
+        [
+          {
+            schemaVersion: 2,
+            name: a.name,
+            contact: a.contact,
+            gender: g,
+            date: date ? new Date(date) : new Date(),
+            serviceType: serviceType || undefined,
+            services,
+            filledBy: req.session.name || "Unknown",
+            subtotal: bill.subtotal,
+            discountPercent: 0,
+            discountAmount: bill.discountAmount,
+            discountReason: bill.discountReason,
+            finalTotal: bill.finalTotal,
+            paymentMethod: buckets.paymentMethod,
+            cashAmount: buckets.cashAmount,
+            cardAmount: buckets.cardAmount,
+            onlineAmount: buckets.onlineAmount,
+            paymentStatus: "success",
+            razorpayPaymentId: onlineMoney,
+            appointmentId: a._id,
+            depositAmount: bill.depositApplied,
+            depositPaymentId: bill.depositApplied ? bill.depositPaymentId : null,
+            assignmentStatus: "pending",
+            lockUntilAssigned: !!lockUntilAssigned,
+            paymentConfirmedAt: new Date(),
+            paymentSnapshot: {
+              subtotal: bill.subtotal,
+              discountPercent: 0,
+              discountAmount: bill.discountAmount,
+              finalTotal: bill.finalTotal,
+              paymentMethod: buckets.paymentMethod,
+              cashAmount: buckets.cashAmount,
+              cardAmount: buckets.cardAmount,
+              onlineAmount: buckets.onlineAmount,
+              razorpayPaymentId: onlineMoney,
+            },
+          },
+        ],
+        { session }
+      );
+
+      const now = new Date();
+      const set = { status: "completed", visitId: visit._id };
+      if (bill.depositPaid > 0) set["deposit.status"] = "applied";
+      if (bill.depositExcess > 0) {
+        set.refund = { amount: bill.depositExcess, status: "pending", reason: "deposit_exceeds_bill", requestedAt: now, razorpayRefundId: null, processedAt: null, attempts: 0, error: null, claimedAt: null };
+      }
+      const done = await Appointment.updateOne(
+        { _id: a._id, status: a.status, visitId: null },
+        { $set: set, $push: { statusHistory: { from: a.status, to: "completed", at: now, by: req.session.name || "staff", byUserId: req.session.userId || null, reason: "visit" } } },
+        { session }
+      );
+      if (done.modifiedCount !== 1) throw new CheckoutError("This booking changed while billing — reload and try again", 409);
+      if (a.customerId) {
+        const Customer = require("../models/Customer");
+        await Customer.updateOne({ _id: a.customerId }, { $inc: { "stats.visits": 1 }, $set: { "stats.lastVisitAt": now } }, { session });
+      }
+    });
+  } catch (err) {
+    if (err instanceof CheckoutError) return res.status(err.status).json({ error: err.message });
+    if (err?.code === 11000) return res.status(409).json({ error: "This booking has already been billed" });
+    console.error("[visits] appointment visit error:", err);
+    return res.status(500).json({ error: "Failed to create the visit", details: err.message });
+  } finally {
+    await session.endSession();
+  }
+
+  if (visit.razorpayPaymentId) {
+    try {
+      await PaymentEvent.updateOne(
+        { razorpayPaymentId: visit.razorpayPaymentId },
+        { $set: { reconcileStatus: "matched", reconciledVisitId: visit._id, reconciledAt: new Date() } }
+      );
+    } catch (err) {
+      console.error("[visits] payment event reconcile failed:", visit.razorpayPaymentId, err.message);
+    }
+  }
+
+  return res.status(201).json({
+    success: true,
+    visitId: visit._id,
+    finalTotal: visit.finalTotal,
+    depositApplied: bill.depositApplied,
+    depositExcess: bill.depositExcess,
+    assignmentStatus: visit.assignmentStatus,
+    lockUntilAssigned: visit.lockUntilAssigned,
+    services: visit.services.map((s) => ({ serviceEntryId: s._id, serviceId: s.serviceId, serviceName: s.name, servicePrice: s.price })),
+  });
+}
+
 router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, res) => {
   try {
     await connectDB();
+    if (req.body?.appointmentId) return await createAppointmentVisit(req, res);
 
     const {
       name,

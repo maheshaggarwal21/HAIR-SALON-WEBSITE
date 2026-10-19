@@ -17,7 +17,9 @@ import {
   searchCustomers,
   fetchOrderStatus,
   fetchRecoverablePayment,
+  fetchAppointmentBill,
   type RecoverablePayment,
+  type AppointmentBill,
 } from "@/services/api";
 
 /** How often to ask our own server whether the order has been paid. */
@@ -94,6 +96,23 @@ export function useVisitForm() {
   const [recoveryLoading, setRecoveryLoading] = useState(!!recoverPaymentId);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  /**
+   * Booking mode — reached from the Today board's "Check in" via
+   * `/visit-entry?appointment=<id>` (CF §8, T2.16).
+   *
+   * The client, services and artists come from the booking. Prices are the
+   * SERVER's bill (booked items at their snapshot price, desk extras at the
+   * website price, no desk discount) and anything paid online when booking is
+   * already taken off, so "Total payable" is what is still due. The bill is
+   * fetched again whenever a service is added or removed, and the same server
+   * code prices the Razorpay order and the Visit — the screen can't disagree
+   * with the charge.
+   */
+  const appointmentId = searchParams.get("appointment");
+  const [booking, setBooking] = useState<AppointmentBill | null>(null);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const bookingPrefilled = useRef(false);
+
   const [formData, setFormData] = useState<VisitFormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<VisitFormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -163,6 +182,38 @@ export function useVisitForm() {
     };
   }, [recoverPaymentId]);
 
+  // Booking mode: load the booking once and fill the form from it.
+  useEffect(() => {
+    if (!appointmentId) return;
+    let cancelled = false;
+    fetchAppointmentBill(appointmentId)
+      .then((bill) => {
+        if (cancelled) return;
+        setBooking(bill);
+        const counts: Record<string, number> = {};
+        for (const id of bill.services.map((x) => x.serviceId)) counts[id] = (counts[id] || 0) + 1;
+        appliedPhone.current = bill.appointment.contact;
+        setFormData((prev) => ({
+          ...prev,
+          // A walk-in saved without a name is stored as "Walk-in" — leave the field for the desk to fill.
+          name: bill.appointment.name === "Walk-in" ? prev.name : bill.appointment.name,
+          phone: /^\d{10}$/.test(bill.appointment.contact) ? bill.appointment.contact : prev.phone,
+          gender: bill.appointment.gender || prev.gender,
+          searchService: Object.keys(counts),
+          serviceQuantities: counts,
+          discount: "0",
+          date: today,
+        }));
+        bookingPrefilled.current = true;
+      })
+      .catch((err) => {
+        if (!cancelled) setBookingError(err instanceof Error ? err.message : "Could not load the booking");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentId]);
+
   const serviceDisplayItems = useMemo(
     () =>
       dropdownData.services.map((s) => ({
@@ -187,23 +238,48 @@ export function useVisitForm() {
         return {
           id: serviceId,
           name: service.name,
-          price: service.price,
+          price: booking?.services.find((x) => x.serviceId === serviceId)?.price ?? service.price,
           quantity: Math.max(1, Number(formData.serviceQuantities[serviceId] || 1)),
         };
       })
       .filter((row): row is { id: string; name: string; price: number; quantity: number } => !!row);
-  }, [formData.searchService, formData.serviceQuantities, dropdownData.services]);
+  }, [formData.searchService, formData.serviceQuantities, dropdownData.services, booking]);
 
-  const subtotal = useMemo(() => {
+  const deskSubtotal = useMemo(() => {
     return selectedServiceIds.reduce((sum, id) => {
       const svc = dropdownData.services.find((s) => s.id === id);
       return sum + (svc?.price ?? 0);
     }, 0);
   }, [selectedServiceIds, dropdownData.services]);
 
-  const discountPct = Math.min(100, Math.max(0, Number(formData.discount) || 0));
-  const discountAmt = Math.round(subtotal * (discountPct / 100));
-  const payable = Math.max(0, subtotal - discountAmt);
+  // Booking mode: re-price on the server whenever the services change.
+  const selectedKey = selectedServiceIds.join(",");
+  useEffect(() => {
+    if (!appointmentId || !bookingPrefilled.current || !selectedKey) return;
+    let stale = false;
+    const t = window.setTimeout(() => {
+      fetchAppointmentBill(appointmentId, selectedKey.split(","))
+        .then((bill) => {
+          if (!stale) {
+            setBooking(bill);
+            setBookingError(null);
+          }
+        })
+        .catch((err) => {
+          if (!stale) setBookingError(err instanceof Error ? err.message : "Could not price the booking");
+        });
+    }, 250);
+    return () => {
+      stale = true;
+      window.clearTimeout(t);
+    };
+  }, [appointmentId, selectedKey]);
+
+  // In booking mode every figure is the server's bill; "payable" is what is still due.
+  const subtotal = booking ? booking.subtotal : deskSubtotal;
+  const discountPct = booking ? 0 : Math.min(100, Math.max(0, Number(formData.discount) || 0));
+  const discountAmt = booking ? booking.discountAmount : Math.round(subtotal * (discountPct / 100));
+  const payable = booking ? booking.remainder : Math.max(0, subtotal - discountAmt);
   const cashAmountNum = Math.max(0, Math.round((Number(formData.cashAmount) || 0) * 100) / 100);
   const onlinePayable = formData.paymentMode === "partial"
     ? Math.max(0, payable - cashAmountNum)
@@ -280,7 +356,8 @@ export function useVisitForm() {
     if (!formData.gender) e.gender = "Gender is required";
     if (!formData.date) e.date = "Date is required";
     if (subtotal <= 0) e.amount = "Select at least one service";
-    else if (payable <= 0) e.amount = "Payable amount must be greater than ₹0";
+    else if (payable <= 0 && !booking) e.amount = "Payable amount must be greater than ₹0";
+    if (bookingError) e.amount = bookingError;
 
     // Partial-payment validation
     if (formData.paymentMode === "partial") {
@@ -291,7 +368,7 @@ export function useVisitForm() {
         e.cashAmount = `Online portion must be at least ₹1 (max cash: ₹${(payable - 1).toLocaleString("en-IN")})`;
     }
 
-    if (formData.paymentMode === "card" && payable <= 0) {
+    if (formData.paymentMode === "card" && payable <= 0 && !booking) {
       e.amount = "Payable amount must be greater than ₹0";
     }
 
@@ -420,6 +497,7 @@ export function useVisitForm() {
         cardAmount: opts.cardAmount,
         onlineAmount: opts.onlineAmount,
         lockUntilAssigned: true,
+        appointmentId: booking?.appointment._id,
       });
 
       localStorage.setItem("pendingAssignmentVisitId", draft.visitId);
@@ -439,6 +517,12 @@ export function useVisitForm() {
             onlineAmount: payable,
           })
         );
+        return;
+      }
+
+      // Booking already paid in full online: nothing to collect, go to assignment.
+      if (booking && payable === 0) {
+        await withRetry(() => persistDraft({ paymentMethod: "online", onlineAmount: 0 }));
         return;
       }
 
@@ -475,6 +559,7 @@ export function useVisitForm() {
         discountPercent: discountPct,
         paymentMode: formData.paymentMode as "online" | "partial",
         cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
+        appointmentId: booking?.appointment._id,
       });
 
       /**
@@ -687,6 +772,8 @@ export function useVisitForm() {
     recovery,
     recoveryLoading,
     recoveryError,
+    booking,
+    bookingError,
     handleChange,
     handleSelect,
     handleMultiSelect,

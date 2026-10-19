@@ -247,7 +247,7 @@ test("site: settings subset, and no session cookie on any public response", asyn
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("set-cookie"), null);
   assert.equal(res.body.contact.address, "Green Park Colony, near Sunrise Hotel, Sirhind–Patiala Rd, Patiala");
-  assert.equal(res.body.contact.whatsapp, "9814830550");
+  assert.equal(res.body.contact.whatsapp, "9814830307");
   assert.equal(res.body.requestWindows.morning.start, "09:00");
   assert.equal(res.body.maxActiveBookingsPerPhone, undefined);
 });

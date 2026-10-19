@@ -102,7 +102,49 @@ async function processUpdate(update, req) {
 
 // ─── ✅ Approve / ❌ Deny ────────────────────────────────────────────────────
 
+/**
+ * ✅ Approve / ❌ Decline on a website booking request (CF §6, T2.10).
+ * Only an active owner whose linked chat is the one tapping may act — a
+ * forwarded message must not carry the power with it. Approve turns the
+ * held time firm; Decline frees it and queues a full refund (D18).
+ */
+async function handleBookingCallback(cq, req) {
+  const [, act, id] = String(cq.data).split(":");
+  const chatId = String(cq.message?.chat?.id ?? "");
+  const owner = await User.findOne({ role: "owner", isActive: true, telegramChatId: chatId }, { _id: 1, name: 1 }).lean();
+  if (!owner) return telegram.answerCallback(cq.id, "Only the owner can approve bookings here.");
+  if (!["a", "d"].includes(act) || !/^[a-f0-9]{24}$/i.test(id || "")) return telegram.answerCallback(cq.id, "Unrecognised action.");
+
+  const booking = require("../utils/booking");
+  const who = { by: owner.name || "Owner", byUserId: owner._id };
+  const out =
+    act === "a"
+      ? await booking.approveRequest(id, who)
+      : await booking.closeBooking(id, { from: "requested", to: "declined", side: "salon", reason: "declined on Telegram", ...who });
+
+  const original = cq.message?.text || "";
+  if (!out.ok) {
+    const Appointment = require("../models/Appointment");
+    const now = await Appointment.findById(id, { status: 1 }).lean();
+    const msg = out.error === "SLOT_TAKEN" ? "That time is no longer free — decline it or move it in the staff app." : `Already ${now?.status || "handled"}.`;
+    await telegram.answerCallback(cq.id, msg);
+    if (out.error !== "SLOT_TAKEN") await telegram.editMessage(chatId, cq.message.message_id, `${original}\n\n— ${msg}`);
+    return;
+  }
+  const verdict = act === "a" ? "✅ Approved" : "❌ Declined (full refund queued)";
+  await telegram.answerCallback(cq.id, act === "a" ? "Approved." : "Declined.");
+  await telegram.editMessage(chatId, cq.message.message_id, `${original}\n\n${verdict} by ${who.by}`);
+  await audit.record({
+    action: act === "a" ? "booking.confirmed" : "booking.declined",
+    req,
+    actor: { id: owner._id, name: who.by, role: "owner" },
+    target: { name: out.appt.name },
+    meta: { appointmentId: String(out.appt._id), ref: out.appt.ref, via: "telegram" },
+  });
+}
+
 async function handleCallback(cq, req) {
+  if (String(cq.data || "").startsWith("bk:")) return handleBookingCallback(cq, req);
   const [action, pendingId] = String(cq.data || "").split(":");
   if (!["approve", "deny"].includes(action) || !pendingId) {
     return telegram.answerCallback(cq.id, "Unrecognised action.");

@@ -94,40 +94,50 @@ const siteSettingsSchema = new mongoose.Schema(
     horizonDays: { type: Number, default: 30, min: 1, max: 120 },
     holdMinutes: { type: Number, default: 10 },
     requestSlaMinutes: { type: Number, default: 120 },
+    /** Free cancel / move until this many hours before the start (D47). */
     cancellationCutoffHours: { type: Number, default: 24 },
     maxActiveBookingsPerPhone: { type: Number, default: 3, min: 1 },
     maxGuests: { type: Number, default: 4 },
     maxOnlineReschedules: { type: Number, default: 2 },
     noShowGraceMinutes: { type: Number, default: 15 },
     deposit: {
-      /** D18: the "pay ₹500 now, rest at the salon" amount. */
-      amount: { type: Number, default: 500, min: 0 },
+      // The deposit amount is the cancellation fee (D47); only extras live here.
       peakDates: { type: [String], default: [] },
       peakDayAmount: { type: Number, default: 200 },
       repeatNoShowAmount: { type: Number, default: 200 },
       repeatNoShowThreshold: { type: Number, default: 2 },
     },
-    /** D18: kept on a customer cancellation or no-show; the rest is refunded. */
-    cancellationFee: { type: Number, default: 500, min: 0 },
-    /** Hours before the appointment within which cancelling is free. null = never free (D18). */
-    freeCancellationHours: { type: Number, default: null, min: 0 },
-    /** Google review link sent 2h after a completed visit (T2.12). */
-    reviewUrl: { type: String, default: null },
+    /**
+     * D47: kept on a late customer cancellation or no-show, and taken up front as the
+     * deposit. A percentage of the bill, rounded to `cancellationFeeRoundTo`, at least
+     * `cancellationFeeMin`, never more than the bill.
+     */
+    cancellationFeePercent: { type: Number, default: 30, min: 0, max: 100 },
+    cancellationFeeMin: { type: Number, default: 100, min: 0 },
+    cancellationFeeRoundTo: { type: Number, default: 10, min: 0 },
+    /**
+     * Refunds caused by the SALON (we cancel, decline, a request expires, money
+     * arrives after a hold ended) are sent automatically: the customer did
+     * nothing wrong and the amount is the full payment. Customer cancellations
+     * and no-shows always wait for the owner (the fee may be waived). Off =
+     * everything waits for the owner.
+     */
+    autoRefundSalonSide: { type: Boolean, default: true },
     policyVersion: { type: String, default: "2026-10-v1" },
 
     contact: {
       /** 10-digit numbers, no +91. */
-      phone: { type: String, default: "9814830550", match: /^[6-9]\d{9}$/ },
-      whatsapp: { type: String, default: "9814830550", match: /^[6-9]\d{9}$/ },
+      phone: { type: String, default: "9814830307", match: /^[6-9]\d{9}$/ },
+      whatsapp: { type: String, default: "9814830307", match: /^[6-9]\d{9}$/ },
       address: { type: String, default: "Green Park Colony, near Sunrise Hotel, Sirhind–Patiala Rd, Patiala" },
-      /** The owner's Google Maps share link (confirmed 14 Oct 2026). */
-      mapUrl: { type: String, default: "https://maps.app.goo.gl/3crtqx58iqAG4S568" },
+      /** Pin the owner sent on 19 Oct 2026 (replaces the 14 Oct share link). */
+      mapUrl: { type: String, default: "https://www.google.com/maps?q=30.366743,76.402412" },
       /**
        * The map shown in "Visit us" (an iframe src; null = no map). Default pins
        * the salon's Google listing coordinates. The owner can replace it with
        * Google Maps → Share → Embed a map (the whole <iframe> code is accepted).
        */
-      mapEmbedUrl: { type: String, default: "https://maps.google.com/maps?q=30.3667632,76.4024824&z=17&output=embed" },
+      mapEmbedUrl: { type: String, default: "https://maps.google.com/maps?q=30.366743,76.402412&z=17&output=embed" },
       placeId: { type: String, default: null },
       instagram: { type: String, default: "theexpertssalonpatiala" },
       /** Optional line under the address, e.g. "Free parking in front". */

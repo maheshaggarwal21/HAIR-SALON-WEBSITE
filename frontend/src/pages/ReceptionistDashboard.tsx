@@ -9,7 +9,10 @@
  *   /dashboard/receptionist/artists  → Artist Directory (if granted artists.view)
  *   /dashboard/receptionist/services → Services (if granted services.view)
  *   /dashboard/receptionist/team     → Team Management (if granted team.view)
+ *   /dashboard/receptionist/today    → Today board: walk-ins, check-in (if granted bookings.view)
  *   /dashboard/receptionist/requests → Website requests (if granted bookings.view)
+ *   /dashboard/receptionist/online-booking → Artists online, leave (bookings.view; edits need schedules.manage)
+ *   /dashboard/receptionist/refunds  → Refunds (if granted bookings.refund)
  *
  * Receptionists can view payment records and navigate to New Visit Entry.
  * Additional sidebar links appear when the owner grants extra permissions.
@@ -17,7 +20,7 @@
 
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, Inbox } from "lucide-react";
+import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, Inbox, CalendarDays, CalendarClock, RotateCcw } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import { useAuth } from "@/context/AuthContext";
 const PaymentHistory = lazy(() => import("@/pages/dashboard/PaymentHistory"));
@@ -28,12 +31,18 @@ const ArtistDashboardView = lazy(() => import("@/pages/dashboard/ArtistDashboard
 const ServiceManagement = lazy(() => import("@/pages/dashboard/ServiceManagement"));
 const TeamManagement = lazy(() => import("@/pages/dashboard/TeamManagement"));
 const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
+const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
+const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
+const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const receptionistLinks: SidebarLink[] = [
+  { to: "/dashboard/receptionist/today", label: "Today", icon: CalendarDays, requiredPermission: "bookings.view" },
   { to: "/dashboard/receptionist/requests", label: "Website Requests", icon: Inbox, requiredPermission: "bookings.view" },
+  { to: "/dashboard/receptionist/online-booking", label: "Online Booking", icon: CalendarClock, requiredPermission: "bookings.view" },
+  { to: "/dashboard/receptionist/refunds", label: "Refunds", icon: RotateCcw, requiredPermission: "bookings.refund" },
   { to: "/dashboard/receptionist/payments", label: "Payment History", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/receptionist/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/receptionist/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
@@ -139,6 +148,30 @@ export default function ReceptionistDashboard() {
           element={
             <RequirePermission permission={["team.view", "team.manage"]} backTo={HOME}>
               <TeamManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="today"
+          element={
+            <RequirePermission permission="bookings.view" backTo={HOME}>
+              <TodayBoard />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="online-booking"
+          element={
+            <RequirePermission permission="bookings.view" backTo={HOME}>
+              <OnlineBooking />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="refunds"
+          element={
+            <RequirePermission permission="bookings.refund" backTo={HOME}>
+              <Refunds />
             </RequirePermission>
           }
         />

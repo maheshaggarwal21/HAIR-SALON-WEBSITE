@@ -51,6 +51,8 @@ export default function VisitEntryPage() {
     recovery,
     recoveryLoading,
     recoveryError,
+    booking,
+    bookingError,
     handleChange,
     handleSelect,
     handleMultiSelect,
@@ -76,7 +78,7 @@ export default function VisitEntryPage() {
               className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-stone-300/60 bg-white/80 backdrop-blur-sm shadow-sm mb-5"
             >
               <span className="text-xs font-semibold text-stone-500 tracking-[0.18em] uppercase">
-                {recovery || recoveryLoading ? "Record Paid Visit" : "New Visit Entry"}
+                {recovery || recoveryLoading ? "Record Paid Visit" : booking ? `Booking ${booking.appointment.ref}` : "New Visit Entry"}
               </span>
             </motion.div>
 
@@ -88,6 +90,30 @@ export default function VisitEntryPage() {
             {recoveryError && (
               <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 {recoveryError}
+              </div>
+            )}
+            {/*
+              Booking mode (CF §8, T2.16): the client came from an online or phone
+              booking. What they paid online is already off the total below.
+            */}
+            {bookingError && (
+              <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {bookingError}
+              </div>
+            )}
+            {booking && (
+              <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50/80 px-5 py-4">
+                <p className="text-sm font-semibold text-sky-900">
+                  {booking.appointment.channel === "walkin" ? "Walk-in" : "Booking"} {booking.appointment.ref} · {booking.appointment.name}
+                </p>
+                <p className="text-xs text-sky-800/90 mt-1">
+                  Booked services keep the price the customer was quoted; anything added now is at the website price.
+                  {booking.depositApplied > 0 && ` ₹${booking.depositApplied.toLocaleString("en-IN")} already paid online is taken off.`}
+                  {booking.depositExcess > 0 && ` ₹${booking.depositExcess.toLocaleString("en-IN")} paid beyond this bill will be refunded (Refunds).`}
+                </p>
+                {booking.removed.length > 0 && (
+                  <p className="text-xs text-amber-800 mt-1">Not done today: {booking.removed.map((r) => r.name).join(", ")}</p>
+                )}
               </div>
             )}
             {recovery && (
@@ -316,6 +342,7 @@ export default function VisitEntryPage() {
                   </div>
                 </Field>
 
+                {!booking && (
                 <Field label="Discount (%)">
                   <div className="relative">
                     <Percent className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
@@ -332,6 +359,7 @@ export default function VisitEntryPage() {
                     />
                   </div>
                 </Field>
+                )}
               </div>
 
               {/*
@@ -497,6 +525,18 @@ export default function VisitEntryPage() {
                         <span>- INR {discountAmt.toLocaleString("en-IN")}</span>
                       </div>
                     )}
+                    {booking && booking.discountAmount > 0 && (
+                      <div className="flex items-center justify-between text-sm text-emerald-600 mb-1">
+                        <span>Package discount</span>
+                        <span>- INR {booking.discountAmount.toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    {booking && booking.depositApplied > 0 && (
+                      <div className="flex items-center justify-between text-sm text-sky-700 mb-1">
+                        <span>Paid online when booking</span>
+                        <span>- INR {booking.depositApplied.toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
                     <div className="border-t border-stone-200 mt-2 pt-2 flex items-center justify-between font-bold text-stone-900">
                       <span>Total Payable</span>
                       <span className="text-xl">INR {payable.toLocaleString("en-IN")}</span>
@@ -623,6 +663,11 @@ export default function VisitEntryPage() {
                         className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
                       />
                       Processing...
+                    </>
+                  ) : booking && payable === 0 ? (
+                    <>
+                      <IndianRupee className="w-4 h-4" />
+                      Already paid online — continue to assign
                     </>
                   ) : recovery ? (
                     <>

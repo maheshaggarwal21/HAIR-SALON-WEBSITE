@@ -4,15 +4,31 @@
  * a booking (CF §5.2, D18). The browser never sends a price; it sends service
  * ids and a payment choice, and this computes everything else.
  *
- * D18 (owner, 14 Oct 2026):
- *   - every online booking is paid online: in full, or a ₹500 deposit with the
- *     rest at the salon (deposit option only when it is less than the total);
- *   - on a customer cancellation or no-show the salon keeps a ₹500 fee
- *     (never more than was paid) and refunds the rest;
- *   - salon-side cancellations, declines and expiries refund everything.
+ * D18 (owner, 14 Oct 2026) — every online booking is paid online, in full or as
+ * a deposit with the rest at the salon; salon-side cancellations, declines and
+ * expiries refund everything — as changed by D47 (owner, 15 Oct 2026):
+ *   - the fee is a PERCENTAGE of the bill (30%, rounded to ₹10, at least ₹100,
+ *     never more than the bill), and the deposit IS that fee, paid up front;
+ *   - cancelling or moving is free until `cancellationCutoffHours` (24h) before
+ *     the start — the same for every service and every group size;
+ *   - later than that, or not coming, keeps the fee and refunds the rest.
  */
 
 const { rupees } = require("./money");
+
+/** The notice a booking needs for a free cancel or move: one window for every service (D47, D49). */
+function noticeHoursFor(_booking, settings) {
+  return settings.cancellationCutoffHours ?? 24;
+}
+
+/** The cancellation fee — and so the deposit — for a bill of `total` rupees (D47). */
+function feeFor(total, settings) {
+  const pct = settings.cancellationFeePercent ?? 30;
+  const step = settings.cancellationFeeRoundTo ?? 10;
+  const floor = settings.cancellationFeeMin ?? 100;
+  const rounded = step > 0 ? Math.round((total * pct) / 100 / step) * step : Math.round((total * pct) / 100);
+  return Math.min(total, Math.max(floor, rounded));
+}
 
 /**
  * @param {object}  opts
@@ -42,10 +58,12 @@ function buildQuote({ guests, services, settings, pkg = null }) {
   const discount = pkg ? Math.max(0, pkgItemsTotal - pkg.price) : 0;
   const total = subtotal - discount;
 
+  const fee = feeFor(total, settings);
   const perService = Math.max(0, ...[...services.values()].map((s) => s.depositAmount || 0));
-  const depositAmount = Math.min(total, Math.max(settings.deposit?.amount ?? 500, perService));
-  const fee = settings.cancellationFee ?? 500;
+  const depositAmount = Math.min(total, Math.max(fee, perService));
+  const noticeHours = noticeHoursFor(null, settings);
 
+  // Full payment first: it is the default, the deposit is the smaller commitment.
   const options = [{ kind: "full", amount: total, label: `Pay ${rupees(total)} now` }];
   if (depositAmount > 0 && depositAmount < total) {
     options.push({
@@ -64,19 +82,19 @@ function buildQuote({ guests, services, settings, pkg = null }) {
     payment: {
       options,
       cancellationFee: fee,
-      note: cancellationNote(fee, settings.freeCancellationHours),
+      noticeHours,
+      note: cancellationNote({ fee, percent: settings.cancellationFeePercent ?? 30, noticeHours }),
     },
   };
 }
 
-/** The one line shown under the Pay button (D18). */
-function cancellationNote(fee, freeHours) {
-  const base = `If you cancel or don't come, ${rupees(fee)} is kept as a cancellation fee and the rest is refunded.`;
-  return freeHours ? `Free to cancel until ${freeHours} hours before. After that: ${base.charAt(0).toLowerCase()}${base.slice(1)}` : base;
+/** The one line shown under the Pay button (D47). */
+function cancellationNote({ fee, percent, noticeHours }) {
+  return `Free to cancel or move until ${noticeHours} hours before. After that, or if you don't come, ${percent}% (${rupees(fee)}) is kept as a cancellation fee and the rest is refunded.`;
 }
 
 /**
- * What goes back when an appointment is cancelled (§5.2).
+ * What goes back when an appointment is cancelled (§5.2, D47).
  * @param {object} appt            Appointment (lean or doc)
  * @param {"customer"|"salon"|"system"} by
  * @param {object} settings
@@ -87,12 +105,14 @@ function refundFor(appt, by, settings, now = new Date()) {
   const paid = appt.deposit?.status === "paid" ? appt.deposit.amount || 0 : 0;
   if (!paid) return { refund: 0, kept: 0 };
   if (by !== "customer") return { refund: paid, kept: 0 };
-  const freeHours = settings.freeCancellationHours;
-  if (freeHours && appt.startAt && new Date(appt.startAt).getTime() - now.getTime() >= freeHours * 3600e3) {
+  // We changed the artist they chose: leaving is on us, not them (D51).
+  if (appt.artistChangedBySalon) return { refund: paid, kept: 0 };
+  const notice = noticeHoursFor(appt, settings);
+  if (appt.startAt && new Date(appt.startAt).getTime() - now.getTime() >= notice * 3600e3) {
     return { refund: paid, kept: 0 };
   }
-  const kept = Math.min(paid, settings.cancellationFee ?? 500);
+  const kept = Math.min(paid, feeFor(appt.pricing?.total ?? paid, settings));
   return { refund: paid - kept, kept };
 }
 
-module.exports = { buildQuote, refundFor, cancellationNote };
+module.exports = { buildQuote, refundFor, cancellationNote, feeFor, noticeHoursFor };

@@ -56,6 +56,8 @@ const visitSchema = new mongoose.Schema(
         // Snapshotting protects historical accuracy — if the admin edits
         // a service's duration tomorrow, past visits should not change.
         duration: { type: Number, default: null },
+        /** Internal menu price at the time, for analytics when `price` is the website price (CF §8, D3). */
+        listPrice: { type: Number, default: null },
 
         // V2 per-service assignment fields (null until confirmed).
         artistId: {
@@ -80,6 +82,18 @@ const visitSchema = new mongoose.Schema(
     discountPercent: { type: Number, default: 0, min: 0, max: 100 },
     discountAmount: { type: Number, default: 0, min: 0 },
     finalTotal: { type: Number, required: true, min: 0 },
+    /** Why there is a discount when it isn't the desk percentage, e.g. "package" (CF §8). */
+    discountReason: { type: String, default: null },
+
+    // ── Online booking (Phase 2, CF §8, T2.16) ──
+    /** The booking this visit closes. Unique: one booking, one visit. */
+    appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Appointment", default: null },
+    /**
+     * Money the customer paid online when booking (deposit or full, D18), taken
+     * off the bill here. Already inside onlineAmount — never counted twice.
+     */
+    depositAmount: { type: Number, default: 0, min: 0 },
+    depositPaymentId: { type: String, default: null },
 
     // ── Payment ──
     paymentMethod: {
@@ -133,5 +147,6 @@ visitSchema.index({ artist: 1, date: 1 });
 visitSchema.index({ contact: 1 });
 visitSchema.index({ assignmentStatus: 1, date: -1 });
 visitSchema.index({ lockUntilAssigned: 1, createdAt: -1 });
+visitSchema.index({ appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $type: "objectId" } } });
 
 module.exports = mongoose.model("Visit", visitSchema);

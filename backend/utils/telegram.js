@@ -175,8 +175,14 @@ async function answerCallback(callbackQueryId, text) {
   });
 }
 
-async function sendMessage(chatId, text) {
-  return call("sendMessage", { chat_id: chatId, text });
+/** Plain text. `extra` passes Telegram options through, e.g. { reply_markup } for buttons. */
+async function sendMessage(chatId, text, extra = {}) {
+  return call("sendMessage", { chat_id: chatId, text, ...extra });
+}
+
+/** Replace a message's text and drop its buttons (a resolved booking request). */
+async function editMessage(chatId, messageId, text) {
+  return call("editMessageText", { chat_id: chatId, message_id: messageId, text, reply_markup: { inline_keyboard: [] } });
 }
 
 /** Point Telegram at our webhook. Safe to call repeatedly — it is idempotent. */
@@ -266,6 +272,7 @@ module.exports = {
   resolveMessage,
   answerCallback,
   sendMessage,
+  editMessage,
   registerWebhook,
   getMe,
   startPolling,

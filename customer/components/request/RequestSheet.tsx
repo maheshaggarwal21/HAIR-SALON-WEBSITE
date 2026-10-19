@@ -42,7 +42,9 @@ interface Props {
 }
 
 export function RequestSheet({ site, services, artists, packages }: Props) {
-  const { isOpen, preset, openedAt, close } = useRequest();
+  const { isOpen: anyOpen, preset, openedAt, close, kind } = useRequest();
+  // With live booking on (Phase 2), the BookingSheet takes the buttons instead.
+  const isOpen = anyOpen && kind === "request";
   /**
    * The visitor's "now" is the moment they opened the sheet — never the
    * render, so the prerendered HTML can't bake in the build day's dates and

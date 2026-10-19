@@ -16,7 +16,7 @@ import { MapPin, MessageCircle } from "lucide-react";
 import { useRequest } from "./request/RequestContext";
 
 export function StickyMobileBar({ mapUrl, watchId }: { mapUrl: string | null; watchId?: string }) {
-  const { isOpen, open, formEnabled, whatsapp } = useRequest();
+  const { isOpen, open, formEnabled, whatsapp, kind } = useRequest();
   const [pastHero, setPastHero] = useState(!watchId);
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export function StickyMobileBar({ mapUrl, watchId }: { mapUrl: string | null; wa
             aria-haspopup="dialog"
             className="h-12 flex-1 rounded-[var(--radius-control)] bg-ink text-[15px] font-semibold text-ivory"
           >
-            Request a slot
+            {kind === "book" ? "Book a slot" : "Request a slot"}
           </button>
         )}
         {whatsapp && (

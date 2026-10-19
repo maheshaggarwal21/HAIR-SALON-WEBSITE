@@ -6,6 +6,7 @@ import { SITE_URL, INDEXABLE } from "@/lib/site";
 import { UtmCapture } from "@/components/UtmCapture";
 import { RequestProvider } from "@/components/request/RequestContext";
 import { RequestSheet } from "@/components/request/RequestSheet";
+import { BookingSheet } from "@/components/request/BookingSheet";
 import { StickyMobileBar } from "@/components/StickyMobileBar";
 import { Header } from "@/components/site/Header";
 import { OfferBar } from "@/components/offers/OfferBar";
@@ -68,6 +69,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     getCampaigns(),
   ]);
   const formAvailable = Boolean(site && her && him && (her.length || him.length));
+  // Phase 2 (T2.22): live booking once an artist is online and payments work.
+  const bookingEnabled = Boolean(formAvailable && site?.onlineBooking?.enabled);
 
   return (
     <html lang="en-IN" className={`${instrumentSerif.variable} ${manrope.variable} h-full antialiased`} suppressHydrationWarning>
@@ -75,14 +78,17 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT }} />
       </head>
       <body className="flex min-h-full flex-col bg-ivory">
-        <RequestProvider whatsappNumber={site?.contact.whatsapp ?? null} formAvailable={formAvailable}>
+        <RequestProvider whatsappNumber={site?.contact.whatsapp ?? null} formAvailable={formAvailable} bookingEnabled={bookingEnabled}>
           {/* Live offer (CF D29): colourful bar above the header on every page, and a pop-up. */}
           <OfferBar data={campaigns} />
           <Header />
           <div className="flex flex-1 flex-col">{children}</div>
           <Footer site={site} />
-          {site && formAvailable && (
+          {site && formAvailable && !bookingEnabled && (
             <RequestSheet site={site} services={{ her: her ?? [], him: him ?? [] }} artists={artists ?? []} packages={packages ?? []} />
+          )}
+          {site && bookingEnabled && (
+            <BookingSheet site={site} services={{ her: her ?? [], him: him ?? [] }} artists={artists ?? []} packages={packages ?? []} />
           )}
           <StickyMobileBar mapUrl={site?.contact.mapUrl ?? null} watchId="hero-cta" />
           <OfferPopup data={campaigns} />

@@ -17,10 +17,6 @@
     {
       "path": "/api/health",
       "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/reviews-refresh",
-      "schedule": "30 21 * * *"
     }
   ]
 }

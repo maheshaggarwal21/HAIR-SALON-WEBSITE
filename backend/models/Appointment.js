@@ -46,7 +46,7 @@ const MODES = ["instant", "request"];
 const CHANNELS = ["web", "desk", "phone", "whatsapp", "walkin"];
 const WINDOWS = ["morning", "afternoon", "evening"];
 const DEPOSIT_STATUSES = ["none", "pending", "paid", "refunded", "partially_refunded", "forfeited", "applied"];
-const REFUND_STATUSES = ["none", "pending", "processed", "failed"];
+const REFUND_STATUSES = ["none", "pending", "processing", "processed", "failed"];
 
 /**
  * Human booking code, e.g. "EXP-7K3Q9". The alphabet drops 0/O, 1/I/L and U/V
@@ -165,6 +165,8 @@ const appointmentSchema = new mongoose.Schema(
       processedAt: { type: Date, default: null },
       attempts: { type: Number, default: 0 },
       error: { type: String, default: null },
+      /** Set while a refund call is in flight, so a double tap can't refund twice. */
+      claimedAt: { type: Date, default: null },
     },
     /** Walk-in forced over a lock (E2): staff must move one of the two. */
     lockConflict: { type: Boolean, default: false },
@@ -191,6 +193,13 @@ const appointmentSchema = new mongoose.Schema(
     manageTokenHash: { type: String, default: null },
     rescheduleCount: { type: Number, default: 0 },
     checkedInAt: { type: Date, default: null },
+    /** "Finished" tap on the Today board: the real end of the service (start = checkedInAt). Feeds artist time performance. */
+    finishedAt: { type: Date, default: null },
+    /** Cancellation fee / forfeited deposit the salon KEPT, and when (D51). Shown on the Refunds screen: no Visit records it. */
+    feeKept: { type: Number, default: 0, min: 0 },
+    feeKeptAt: { type: Date, default: null },
+    /** The salon changed the artist the customer had named: they may cancel free whatever the notice (D51). */
+    artistChangedBySalon: { type: Boolean, default: false },
     visitId: { type: mongoose.Schema.Types.ObjectId, ref: "Visit", default: null },
     cancelledAt: { type: Date, default: null },
     cancelledBy: { type: String, enum: ["customer", "salon", "system", null], default: null },

@@ -202,6 +202,27 @@ app.post(
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
 
+      // Online booking (deposit or full payment, D18): the order was created by
+      // utils/booking.js with notes.kind = "booking". Confirm the booking here,
+      // server-to-server — this is the source of truth; the browser's
+      // verify-payment call is only a convenience (CF §5.3). Idempotent (E5).
+      if (payment.notes?.kind === "booking" && payment.order_id) {
+        if (payment.status !== "captured") return res.status(200).json({ received: true, booking: "not captured" });
+        const { confirmPayment } = require("./utils/booking");
+        const out = await confirmPayment({
+          orderId: payment.order_id,
+          paymentId: payment.id,
+          amount: Math.round((payment.amount || 0) / 100),
+        });
+        if (out.appt?._id) {
+          await PaymentEvent.updateOne(
+            { razorpayPaymentId: payment.id },
+            { $set: { purpose: "booking", appointmentId: out.appt._id, reconcileStatus: "matched_appointment", reconciledAt: new Date() } }
+          );
+        }
+        return res.status(200).json({ received: true, booking: out.outcome });
+      }
+
       if (!visit && payment.status === "captured") {
         console.warn(
           `[webhook] UNRECONCILED PAYMENT ${payment.id} ₹${Math.round((payment.amount || 0) / 100)} ` +
@@ -390,10 +411,49 @@ app.post("/api/create-order", authenticate, async (req, res) => {
     discountPercent = 0,
     paymentMode = "online",
     cashAmount = 0,
+    appointmentId = null,
   } = req.body;
 
   if (!name || !phone) {
     return res.status(400).json({ error: "name and phone are required" });
+  }
+
+  /**
+   * A booking at checkout (CF §8, T2.16): charge only what is still due — the
+   * booking's own prices, minus the deposit already paid online. Computed by
+   * utils/checkout.js, the same code the visit is written with.
+   */
+  if (appointmentId) {
+    try {
+      await connectDB();
+      const { appointmentBill, CheckoutError } = require("./utils/checkout");
+      let bill;
+      try {
+        bill = await appointmentBill({ appointmentId, serviceIds });
+      } catch (err) {
+        if (err instanceof CheckoutError) return res.status(err.status).json({ error: err.message });
+        throw err;
+      }
+      let chargeOnline = bill.remainder;
+      if (paymentMode === "partial") {
+        const cash = Math.round(Number(cashAmount) || 0);
+        if (cash <= 0 || cash >= bill.remainder) {
+          return res.status(400).json({ error: "Cash amount must be between ₹1 and the amount due minus ₹1" });
+        }
+        chargeOnline = bill.remainder - cash;
+      }
+      if (chargeOnline < 1) return res.status(400).json({ error: "Nothing is due online for this booking" });
+      const order = await razorpay.orders.create({
+        amount: Math.round(chargeOnline * 100),
+        currency: "INR",
+        receipt: `appt_${bill.appt.ref}_${Date.now()}`.slice(0, 40),
+        notes: { customer_name: String(name).trim(), customer_phone: String(phone).trim(), appointment_ref: bill.appt.ref, kind: "visit" },
+      });
+      return res.json({ order_id: order.id, amount: order.amount, currency: order.currency, key_id: process.env.RAZORPAY_KEY_ID, name: String(name).trim(), phone: String(phone).trim() });
+    } catch (err) {
+      console.error("[create-order] appointment order error:", err);
+      return res.status(500).json({ error: "Failed to create order" });
+    }
   }
   if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
     return res.status(400).json({ error: "serviceIds are required to compute the authoritative order amount" });
@@ -757,6 +817,7 @@ app.use("/api/admin", authenticate, require("./routes/admin"));
 app.use("/api/artists", authenticate, require("./routes/artists"));
 app.use("/api/services", authenticate, require("./routes/services"));
 app.use("/api/bookings", authenticate, require("./routes/bookings"));
+app.use("/api/schedules", authenticate, require("./routes/schedules"));
 app.use("/api/website", authenticate, require("./routes/website"));
 app.use("/api/artist-skills", authenticate, require("./routes/artistSkills"));
 app.use("/api/visits", authenticate, require("./routes/visits"));

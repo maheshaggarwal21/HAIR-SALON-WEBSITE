@@ -8,6 +8,7 @@
  * schedule instead:
  *
  *   GET https://api.thexpertshair.com/api/cron/requests-tick    every 15 min
+ *   GET https://api.thexpertshair.com/api/cron/bookings-tick    every 15 min (Phase 2)
  *   GET https://api.thexpertshair.com/api/cron/reviews-refresh  daily (Vercel Cron
  *       can run this one even on Hobby — it is in vercel.json)
  *   Header  Authorization: Bearer <CRON_SECRET>
@@ -133,6 +134,36 @@ for (const method of ["get", "post"]) {
   });
 }
 
+/**
+ * Phase 2 booking housekeeping, every 15 min from the outside timer (§16, T2.12):
+ *   - unpaid holds past holdMinutes → expired (after asking Razorpay whether
+ *     the order was paid after all — a slow webhook must not cost a booking);
+ *   - requests past their approval window → expired, full refund queued;
+ *   - 24h / 2h reminders (utils/booking.sendReminders);
+ *   - WhatsApp messages that failed → retried once (E21).
+ */
+async function bookingsTick(now = new Date()) {
+  const { expireBookings, sendReminders } = require("../utils/booking");
+  const { retryFailed } = require("../utils/notify");
+  const expired = await expireBookings(now);
+  const reminders = await sendReminders(now);
+  const retried = await retryFailed();
+  const refundsSent = await require("../utils/booking").retryAutoRefunds(now);
+  return { ...expired, ...reminders, messagesRetried: retried, autoRefundsRetried: refundsSent };
+}
+
+for (const method of ["get", "post"]) {
+  router[method]("/bookings-tick", async (_req, res) => {
+    try {
+      return res.json(await runJob("bookings-tick", () => bookingsTick()));
+    } catch (err) {
+      console.error("[cron] bookings-tick failed:", err);
+      return res.status(500).json({ error: "Job failed" });
+    }
+  });
+}
+
 module.exports = router;
 module.exports.requestsTick = requestsTick;
+module.exports.bookingsTick = bookingsTick;
 module.exports.reviewsRefresh = reviewsRefresh;

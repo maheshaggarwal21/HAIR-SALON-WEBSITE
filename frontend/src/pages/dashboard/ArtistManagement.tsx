@@ -69,6 +69,8 @@ export default function ArtistManagement() {
   const [artists, setArtists] = useState<ArtistRecord[]>([]);
   const [loadingArtists, setLoadingArtists] = useState(true);
   const [fetchError, setFetchError] = useState(false);
+  /** What happened to the artist's coming bookings when they were deactivated (D51). */
+  const [moveNotice, setMoveNotice] = useState<{ moved: number; stuck: { ref: string; name: string }[] } | null>(null);
 
   // Add panel
   const [showAddPanel, setShowAddPanel] = useState(false);
@@ -207,8 +209,13 @@ export default function ArtistManagement() {
         method: "DELETE",
         credentials: "include",
       });
-      if (res.ok) fetchArtists();
-      else setFetchError(true);
+      if (res.ok) {
+        const d = await res.json().catch(() => ({}));
+        const moved = d.reassigned?.moved?.length || 0;
+        const stuck = (d.reassigned?.flagged || []) as { ref: string; name: string }[];
+        setMoveNotice(moved || stuck.length ? { moved, stuck } : null);
+        fetchArtists();
+      } else setFetchError(true);
     } catch {
       setFetchError(true);
     }
@@ -335,6 +342,20 @@ export default function ArtistManagement() {
       {fetchError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           Failed to load artists. Check your connection and refresh.
+        </div>
+      )}
+
+      {moveNotice && (
+        <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${moveNotice.stuck.length ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+          {moveNotice.moved > 0 && <p>{moveNotice.moved} coming booking{moveNotice.moved === 1 ? "" : "s"} moved to other artists, same time. Customers who had chosen this artist were told on WhatsApp.</p>}
+          {moveNotice.stuck.length > 0 && (
+            <p className="font-medium">
+              Needs you on the Today board — nobody was free: {moveNotice.stuck.map((b) => `${b.ref} ${b.name}`).join(", ")}.
+            </p>
+          )}
+          <button type="button" onClick={() => setMoveNotice(null)} className="mt-1 underline underline-offset-2">
+            Dismiss
+          </button>
         </div>
       )}
 

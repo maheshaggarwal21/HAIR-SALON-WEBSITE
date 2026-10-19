@@ -46,7 +46,7 @@ export function dayParts(date: string) {
 
 const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
-export function isOpenOn(site: SiteInfo, date: string) {
+export function isOpenOn(site: Pick<SiteInfo, "openingHours" | "holidays">, date: string) {
   if (site.holidays.includes(date)) return false;
   const key = WEEKDAY_KEYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
   return (site.openingHours[key] || []).length > 0;
@@ -114,7 +114,7 @@ export function hoursSummary(site: SiteInfo) {
   return groups.map((g) => ({ days: g.from === g.to ? g.from : `${g.from}–${g.to}`, text: g.text }));
 }
 
-/** "9814830550" → "98148 30550" */
+/** "9814830307" → "98148 30307" */
 export const phoneLabel = (p: string) => p.replace(/(\d{5})(\d{5})/, "$1 $2");
 
 /**

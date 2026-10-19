@@ -36,9 +36,14 @@ class BookingError extends Error {
   }
 }
 
+/**
+ * D49: once online booking is on, every service the website offers is booked
+ * instantly and paid for — colour and bridal included. There is no "request"
+ * tier in the engine any more (the Website Requests inbox is only for when
+ * online booking is off). Hidden and walk-in-only services stay off the site.
+ */
 function effectiveMode(s) {
-  if (s.bookingMode === "instant" && s.requiresConsultation) return "request";
-  return s.bookingMode;
+  return s.bookingMode === "request" ? "instant" : s.bookingMode;
 }
 
 /** Working intervals of one artist on `date`, as epoch-ms pairs. */
@@ -92,15 +97,18 @@ async function loadServices(ids, { allowPackageOnly = new Set() } = {}) {
  * @param {Date}     [opts.now]
  * @param {string}   [opts.excludeAppointmentId]  ignore this booking's own locks (reschedule)
  * @param {boolean}  [opts.patchTestOk]
+ * @param {boolean}  [opts.staff]            front desk (E22): every active artist, no lead
+ *                                           time, no online share — the desk books for
+ *                                           people in front of it or on the phone
  */
-async function loadEngineInput({ date, guests, services, artistId = null, now = new Date(), excludeAppointmentId = null, patchTestOk = false }) {
+async function loadEngineInput({ date, guests, services, artistId = null, now = new Date(), excludeAppointmentId = null, patchTestOk = false, staff = false }) {
   const settings = (await SiteSettings.getSingleton()).toObject();
   const opening = openingIntervals(settings, date);
   const dayStart = salonInstant(date, "00:00");
   const dayEnd = new Date(dayStart.getTime() + DAY_MS);
 
   const [artists, timeOffs, locks, resources] = await Promise.all([
-    Artist.find({ isActive: true, onlineBookable: true }).lean(),
+    Artist.find(staff ? { isActive: true } : { isActive: true, onlineBookable: true }).lean(),
     TimeOff.find({ startAt: { $lt: dayEnd }, endAt: { $gt: dayStart } }).lean(),
     SlotLock.find({
       blockStart: { $gte: dayStart, $lt: dayEnd },
@@ -140,7 +148,7 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
     // Own rule, or the default for the artist's gender (D35).
     ...ruleSets(effectiveRule(a, settings.artistSkillDefaults)),
     intervals: artistIntervals(a, opening, date, timeOffs.filter((t) => String(t.artistId) === String(a._id))),
-    onlineShare: a.onlineShare ?? 100,
+    onlineShare: staff ? 100 : a.onlineShare ?? 100,
     onlineMinutesSold: soldOnline.get(String(a._id)) || 0,
     bookedMinutes: booked.get(String(a._id)) || 0,
   }));
@@ -171,7 +179,7 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
     mode,
     input: {
       now: now.getTime(),
-      minLeadMinutes: settings.minLeadMinutes,
+      minLeadMinutes: staff ? 0 : settings.minLeadMinutes,
       opening,
       guests: engineGuests,
       artists: engineArtists,
@@ -179,7 +187,7 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
       resources: resources.map((r) => ({ id: String(r._id), capacity: r.capacity })),
       resourceLocks,
       artistPref: artistId ? String(artistId) : null,
-      patchTestOk,
+      patchTestOk: staff ? true : patchTestOk,
     },
   };
 }

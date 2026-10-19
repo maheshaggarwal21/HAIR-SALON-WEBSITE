@@ -8,8 +8,8 @@
 import type { ServiceCard, SiteInfo } from "@/lib/types";
 import { SITE_URL } from "@/lib/site";
 
-// The salon's pin from the owner's Google Maps link (T0.2 K1).
-const GEO = { latitude: 30.3667632, longitude: 76.4024824 };
+// The salon's pin from the owner's Google Maps link (19 Oct 2026).
+const GEO = { latitude: 30.366743, longitude: 76.402412 };
 const DAY_SCHEMA = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" } as const;
 
 function Script({ data }: { data: object }) {
