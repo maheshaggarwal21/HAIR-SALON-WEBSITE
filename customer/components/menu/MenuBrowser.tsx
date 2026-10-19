@@ -52,15 +52,11 @@ export function MenuBrowser({ her, him, all }: { her: Card[]; him: Card[]; all: 
   const list = tab === "her" ? her : tab === "him" ? him : all;
   const categories = useMemo(() => [...new Set(list.map((c) => c.displayCategory).filter(Boolean))] as string[], [list]);
   const needle = q.trim().toLowerCase();
-  const shown = list.filter(
-    (c) =>
-      (!category || c.displayCategory === category) &&
-      (!needle || c.name.toLowerCase().includes(needle) || (c.shortDescription ?? "").toLowerCase().includes(needle))
-  );
-  const grouped = categories
-    .map((cat) => ({ cat, cards: shown.filter((c) => c.displayCategory === cat) }))
-    .filter((g) => g.cards.length);
-  const uncategorised = shown.filter((c) => !c.displayCategory);
+  // A card is one of the owner's groups ("Waxing (honey)"), so search its options too:
+  // "keratin" finds Hair treatments.
+  const matches = (c: Card) =>
+    [c.name, c.shortDescription ?? "", ...c.options.map((o) => o.label ?? "")].some((t) => t.toLowerCase().includes(needle));
+  const shown = list.filter((c) => (!category || c.displayCategory === category) && (!needle || matches(c)));
 
   return (
     <div>
@@ -100,32 +96,27 @@ export function MenuBrowser({ her, him, all }: { her: Card[]; him: Card[]; all: 
         </div>
       )}
 
-      <div className="mt-10 space-y-14">
-        {[...grouped, ...(uncategorised.length ? [{ cat: "More", cards: uncategorised }] : [])].map((g) => (
-          <section key={g.cat} aria-labelledby={`cat-${g.cat}`}>
-            <h2 id={`cat-${g.cat}`} className="font-serif text-[30px] leading-tight md:text-[40px]">
-              {g.cat}
-            </h2>
-            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {g.cards.map((c) => (
-                <div key={c.slug} className="flex flex-col">
-                  <ServiceCard service={c} showImage fill />
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <Link href={`/services/${c.slug}`} className="text-[14px] font-semibold text-ink-muted hover:text-ink">
-                      Details →
-                    </Link>
-                    <RequestCta
-                      preset={{ audience: tab === "all" ? (c.audience === "him" ? "him" : "her") : tab, optionIds: c.options.length === 1 ? [c.options[0].id] : [] }}
-                      label="Request"
-                      variant="secondary"
-                      className="h-10! px-4! md:h-10!"
-                    />
-                  </div>
-                </div>
-              ))}
+      {/* One grid in menu order (the API sorts by section, then the owner's order). Cards
+          are the owner's groups, so a heading per section would mostly sit over one card. */}
+      <div className="mt-10">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {shown.map((c) => (
+            <div key={c.slug} className="flex flex-col">
+              <ServiceCard service={c} showImage fill optionLimit={Infinity} />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <Link href={`/services/${c.slug}`} className="text-[14px] font-semibold text-ink-muted hover:text-ink">
+                  Details →
+                </Link>
+                <RequestCta
+                  preset={{ audience: tab === "all" ? (c.audience === "him" ? "him" : "her") : tab, optionIds: c.options.length === 1 ? [c.options[0].id] : [] }}
+                  label="Request"
+                  variant="secondary"
+                  className="h-10! px-4! md:h-10!"
+                />
+              </div>
             </div>
-          </section>
-        ))}
+          ))}
+        </div>
         {!shown.length && <p className="text-[16px] text-ink-muted">Nothing matches “{q}”. Try another word, or message us.</p>}
       </div>
     </div>

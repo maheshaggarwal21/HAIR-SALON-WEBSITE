@@ -103,7 +103,7 @@ function serviceCards(services, { detail = false } = {}) {
       name: cfg && !single ? cfg.title : lead.publicName || lead.name,
       displayCategory: (cfg && cfg.category) || lead.displayCategory || null,
       audience: lead.audience ?? null,
-      shortDescription: cfg && !single ? null : lead.shortDescription ?? null,
+      shortDescription: cfg && !single ? cfg.description ?? null : lead.shortDescription ?? null,
       images: members.find((m) => m.images?.length)?.images ?? [],
       featured: members.some((m) => m.featured),
       sortOrder: lead.sortOrder ?? 0,
@@ -152,7 +152,9 @@ function serviceCards(services, { detail = false } = {}) {
     first.requiresConsultation = first.requiresConsultation || c.requiresConsultation;
     first.requiresPatchTest = first.requiresPatchTest || c.requiresPatchTest;
     if (!first.images.length) first.images = c.images;
-    first.pick = "one";
+    first.shortDescription = first.shortDescription ?? c.shortDescription;
+    // Two "pick many" cards (men's and women's hair services) stay combinable.
+    first.pick = first.pick === "many" && c.pick === "many" ? "many" : "one";
   }
   cards.length = 0;
   cards.push(...merged);

@@ -13,6 +13,7 @@
     "migrate:m3": "node migrations/m3-public-price.js",
     "migrate:m4": "node migrations/m4-categories.js",
     "migrate:m6": "node migrations/m6-import-catalogue.js",
+    "migrate:m7": "node migrations/m7-website-menu.js",
     "export:catalogue": "node scripts/exportCatalogue.js",
     "find:place": "node scripts/findPlace.js"
   },

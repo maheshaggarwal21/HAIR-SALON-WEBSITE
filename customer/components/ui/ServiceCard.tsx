@@ -28,6 +28,7 @@ export function ServiceCard({
   showImage = false,
   imageSizes = CARD_SIZES,
   fill = false,
+  optionLimit = PREVIEW_OPTIONS,
 }: {
   service: Card;
   selectedOptionIds?: string[];
@@ -38,6 +39,8 @@ export function ServiceCard({
   imageSizes?: string;
   /** Grow to fill a flex column (grid cells), so a row of cards stays even. */
   fill?: boolean;
+  /** Menu card: how many options it lists before "+ N more". The full menu lists them all. */
+  optionLimit?: number;
 }) {
   const single = service.options.length === 1 ? service.options[0] : null;
   const selectable = Boolean(onToggle);
@@ -80,7 +83,11 @@ export function ServiceCard({
 
       <div className="mt-auto pt-4">
         {single ? (
-          <PriceTag price={single.price} durationMinutes={single.durationMinutes} />
+          <>
+            {/* A one-option group card ("Hair colour" for him) says what the option is. */}
+            {single.label && single.label !== service.name && <p className={`mb-1 text-[14px] ${muted}`}>{single.label}</p>}
+            <PriceTag price={single.price} durationMinutes={single.durationMinutes} />
+          </>
         ) : (
           <>
             <PriceTag price={service.fromPrice} from />
@@ -103,15 +110,15 @@ export function ServiceCard({
               {/* Menu card: a short price list of the first options, then "+ N more" (D34). */}
               {!selectable && (
                 <ul className={`w-full space-y-1 text-[14px] ${muted}`}>
-                  {service.options.slice(0, PREVIEW_OPTIONS).map((o) => (
+                  {service.options.slice(0, optionLimit).map((o) => (
                     <li key={o.id} className="flex items-baseline justify-between gap-3">
-                      <span className="min-w-0 truncate">{o.label ?? "Option"}</span>
+                      <span className="min-w-0">{o.label ?? "Option"}</span>
                       <span className={`tabular shrink-0 font-medium ${tone === "dark" ? "text-ivory" : "text-ink"}`}>₹{o.price.toLocaleString("en-IN")}</span>
                     </li>
                   ))}
-                  {service.options.length > PREVIEW_OPTIONS && (
+                  {service.options.length > optionLimit && (
                     <li className="pt-0.5 text-[13px] font-semibold">
-                      + {service.options.length - PREVIEW_OPTIONS} more {service.options.length - PREVIEW_OPTIONS === 1 ? "option" : "options"}
+                      + {service.options.length - optionLimit} more {service.options.length - optionLimit === 1 ? "option" : "options"}
                     </li>
                   )}
                 </ul>
@@ -170,5 +177,5 @@ export function ServiceCard({
  */
 const CARD_SIZES = "(min-width: 1024px) 400px, 213px";
 
-/** How many options a menu card lists before "+ N more" (the rest are on the detail page). */
+/** How many options a menu card lists before "+ N more" by default (home page, offers). */
 const PREVIEW_OPTIONS = 4;
