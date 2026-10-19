@@ -13,6 +13,7 @@
  *   GET /summary       — KPI summary (earnings, commission, customers, services)
  *   GET /services      — Services breakdown for the artist
  *   GET /daily-trend   — Daily revenue trend for charting
+ *   GET /my-day        — This artist's own bookings for one day (day sheet)
  */
 
 const express = require("express");
@@ -51,6 +52,61 @@ router.use(async (req, res, next) => {
   } catch (err) {
     console.error("[artist-dashboard] Artist lookup error:", err);
     return res.status(500).json({ error: "Failed to load artist profile" });
+  }
+});
+
+// ────────────────────────────────────────────────────
+// GET /my-day?date=YYYY-MM-DD — the artist's day sheet (T2.14 follow-up, D55)
+//
+// Each artist sees only THEIR OWN chair for the day: who is booked, for what,
+// from when to when, and anything the client wrote. No phone numbers, prices or
+// deposits — an artist does not need them to do the service, and the front desk
+// already owns that conversation. Unpaid holds and requests nobody has approved
+// are left out: they are not firm bookings and would only send an artist to
+// wait for someone who may never come.
+//
+// Reads the same board the front desk uses, so the two can never disagree.
+// ────────────────────────────────────────────────────
+const { isValidDate, salonDate, addDays, daysBetween } = require("../utils/time");
+const FIRM = ["confirmed", "checked_in", "completed", "no_show"];
+
+router.get("/my-day", async (req, res) => {
+  try {
+    const today = salonDate();
+    const date = req.query.date ? String(req.query.date) : today;
+    if (!isValidDate(date)) return res.status(400).json({ error: "Pick a valid date" });
+    const offset = daysBetween(today, date);
+    if (offset < -7 || offset > 21) return res.status(400).json({ error: "Pick a day from the last week to three weeks ahead" });
+
+    const { dayBoard } = require("../utils/board");
+    const board = await dayBoard(date);
+    const mine = board.artists.find((a) => String(a._id) === String(req.artistRecord._id));
+    if (!mine) return res.json({ date, today, closed: board.closed, working: [], leave: [], blocked: [], items: [] });
+
+    return res.json({
+      date,
+      today,
+      now: board.now,
+      closed: board.closed,
+      working: mine.working,
+      leave: mine.leave.map((l) => ({ start: l.start, end: l.end, reason: l.reason })),
+      blocked: mine.blocked,
+      items: mine.items
+        .filter((i) => FIRM.includes(i.status))
+        .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))
+        .map((i) => ({
+          ref: i.ref,
+          status: i.status,
+          name: i.name,
+          service: i.service,
+          startAt: i.startAt,
+          endAt: i.endAt,
+          notes: i.notes || null,
+        })),
+    });
+  } catch (err) {
+    console.error("[artist-dashboard] my-day error:", err);
+    return res.status(500).json({ error: "Failed to load your day" });
   }
 });
 
