@@ -16,6 +16,7 @@
  *   /dashboard/owner/artist-skills → Who can be booked for which services (CF D35)
  */
 
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -35,21 +36,21 @@ import {
   UserCog,
 } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
-import Management from "@/pages/dashboard/Management";
-import DashboardOverview from "@/pages/dashboard/shared/DashboardOverview";
-import DashboardAnalyticsView from "@/pages/dashboard/shared/DashboardAnalyticsView";
-import ServiceManagement from "@/pages/dashboard/ServiceManagement";
-import TeamManagement from "@/pages/dashboard/TeamManagement";
-import ArtistManagement from "@/pages/dashboard/ArtistManagement";
-import ArtistDashboardView from "@/pages/dashboard/ArtistDashboardView";
-import PaymentHistory from "@/pages/dashboard/PaymentHistory";
-import DataPipeline from "@/pages/dashboard/DataPipeline";
-import BookingRequests from "@/pages/dashboard/BookingRequests";
-import WebsiteSettings from "@/pages/dashboard/WebsiteSettings";
-import WebsiteMenu from "@/pages/dashboard/WebsiteMenu";
-import WebsiteReels from "@/pages/dashboard/WebsiteReels";
-import WebsiteOffers from "@/pages/dashboard/WebsiteOffers";
-import ArtistSkills from "@/pages/dashboard/ArtistSkills";
+const Management = lazy(() => import("@/pages/dashboard/Management"));
+const DashboardOverview = lazy(() => import("@/pages/dashboard/shared/DashboardOverview"));
+const DashboardAnalyticsView = lazy(() => import("@/pages/dashboard/shared/DashboardAnalyticsView"));
+const ServiceManagement = lazy(() => import("@/pages/dashboard/ServiceManagement"));
+const TeamManagement = lazy(() => import("@/pages/dashboard/TeamManagement"));
+const ArtistManagement = lazy(() => import("@/pages/dashboard/ArtistManagement"));
+const ArtistDashboardView = lazy(() => import("@/pages/dashboard/ArtistDashboardView"));
+const PaymentHistory = lazy(() => import("@/pages/dashboard/PaymentHistory"));
+const DataPipeline = lazy(() => import("@/pages/dashboard/DataPipeline"));
+const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
+const WebsiteSettings = lazy(() => import("@/pages/dashboard/WebsiteSettings"));
+const WebsiteMenu = lazy(() => import("@/pages/dashboard/WebsiteMenu"));
+const WebsiteReels = lazy(() => import("@/pages/dashboard/WebsiteReels"));
+const WebsiteOffers = lazy(() => import("@/pages/dashboard/WebsiteOffers"));
+const ArtistSkills = lazy(() => import("@/pages/dashboard/ArtistSkills"));
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
@@ -69,9 +70,20 @@ const ownerLinks = [
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus },
 ];
 
+/**
+ * Each page below is its own chunk, fetched when its route opens. They used to
+ * be imported eagerly, so every staff member downloaded the chart libraries
+ * and the Excel writer before the first screen (the receptionist never opens
+ * either).
+ */
+function PageFallback() {
+  return <div className="py-16 text-center text-sm text-stone-400">Loading…</div>;
+}
+
 export default function OwnerDashboard() {
   return (
     <DashboardLayout sidebarLinks={ownerLinks} pageTitle="Owner Dashboard">
+      <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route index element={<DashboardOverview />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
@@ -89,6 +101,7 @@ export default function OwnerDashboard() {
         <Route path="website-reels" element={<WebsiteReels />} />
         <Route path="website-offers" element={<WebsiteOffers />} />
       </Routes>
+      </Suspense>
     </DashboardLayout>
   );
 }

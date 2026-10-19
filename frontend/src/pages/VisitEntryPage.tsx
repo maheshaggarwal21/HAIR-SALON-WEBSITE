@@ -26,6 +26,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { cn } from "@/lib/utils";
 import AppLayout from "@/layouts/AppLayout";
 import { useVisitForm } from "@/hooks/useVisitForm";
+import type { CustomerSuggestion } from "@/types/visit";
 
 export default function VisitEntryPage() {
   const {
@@ -45,6 +46,7 @@ export default function VisitEntryPage() {
     cashAmountNum,
     onlinePayable,
     customerSuggestions,
+    customerLookupBy,
     searchingCustomers,
     recovery,
     recoveryLoading,
@@ -166,31 +168,13 @@ export default function VisitEntryPage() {
                       className={cn("pl-9", errors.phone && "border-red-400 focus-visible:ring-red-300")}
                     />
                   </div>
-                  {searchingCustomers && formData.phone.length >= 3 && (
-                    <p className="text-xs text-stone-500">Searching previous customers...</p>
+                  {customerLookupBy === "phone" && (
+                    <CustomerSuggestions
+                      searching={searchingCustomers && formData.phone.length >= 3}
+                      customers={customerSuggestions}
+                      onPick={applyCustomerSuggestion}
+                    />
                   )}
-                  <AnimatePresence>
-                    {customerSuggestions.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        className="mt-2 rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden"
-                      >
-                        {customerSuggestions.map((c) => (
-                          <button
-                            key={`${c.contact}-${c.name}`}
-                            type="button"
-                            onClick={() => applyCustomerSuggestion(c)}
-                            className="w-full text-left px-3 py-2 hover:bg-stone-50 transition-colors border-b border-stone-100 last:border-b-0"
-                          >
-                            <p className="text-sm font-medium text-stone-800">{c.name} · {c.contact}</p>
-                            <p className="text-xs text-stone-500">{c.gender}</p>
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </Field>
 
                 <Field label="Full Name" required error={errors.name}>
@@ -203,10 +187,22 @@ export default function VisitEntryPage() {
                       placeholder="e.g. Rahul Sharma"
                       value={formData.name}
                       onChange={handleChange}
-                      autoComplete="name"
+                      autoComplete="off"
                       className={cn("pl-9", errors.name && "border-red-400 focus-visible:ring-red-300")}
                     />
                   </div>
+                  {!formData.phone.trim() && (
+                    <p className="text-xs text-stone-400">
+                      Regular client? Type their name to find their number.
+                    </p>
+                  )}
+                  {customerLookupBy === "name" && (
+                    <CustomerSuggestions
+                      searching={searchingCustomers && !formData.phone.trim()}
+                      customers={customerSuggestions}
+                      onPick={applyCustomerSuggestion}
+                    />
+                  )}
                 </Field>
 
                 <Field label="Gender" required error={errors.gender}>
@@ -677,6 +673,73 @@ export default function VisitEntryPage() {
         </motion.div>
       </div>
     </AppLayout>
+  );
+}
+
+const GENDER_LABEL: Record<CustomerSuggestion["gender"], string> = {
+  female: "Female",
+  male: "Male",
+  other: "Other",
+  prefer_not: "Prefer not to say",
+};
+
+/**
+ * Previous customers matching what the desk has typed — by phone or by name.
+ * Visit count and last visit make a regular obvious, and tell two people with
+ * the same name apart along with their numbers.
+ */
+function CustomerSuggestions({
+  searching,
+  customers,
+  onPick,
+}: {
+  searching: boolean;
+  customers: CustomerSuggestion[];
+  onPick: (c: CustomerSuggestion) => void;
+}) {
+  return (
+    <>
+      {searching && <p className="text-xs text-stone-500">Searching previous customers...</p>}
+      <AnimatePresence>
+        {customers.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="mt-2 rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden"
+          >
+            {customers.map((c) => (
+              <button
+                key={`${c.contact}-${c.name}`}
+                type="button"
+                onClick={() => onPick(c)}
+                className="w-full text-left px-3 py-2 hover:bg-stone-50 transition-colors border-b border-stone-100 last:border-b-0"
+              >
+                <p className="text-sm font-medium text-stone-800">{c.name} · {c.contact}</p>
+                <p className="text-xs text-stone-500">
+                  {[
+                    c.visitCount
+                      ? `${c.visitCount} visit${c.visitCount === 1 ? "" : "s"}`
+                      : null,
+                    c.lastVisitDate
+                      ? `last ${new Date(c.lastVisitDate).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        })}`
+                      : null,
+                    GENDER_LABEL[c.gender] ?? c.gender,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

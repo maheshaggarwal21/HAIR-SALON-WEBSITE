@@ -17,6 +17,7 @@ const Artist = require("../models/Artist");
 const PaymentEvent = require("../models/PaymentEvent");
 const { authorizePermission, getUserPermissions } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require('../constants/permissions');
+const { salonDate, isValidDate, addDays } = require("../utils/time");
 
 const router = express.Router();
 
@@ -60,6 +61,20 @@ function toMins(t) {
 function escapeRegex(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * A visit that counts: paid, and either a legacy row or a V2 row whose artist
+ * assignment is finished. A paid V2 draft still waiting for assignment is not
+ * history yet.
+ */
+const SETTLED_VISIT = {
+  paymentStatus: "success",
+  $or: [
+    { assignmentStatus: { $exists: false } },
+    { assignmentStatus: "not_required" },
+    { assignmentStatus: "completed" },
+  ],
+};
 
 function derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount = 0 }) {
   const total = Math.round(Number(finalTotal) || 0);
@@ -664,67 +679,91 @@ router.post("/:id/confirm-assignment", authorizePermission(PERMISSIONS.VISIT_CRE
   }
 });
 
-// ─── GET /customers/search?phone=... ───────────────────────────────────────
-router.get("/customers/search", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, res) => {
-  try {
-    await connectDB();
+// ─── GET /customers/search?phone=… | ?name=… ─────────────────────────────────
+/**
+ * Find a returning customer by the start of their phone number OR by name.
+ *
+ * Name search exists because the owner asked for it (14 Oct 2026): regulars
+ * get tired of reading their number out on every visit, so the desk types
+ * "rahul sh" and picks the right Rahul from the list. Each word typed must
+ * start a word in the name, so "raj" finds "Raj Kumar" and "Kumar Raj" but
+ * not "Neeraj".
+ *
+ * One row per phone number (a person), newest visit first, at most 10. Same
+ * name on two numbers = two rows, which is how the desk tells them apart.
+ *
+ * Reads Visits, not Customer: Visits are the record of who actually came in,
+ * and the Customer backfill (M1) is not guaranteed to have run on every
+ * database. Returns no money — visit count and dates only.
+ *
+ * Open to visit.create (the visit form) and payments.view (Payment History).
+ */
+router.get(
+  "/customers/search",
+  authorizePermission([PERMISSIONS.VISIT_CREATE, PERMISSIONS.PAYMENTS_VIEW]),
+  async (req, res) => {
+    try {
+      await connectDB();
 
-    const phoneRaw = String(req.query.phone || "").trim();
-    if (!phoneRaw) return res.json({ customers: [] });
-    if (!/^[0-9]{3,10}$/.test(phoneRaw)) {
-      return res.status(400).json({ error: "phone query must be 3 to 10 digits" });
-    }
+      const phoneRaw = String(req.query.phone || "").trim();
+      const nameRaw = String(req.query.name || "").trim().replace(/\s+/g, " ");
 
-    const phoneRegex = new RegExp(`^${escapeRegex(phoneRaw)}`);
-
-    const visits = await Visit.find(
-      {
-        contact: { $regex: phoneRegex },
-        paymentStatus: "success",
-        $or: [
-          { assignmentStatus: { $exists: false } },
-          { assignmentStatus: "not_required" },
-          { assignmentStatus: "completed" },
-        ],
-      },
-      {
-        name: 1,
-        contact: 1,
-        gender: 1,
-        date: 1,
-        createdAt: 1,
+      let match;
+      if (phoneRaw) {
+        if (!/^[0-9]{3,10}$/.test(phoneRaw)) {
+          return res.status(400).json({ error: "phone query must be 3 to 10 digits" });
+        }
+        match = { contact: { $regex: new RegExp(`^${escapeRegex(phoneRaw)}`) } };
+      } else if (nameRaw) {
+        if (nameRaw.replace(/ /g, "").length < 2 || nameRaw.length > 60) {
+          return res.status(400).json({ error: "name query must be 2 to 60 characters" });
+        }
+        const words = nameRaw.split(" ").slice(0, 4);
+        match = {
+          $and: words.map((w) => ({
+            name: { $regex: `(^|\\s)${escapeRegex(w)}`, $options: "i" },
+          })),
+        };
+      } else {
+        return res.json({ customers: [] });
       }
-    )
-      .sort({ date: -1, createdAt: -1 })
-      .limit(50)
-      .lean();
 
-    const latestByContact = new Map();
-    for (const v of visits) {
-      const key = String(v.contact || "");
-      if (!latestByContact.has(key)) {
-        latestByContact.set(key, {
-          name: v.name,
-          contact: v.contact,
-          gender: v.gender,
-          lastVisitDate: v.date,
-          lastSeenAt: v.createdAt,
-        });
-      }
+      const rows = await Visit.aggregate([
+        { $match: { ...SETTLED_VISIT, ...match } },
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: "$contact",
+            // Newest visit wins: the name and gender the desk last recorded.
+            name: { $first: "$name" },
+            gender: { $first: "$gender" },
+            lastVisitDate: { $first: "$date" },
+            lastSeenAt: { $first: "$createdAt" },
+            firstVisitDate: { $last: "$date" },
+            visitCount: { $sum: 1 },
+          },
+        },
+        { $sort: { lastVisitDate: -1, lastSeenAt: -1 } },
+        { $limit: 10 },
+      ]);
+
+      return res.json({
+        customers: rows.map(({ _id, ...rest }) => ({ contact: _id, ...rest })),
+      });
+    } catch (err) {
+      console.error("[visits] Customer search error:", err);
+      return res.status(500).json({ error: "Failed to search customers" });
     }
-
-    return res.json({ customers: [...latestByContact.values()].slice(0, 10) });
-  } catch (err) {
-    console.error("[visits] Customer search error:", err);
-    return res.status(500).json({ error: "Failed to search customers" });
   }
-});
+);
 
 // ─── GET /history — Paginated payment history ─────────────────────────────────
 // Access: receptionist, manager, owner
 // Query params:
-//   from        YYYY-MM-DD  (default: start of this month)
-//   to          YYYY-MM-DD  (default: today)
+//   from        YYYY-MM-DD  (default: start of this month, IST)
+//   to          YYYY-MM-DD  (default: today, IST)
+//   contact     string      (optional: ONE customer's full history, all dates —
+//                            from/to are ignored. Exact stored phone number.)
 //   customer    string      (optional, case-insensitive customer name filter)
 //   artist      string      (optional, case-insensitive artist name filter)
 //   method      online|cash|card|partial (optional payment method filter)
@@ -736,47 +775,61 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
   try {
     await connectDB();
 
-    const today = new Date();
-    const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-
-    const fromRaw = req.query.from ? new Date(req.query.from) : defaultFrom;
-    const toRaw = req.query.to ? new Date(req.query.to) : today;
-
-    // Set time bounds to capture full days
-    const from = new Date(fromRaw);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(toRaw);
-    to.setHours(23, 59, 59, 999);
-
-    if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    /**
+     * Calendar days, in IST.
+     *
+     * The visit form stores `date` as the IST calendar day at UTC midnight
+     * ("2026-10-14" → 2026-10-14T00:00Z), so a day's visits are exactly
+     * [D 00:00Z, D 23:59:59.999Z]. This used to be built with setHours() in the
+     * server's own timezone, which only lined up because Vercel runs in UTC —
+     * and "today" itself came from the UTC clock, i.e. yesterday in Patiala
+     * until 05:30 IST.
+     */
+    const today = salonDate();
+    const fromKey = req.query.from ? String(req.query.from) : `${today.slice(0, 7)}-01`;
+    const toKey = req.query.to ? String(req.query.to) : today;
+    if (!isValidDate(fromKey) || !isValidDate(toKey)) {
       return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD." });
     }
 
+    const contact = req.query.contact ? String(req.query.contact).trim() : "";
+    if (contact.length > 20) {
+      return res.status(400).json({ error: "Contact filter is too long" });
+    }
+
     /**
-     * `payments.today_only` clamps the range to the current day.
+     * `payments.today_only` — the front-desk view (owner, 14 Oct 2026, D39):
+     *
+     *   1. Dates are clamped to TODAY AND YESTERDAY. Yesterday was added so the
+     *      desk can answer "I paid yesterday" without calling the owner.
+     *   2. One customer's history (`contact`) is NOT clamped: the desk can see
+     *      everything that person has paid since their first visit. It is one
+     *      exact phone number at a time, found through the name/phone lookup,
+     *      so it cannot be widened into browsing the whole book.
+     *   3. Revenue totals for today and yesterday ARE shown (owner, 16 Oct
+     *      2026 — the desk wanted the day's takings). They can only ever cover
+     *      that two-day window because `from`/`to` are clamped above. A single
+     *      customer's history (`contact`) has NO totals: that view spans every
+     *      date, so a sum there would be the salon's lifetime figure for one
+     *      person, and the desk only needs the rows.
      *
      * Enforced HERE, not in the UI. Hiding the date buttons stops an honest
      * receptionist browsing last month's takings; it does nothing about someone
-     * editing the `from=` parameter in the address bar. The server has to be
-     * the thing that refuses, so the clamp is applied after parsing and before
-     * the filter is built — every read below inherits it, including the summary
-     * totals and the row count.
+     * editing the `from=` parameter in the address bar.
+     *
+     * The key keeps its old name so accounts that already hold it get the new
+     * behaviour without anyone re-ticking a box.
      *
      * The owner bypasses PBAC everywhere else, so it bypasses this too.
      */
     const permissions = await getUserPermissions(req.session.userId);
-    const todayOnly =
+    const restricted =
       req.session.role !== "owner" &&
       permissions.includes(PERMISSIONS.PAYMENTS_TODAY_ONLY);
 
-    if (todayOnly) {
-      const now = new Date();
-      // Mutate in place — `from`/`to` are const bindings to Date objects.
-      from.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
-      from.setHours(0, 0, 0, 0);
-      to.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
-      to.setHours(23, 59, 59, 999);
-    }
+    const deskWindow = restricted ? { from: addDays(today, -1), to: today } : null;
+    const from = deskWindow && fromKey < deskWindow.from ? deskWindow.from : fromKey;
+    const to = deskWindow && toKey > deskWindow.to ? deskWindow.to : toKey;
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
@@ -793,16 +846,18 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
       return res.status(400).json({ error: "Invalid payment method filter." });
     }
 
-    // Build filter
-    const baseFilter = {
-      date: { $gte: from, $lte: to },
-      paymentStatus: "success",
-      $or: [
-        { assignmentStatus: { $exists: false } },
-        { assignmentStatus: "not_required" },
-        { assignmentStatus: "completed" },
-      ],
-    };
+    // Build filter. A customer's history spans every date; anything else is a
+    // day range ($gte > $lte simply matches nothing, which is the right answer
+    // for a range that falls wholly outside the restricted window).
+    const baseFilter = contact
+      ? { ...SETTLED_VISIT, contact }
+      : {
+          ...SETTLED_VISIT,
+          date: {
+            $gte: new Date(`${from}T00:00:00.000Z`),
+            $lte: new Date(`${to}T23:59:59.999Z`),
+          },
+        };
 
     const filter = { ...baseFilter };
 
@@ -859,8 +914,10 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
         .select(selectFields)
         .lean(),
       Visit.countDocuments(filter),
-      // Aggregate summary for the filtered range
-      Visit.aggregate([
+      // Aggregate summary for the filtered range. For the front-desk view the
+      // range is already clamped to today + yesterday; a one-customer history
+      // gets none — see `restricted` above.
+      restricted && contact ? Promise.resolve(null) : Visit.aggregate([
         { $match: filter },
         {
           $group: {
@@ -908,12 +965,15 @@ router.get("/history", authorizePermission(PERMISSIONS.PAYMENTS_VIEW), async (re
     return res.json({
       visits,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      summary: summary[0] || { totalRevenue: 0, totalCash: 0, totalCard: 0, totalOnline: 0, totalDiscount: 0, count: 0 },
+      summary: restricted && contact
+        ? null
+        : summary[0] || { totalRevenue: 0, totalCash: 0, totalCard: 0, totalOnline: 0, totalDiscount: 0, count: 0 },
       schemaCounts,
-      // Lets the UI explain why the date filters are gone, instead of the page
+      // Lets the UI explain why most date filters are gone, instead of the page
       // looking broken to a receptionist who remembers them being there.
-      restrictedToToday: todayOnly,
-      range: { from, to },
+      restricted,
+      window: deskWindow,
+      range: contact ? null : { from, to },
     });
   } catch (err) {
     console.error("[visits] History error:", err);
