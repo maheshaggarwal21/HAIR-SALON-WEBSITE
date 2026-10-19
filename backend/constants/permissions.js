@@ -23,6 +23,8 @@ const PERMISSIONS = Object.freeze({
   // Customer platform (CONTROL_FLOW_AND_DATA_LOGIC.md §19)
   BOOKINGS_VIEW:         'bookings.view',
   BOOKINGS_MANAGE:       'bookings.manage',
+  BOOKINGS_REFUND:       'bookings.refund',
+  SCHEDULES_MANAGE:      'schedules.manage',
   WEBSITE_MANAGE:        'website.manage',
 });
 
@@ -42,6 +44,7 @@ const ROLE_DEFAULTS = {
     'visit.create',
     'bookings.view',
     'bookings.manage',
+    'schedules.manage',
   ],
   receptionist: [
     'payments.view',
@@ -77,6 +80,8 @@ const PERMISSION_LABELS = {
   'visit.create':          'Create Visit Entries',
   'bookings.view':         'View Website Requests & Bookings',
   'bookings.manage':       'Handle Requests & Bookings (Confirm / Decline / Notes)',
+  'bookings.refund':       'Send refunds for online bookings',
+  'schedules.manage':      'Online booking: artists on/off, leave and blocked time',
   'website.manage':        'Manage Website (Settings, Public Menu, Artist Profiles)',
 };
 
@@ -106,7 +111,7 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Bookings',
-    keys:  ['bookings.view', 'bookings.manage'],
+    keys:  ['bookings.view', 'bookings.manage', 'bookings.refund', 'schedules.manage'],
   },
   {
     label: 'Website',

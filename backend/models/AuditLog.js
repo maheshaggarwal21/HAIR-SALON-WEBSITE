@@ -56,6 +56,22 @@ const ACTIONS = [
   "booking.declined",
   "booking.cancelled",
   "booking.note_changed",
+  // Phase 2: slot engine, Today board, refunds
+  "artist.schedule_changed",
+  "artist.time_off_added",
+  "artist.time_off_removed",
+  "booking.walkin_created",
+  "booking.created_by_staff",
+  "booking.moved",
+  "booking.checked_in",
+  "booking.finished",
+  "booking.refund_setting_changed",
+  "booking.no_show",
+  "booking.time_blocked",
+  "booking.time_unblocked",
+  "booking.refund_sent",
+  "booking.refund_failed",
+  "booking.refund_waived",
   // Data
   "migration.applied",
 ];

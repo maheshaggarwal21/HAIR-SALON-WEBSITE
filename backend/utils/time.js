@@ -80,6 +80,27 @@ function workingMinutesBetween(settings, from, to) {
   return Math.floor(total);
 }
 
+/**
+ * The instant `minutes` of OPENING hours after `from` — the end of a request's
+ * SLA (CF §6). A request paid at 22:00 on Monday with a 120-minute SLA, Tuesday
+ * off, expires at 11:00 on Wednesday. Returns null if the salon has no opening
+ * hours in the next 60 days (nothing to count against).
+ */
+function addWorkingMinutes(settings, from, minutes) {
+  let left = minutes * 60_000;
+  for (let day = salonDate(from), i = 0; i < 60; day = addDays(day, 1), i++) {
+    if (settings.holidays?.includes(day)) continue;
+    for (const { open, close } of settings.openingHours?.[weekdayKey(day)] || []) {
+      const start = Math.max(salonInstant(day, open).getTime(), from.getTime());
+      const end = salonInstant(day, close).getTime();
+      if (end <= start) continue;
+      if (end - start >= left) return new Date(start + left);
+      left -= end - start;
+    }
+  }
+  return null;
+}
+
 // ── 15-minute grid (T2.3) ────────────────────────────────────────────────────
 // IST is UTC+05:30 — a whole number of 15-minute steps — so a block that starts
 // on a quarter hour in Patiala also starts on a quarter hour of epoch time.
@@ -159,5 +180,6 @@ module.exports = {
   weekdayKey,
   addDays,
   workingMinutesBetween,
+  addWorkingMinutes,
   TIME_RE,
 };

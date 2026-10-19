@@ -277,12 +277,33 @@ router.patch(
       .custom((v) => v === null || /^https:\/\/\S+$/.test(v) || /^\/images\/[\w./-]+$/.test(v))
       .withMessage("Owner photo needs an https link"),
     body("owner.visible").optional().isBoolean({ strict: true }),
+    body("forceHolidays").optional().isBoolean({ strict: true }),
   ],
   async (req, res) => {
     if (firstError(req, res)) return;
     try {
       const doc = await SiteSettings.getSingleton();
       const before = doc.toObject();
+
+      // E23: a new holiday over existing bookings is shown to the owner first.
+      // Saving anyway closes the day online; the bookings stay for reception
+      // to move or cancel (never cancelled automatically).
+      if (Array.isArray(req.body.holidays) && req.body.forceHolidays !== true) {
+        const added = [...new Set(req.body.holidays)].filter((d) => !(before.holidays || []).includes(d));
+        const { bookingsOverlapping } = require("../utils/booking");
+        const { salonInstant, addDays } = require("../utils/time");
+        const conflicts = [];
+        for (const d of added) {
+          const list = await bookingsOverlapping({ from: salonInstant(d, "00:00"), to: salonInstant(addDays(d, 1), "00:00") });
+          conflicts.push(...list.map((c) => ({ ...c, date: d })));
+        }
+        if (conflicts.length) {
+          return res.status(409).json({
+            error: `${conflicts.length} booking${conflicts.length === 1 ? "" : "s"} on the new holiday${added.length === 1 ? "" : "s"}. Move them first, or save anyway.`,
+            conflicts,
+          });
+        }
+      }
       applyPaths(doc, req.body, SETTINGS_PATHS);
       if (Array.isArray(req.body.holidays)) doc.holidays = [...new Set(req.body.holidays)].sort();
       await doc.save();

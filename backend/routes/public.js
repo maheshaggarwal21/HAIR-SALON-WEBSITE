@@ -14,6 +14,7 @@
  *   GET  /reviews            Google rating + reviews, cached daily (T1.21)
  *   GET  /campaigns          offers live now or starting within 7 days (CF D29)
  *   POST /requests           request-lite booking (§6.1): Turnstile + Mongo limits
+ *   + routes/publicBooking.js: /availability, /quote, /otp/*, /appointments (Phase 2)
  *
  * ── Mounted BEFORE the session and the global limiter (index.js) ─────────────
  * Public visitors have no session, so express-session never runs for them and
@@ -92,14 +93,31 @@ function sendValidation(res, errors) {
 // ─── GET /site ───────────────────────────────────────────────────────────────
 router.get("/site", readLimit, async (_req, res) => {
   try {
-    const [settings, reviews, clients] = await Promise.all([
+    const [settings, reviews, clients, anyOnline] = await Promise.all([
       SiteSettings.getSingleton(),
       ReviewCache.findOne({ key: "google" }, { rating: 1, count: 1, mapsUri: 1 }).lean(),
       clientsServed(),
+      Artist.exists({ isActive: true, onlineBookable: true }),
     ]);
     cacheFor(res, 60);
+    // Phase 2 (T2.22): the website offers live booking only when an artist is
+    // switched on AND payments and WhatsApp codes can actually work; otherwise
+    // it stays on request-lite. Switching every artist off is the rollback (CP4).
+    const payments = require("../utils/payments");
+    const whatsapp = require("../utils/whatsapp");
+    const canSendCodes = whatsapp.isConfigured() && Boolean(whatsapp.templateFor("otp"));
+    const onlineBooking = {
+      enabled: Boolean(anyOnline) && payments.isConfigured() && (canSendCodes || process.env.NODE_ENV !== "production"),
+      maxGuests: settings.maxGuests,
+      holdMinutes: settings.holdMinutes,
+      cancellationFeePercent: settings.cancellationFeePercent ?? 30,
+      cancellationFeeMin: settings.cancellationFeeMin ?? 100,
+      noticeHours: settings.cancellationCutoffHours ?? 24,
+      razorpayKeyId: process.env.RAZORPAY_KEY_ID || null,
+    };
     return res.json({
       ...settings.toPublic(),
+      onlineBooking,
       // Live from Google when the Places feed runs; otherwise the figures the
       // owner copied from the salon's Google profile (CF D27). Never invented.
       rating: reviews?.rating
@@ -620,5 +638,11 @@ router.post("/requests", rejectUnknownFields, requestIpLimit, requestValidators,
   }
 });
 
+// ─── Phase 2: slot engine (T2.5–T2.8) ───────────────────────────────────────
+// Shares this router's connectDB middleware and its early mount (D16).
+router.use(require("./publicBooking"));
+
 module.exports = router;
 module.exports.dateProblem = dateProblem;
+module.exports.livePackages = livePackages;
+module.exports.loadPublicArtists = loadPublicArtists;

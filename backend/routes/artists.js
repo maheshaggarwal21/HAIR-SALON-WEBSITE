@@ -26,6 +26,25 @@ const { invalidateUserSessions } = require("../utils/sessionUtils");
 // The website lists active artists (K6): refresh it after every change (T1.24).
 const { revalidateSite } = require("../utils/revalidate");
 
+/**
+ * An artist who leaves the salon (deactivated or deleted): their coming bookings
+ * move to free artists, like leave (D48, D51). Call AFTER the artist is
+ * inactive, so the engine can't pick them as their own replacement. Never throws.
+ */
+async function releaseBookingsOf(req, artist) {
+  try {
+    const { reassignForLeave } = require("../utils/booking");
+    const { alertReassigned } = require("../utils/bookingAlerts");
+    const from = new Date();
+    const out = await reassignForLeave({ artistId: artist._id, from, to: new Date(from.getTime() + 400 * 24 * 3600e3), reason: null, by: req.session?.name || "staff", byUserId: req.session?.userId || null });
+    await alertReassigned({ artistName: artist.name, why: "no longer at the salon", ...out });
+    return out;
+  } catch (err) {
+    console.error("[artists] moving bookings failed:", err.message);
+    return { moved: [], flagged: [] };
+  }
+}
+
 const router = express.Router();
 
 // ── Ensure DB on every request (Vercel cold-start) ─────────────────────────
@@ -303,6 +322,9 @@ router.patch(
 
       const updated = await Artist.findByIdAndUpdate(id, updateObj, { new: true, runValidators: true });
 
+      // An artist who leaves the salon: their coming bookings move to free artists, like leave (D48, D51).
+      const reassigned = artist.isActive && req.body.isActive === false ? await releaseBookingsOf(req, updated) : { moved: [], flagged: [] };
+
       // If linked user credentials changed, log out all active sessions for that user
       if (shouldInvalidateSessions && (artist.userId || updateObj.userId)) {
         await invalidateUserSessions(req.sessionStore, (artist.userId || updateObj.userId).toString());
@@ -320,7 +342,7 @@ router.patch(
       // Re-fetch with populated userId so response matches GET /all shape
       const populated = await Artist.findById(updated._id).populate("userId", "permissions isActive");
       await revalidateSite(["artists"]);
-      return res.json(populated);
+      return res.json({ ...populated.toJSON(), reassigned });
     } catch (err) {
       console.error("[artists] Update error:", err);
       return res.status(500).json({ error: "Failed to update artist" });
@@ -347,8 +369,9 @@ router.delete("/:id", validateId, authorizePermission(PERMISSIONS.ARTISTS_CRUD),
       await invalidateUserSessions(req.sessionStore, artist.userId.toString());
     }
 
+    const reassigned = artist.isActive ? await releaseBookingsOf(req, artist) : { moved: [], flagged: [] };
     await revalidateSite(["artists"]);
-    return res.json({ ok: true, message: "Artist deactivated successfully" });
+    return res.json({ ok: true, message: "Artist deactivated successfully", reassigned });
   } catch (err) {
     console.error("[artists] Delete error:", err);
     return res.status(500).json({ error: "Failed to deactivate artist" });
@@ -373,8 +396,9 @@ router.delete("/:id/permanent", validateId, authorizePermission(PERMISSIONS.ARTI
     }
 
     await Artist.findByIdAndDelete(id);
+    const reassigned = await releaseBookingsOf(req, artist);
     await revalidateSite(["artists"]);
-    return res.json({ ok: true, message: "Artist permanently deleted" });
+    return res.json({ ok: true, message: "Artist permanently deleted", reassigned });
   } catch (err) {
     console.error("[artists] Permanent delete error:", err);
     return res.status(500).json({ error: "Failed to delete artist" });

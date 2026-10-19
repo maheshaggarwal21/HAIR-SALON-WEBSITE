@@ -104,8 +104,8 @@ test("settings singleton: concurrent first reads create exactly one document wit
   const s = await SiteSettings.getSingleton();
   assert.deepEqual(s.toObject().openingHours.mon, [{ open: "09:00", close: "21:00" }]);
   assert.deepEqual(s.toObject().openingHours.tue, []); // weekly off
-  assert.equal(s.contact.whatsapp, "9814830550"); // owner's number (K1)
-  assert.equal(s.contact.mapUrl, "https://maps.app.goo.gl/3crtqx58iqAG4S568");
+  assert.equal(s.contact.whatsapp, "9814830307"); // owner's number (K1)
+  assert.equal(s.contact.mapUrl, "https://www.google.com/maps?q=30.366743,76.402412");
   assert.equal(s.requestWindows.evening.end, "21:00");
   const pub = s.toPublic();
   assert.equal(pub.contact.placeId, undefined);
