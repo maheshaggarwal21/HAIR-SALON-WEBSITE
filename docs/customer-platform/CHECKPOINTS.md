@@ -62,7 +62,7 @@ open WhatsApp instead. Page stays live.
 - [ ] All home sections render with real content; no placeholder text anywhere.
 - [ ] Reduced-motion mode: no pinned/scrubbed motion, no autoplay video.
 - [ ] Only one reel plays at a time on mobile.
-- [ ] Rating badge pulls live data with Google attribution.
+- [ ] Rating badge shows the owner-entered rating/count and links to the salon's Google page (D38: no live Google data).
 - [ ] Staff app works on `app.thexpertshair.com`: login gate (Telegram approval), Visit Entry,
       Razorpay payment, payment-status redirect, analytics.
 - [ ] Old staff URLs on the apex domain redirect to the app subdomain.
@@ -105,7 +105,7 @@ Operational (staged rollout)
       board vs. actual chairs at 11:00, 14:00, 18:00).
 - [ ] Zero double bookings in the first 14 days. Any double booking → pause online booking
       for affected artists, root-cause, then resume.
-- [ ] Reminders (24h, 2h) sent and logged; review requests sent.
+- [ ] Reminders (24h, 2h) sent and logged.
 - [ ] Refund queue empty or each item explained.
 
 Metrics to review at end of week 2

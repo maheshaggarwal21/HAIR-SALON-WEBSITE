@@ -78,7 +78,7 @@ Customer site
 | T1.18 | [x] `/services` and `/services/[slug]` with variant selector | All `showOnWebsite` services reachable |
 | T1.19 | [x] `/artists/[slug]` | "Book with" pre-fills artist |
 | T1.20 | [~] Reels: manual upload (until Instagram API confirmed) via `/api/website/reels`; `ReelTile` + lightbox | One video plays at a time on mobile |
-| T1.21 | [~] Google reviews cache (daily cron) + `RatingBadge`; owner-entered rating + selected reviews meanwhile (D27) | Shows live rating with attribution |
+| T1.21 | [x] ~~Google reviews cache (daily cron)~~ — dropped (D38). `RatingBadge` + owner-entered rating, count, link and selected reviews (D27) | Owner's rating shows with a link to the Google page |
 | T1.22 | [x] SEO: metadata, JSON-LD (HairSalon, Service), sitemap, robots | Rich results test passes |
 | T1.23 | [~] Domain switch: staff app → `app.thexpertshair.com`; customer → apex + www; redirects for `/signin`, `/dashboard/*`, `/visit-entry` etc. to app subdomain | Staff can log in on new domain; old staff URLs redirect; Telegram gate still works |
 | T1.24 | [x] Revalidate endpoint in `customer/` + backend calls on service/artist edits | Edit in staff app reflects on site ≤ 60s |
@@ -104,36 +104,36 @@ Customer site
 Engine and data
 | ID | Task | Acceptance |
 |---|---|---|
-| T2.1 | [~] Artist `skills`, `schedule`, `onlineShare`; `TimeOff`; `Resource` models + staff UI — skills by gender/artist + Artist Skills screen done (D35); schedules = salon hours for all (D36); TimeOff/Resource staff UI pending | Owner sets full week for all artists |
-| T2.2 | [ ] `SlotLock` model with unique + TTL indexes | Index test |
-| T2.3 | [ ] Time utilities (IST grid, opening hours, holidays) with tests around UTC midnight | E20 passes |
-| T2.4 | [ ] Availability engine (CF §4) as pure module + tests | E9, E13, E14 pass; 1,000 random scenarios never double-assign |
-| T2.5 | [ ] `GET /availability`, `POST /quote` | Server ignores client prices |
-| T2.6 | [ ] OTP (`OtpChallenge`, Wati auth template, dev channel) + `bookingToken` | Limits per CF §14 |
-| T2.7 | [ ] Create-appointment transaction (CF §5.1) | E1, E11, E12, E17, E19 pass under concurrent test |
-| T2.8 | [ ] Deposits + pay-in-full choice (D18): Razorpay order, webhook branch, verify-payment, hold expiry handling, partial refund on late cancel of a full payment | E3, E4, E5 + Example D pass |
-| T2.9 | [ ] Move public rate limiting fully to Mongo store; exempt verify-payment | Load test: 50 parallel availability calls OK |
-| T2.10 | [ ] Request mode on engine (holds until SLA) + Telegram approve/decline buttons | Approve from Telegram confirms booking |
-| T2.11 | [ ] Manage link: view, .ics, cancel, reschedule (CF §9) | Cutoff rules enforced |
-| T2.12 | [ ] Cron `bookings-tick` (expiry, reminders, review requests) with `JobRun` lock | Idempotent on double run |
-| T2.13 | [ ] `NotificationLog` + `notify()` wrapper | E21 passes |
+| T2.1 | [~] Artist `skills`, `schedule`, `onlineShare`; `TimeOff`; `Resource` models + staff UI — skills by gender/artist + Artist Skills screen done (D35); schedules = salon hours for all (D36); Online Booking screen: on/off, share, own hours, leave (D42). Resource UI waits for Q5 | Owner sets full week for all artists |
+| T2.2 | [x] `SlotLock` model with unique + TTL indexes | Index test |
+| T2.3 | [x] Time utilities (IST grid, opening hours, holidays) with tests around UTC midnight | E20 passes |
+| T2.4 | [x] Availability engine (CF §4) as pure module + tests | E9, E13, E14 pass; 1,000 random scenarios never double-assign |
+| T2.5 | [x] `GET /availability`, `POST /quote` | Server ignores client prices |
+| T2.6 | [~] OTP (`OtpChallenge`, Wati auth template, dev channel) + `bookingToken` | Limits per CF §14 |
+| T2.7 | [x] Create-appointment transaction (CF §5.1) | E1, E11, E12, E17, E19 pass under concurrent test |
+| T2.8 | [x] Deposits + pay-in-full choice (D18): Razorpay order, webhook branch, verify-payment, hold expiry handling, partial refund on late cancel of a full payment | E3, E4, E5 + Example D pass |
+| T2.9 | [~] Move public rate limiting fully to Mongo store; exempt verify-payment | Load test: 50 parallel availability calls OK |
+| T2.10 | [x] Request mode on engine (holds until SLA) + Telegram approve/decline buttons | Approve from Telegram confirms booking |
+| T2.11 | [x] Manage link: view, .ics, cancel, reschedule (CF §9) | Cutoff rules enforced |
+| T2.12 | [x] Cron `bookings-tick` (expiry, reminders) with `JobRun` lock | Idempotent on double run |
+| T2.13 | [x] `NotificationLog` + `notify()` wrapper | E21 passes |
 
 Staff app
 | ID | Task | Acceptance |
 |---|---|---|
-| T2.14 | [ ] Today board (CF §7): timeline per artist, now line, legend, 30s poll | Matches mockup; renders 10 artists × 12h |
-| T2.15 | [ ] Walk-in quick add (≤ 3 taps) writing firm locks | E2 passes |
-| T2.16 | [ ] Check-in → Visit Entry prefilled; `/visits/v2` accepts `appointmentId`; deposit maths (CF §8) | Examples A, B, C pass as tests |
-| T2.17 | [ ] Move/reassign, no-show, cancel, refund, block time | Audit log entries for each |
-| T2.18 | [ ] Conflict warnings: leave/holiday over bookings (E8, E23) | Warning lists affected bookings |
+| T2.14 | [~] Today board (CF §7): timeline per artist, now line, legend, 30s poll | Matches mockup; renders 10 artists × 12h |
+| T2.15 | [x] Walk-in quick add (≤ 3 taps) writing firm locks | E2 passes |
+| T2.16 | [x] Check-in → Visit Entry prefilled; `/visits/v2` accepts `appointmentId`; deposit maths (CF §8) | Examples A, B, C pass as tests |
+| T2.17 | [x] Move/reassign, no-show, cancel, refund, block time | Audit log entries for each |
+| T2.18 | [x] Conflict warnings: leave/holiday over bookings (E8, E23) | Warning lists affected bookings |
 
 Customer site
 | ID | Task | Acceptance |
 |---|---|---|
-| T2.19 | [ ] Full booking sheet (DS §7): who → services → professional → time → details/OTP → deposit → done | Works in Instagram in-app browser on Android |
-| T2.20 | [ ] Group booking (up to 4 guests) | E13 passes |
-| T2.21 | [ ] `/booking/[token]` manage page | Cancel/reschedule flows tested |
-| T2.22 | [ ] Switch site from request-lite to engine per artist (`onlineBookable`) | Barbers still walk-in only |
+| T2.19 | [~] Full booking sheet (DS §7): who → services → professional → time → details/OTP → deposit → done | Works in Instagram in-app browser on Android |
+| T2.20 | [x] Group booking (up to 4 guests) | E13 passes |
+| T2.21 | [x] `/booking/[token]` manage page | Cancel/reschedule flows tested |
+| T2.22 | [x] Switch site from request-lite to engine per artist (`onlineBookable`) | Barbers still walk-in only |
 
 Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metrics.
 
@@ -206,5 +206,13 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 | 14 Oct 2026 | D34 | Menu: Everyone tab (all services, same-name men/women cards merged with labelled options; 39 cards). Couple haircut split out of Men's haircut (renamed from "Hair Cut (Creative Styling)", couple photo); new Men's haircut photo; men-only hair cards now use it. 117 backend tests green |
 | 14 Oct 2026 | D35 / D36 | Artist skills: gender rules + per-artist rule (all / sections / sub-groups / services), engine follows it; staff app Artist Skills screen (owner; manager with artists.view). Everyone starts on all services; all artists on salon hours 9–9, Tuesday off; receptionist checks walk-ins in on the Today board (Phase 2). Fixed: website.campaign_changed audit entries were being refused (not in the AuditLog enum); new test checks every audited action is allowed. 121 backend tests green |
 | 14 Oct 2026 | T1.23 | Staff app is staff-only: `/` goes straight to sign-in; old landing, About, Contact, Privacy and Terms pages removed; old public URLs forward to the customer site (VITE_CUSTOMER_SITE_URL, default https://thexpertshair.com); "Back to the website" on sign-in; robots noindex. Customer site: "Staff sign in" in header + footer → app.thexpertshair.com/signin |
+| 14 Oct 2026 | T1.21 / D38 | Reviews stay owner-entered (D27) — no Google Places API, no billing. `reviews-refresh` removed from `backend/vercel.json`; code kept dormant. CP2 "live rating" item replaced |
 | 14 Oct 2026 | DS §3 | Layout tightened after owner review ("site feels stretched"): one 1160px content column (`max-w-site`) with header, offer bar, hero slide controls and footer on the same edges; section titles 64→56px, hero 96→84px, page titles 80→72px; Visit us = details + hours left, map right; FAQ = title left, questions right (home + Karva Chauth). Checked at 390 / 768 / 1024 / 1280 / 1470 / 1920: no sideways scroll, every section's left edge identical |
+| 14 Oct 2026 | T2.5–T2.8, T2.10, T2.12, T2.13 | Phase 2 backend started. `routes/publicBooking.js` (inside `/api/public`): `GET /availability` (30 s cache), `POST /quote`, `POST /otp/send` + `/otp/verify` (WhatsApp via Wati, dev console fallback outside production; `OtpChallenge`; HMAC `bookingToken` 30 min), `POST /appointments` (§5.1 transaction: expired holds cleared → SlotLocks → Customer → Appointment `pending_payment`; Razorpay order for the server's amount), `POST /appointments/:ref/verify-payment` (no limit). Webhook branch `notes.kind = booking` confirms first (§5.3: E3 re-acquire, E4 cancel + full refund queued). `bookings-tick` cron: holds expire after asking Razorpay, unanswered requests expire with full refund, failed WhatsApp retried once. Staff: Confirm on an engine request approves at its held time; Decline/Cancel free the locks and queue full refunds. `NotificationLog` + `notify()`. D40–D41. 23 new tests (E1 50-way race → 1, E3, E4, E5, E6, E11, E12, E19); 157 backend tests green. Still to do: refund sending (T2.17), manage link (T2.11), reminders (T2.12), Telegram approve buttons (T2.10), Wati templates (T0.9), customer booking sheet (T2.19), Today board (T2.14). Nothing live: no artist is `onlineBookable` yet |
+| 15 Oct 2026 | T2.1, T2.8–T2.22 | Phase 2 built (not deployed). Staff app: **Today** board (timeline per artist, now line, leave/blocked/not-working shading, needs-attention list, 30 s refresh; tap empty → walk-in / phone booking / block time; tap booking → approve, check in → Visit Entry, move, no-show, cancel as customer or salon), **Online Booking** (per-artist online switch, share, own hours, leave with E8 warning), **Refunds** (send once, failures stay queued, waive/adjust with reason), Requests page approves held online requests, Website Settings warns on holidays over bookings (E23). Visit Entry `?appointment=`: booked prices, desk extras at website price, deposit deducted, booking completed in the same transaction (§8 Examples A–D). Backend: `/api/schedules/*`, `/api/bookings/day|availability|walkin|staff|block|unblock|refunds`, `/:id/approve|move|check-in|no-show|refund/send|refund/adjust`, `/api/visits/appointment-bill/:id`, create-order charges the remainder; public manage link (view, .ics, availability, cancel with fee, reschedule ≤2 and ≥24h before, fresh OTP after 24h); reminders 24h/2h + review request in `bookings-tick`; Telegram ✅/❌ on request alerts (owner chat only); permissions `bookings.refund`, `schedules.manage`. Customer site: BookingSheet (who → services per guest → artist → time → WhatsApp code → pay → done, hold countdown, webhook-first polling), `/booking/[token]`, `/book` deep link, CTAs say Book only when live; cancellation policy follows the switch. D42–D44. 182 backend tests green; staff app + customer site build, lint and typecheck. Not yet done: browser click-through on a real phone and in Instagram's in-app browser, load test (T2.9), artist day sheets / owner morning summary (§16 daily-morning), Resource UI (Q5) |
+| 15 Oct 2026 | T2.11, T2.15, T2.17, T2.18 | Local click-through of the whole flow (throwaway DB, fake Razorpay): owner switches artists on → site flips to Book → book with deposit → webhook confirms → manage link move → Today board walk-in (locks the website's times) → check in → Visit Entry deducts the deposit (₹1,500 cash + ₹500 online = ₹2,000) → second booking paid in full → customer cancels (fee shown first) → owner sends the ₹1,500 refund. Fixed on the way: the online switch now also refreshes the site's `artists` cache (the sheet listed no artists); "N left" shows only for "any artist" when one of several is free (it said "1 left" on every time); manage page skips closed days and shows paid / still to pay instead of "Paid online (paid)"; staff layout `min-w-0` so the Today timeline scrolls inside its box (it pushed the Walk-in button off screen); customer gets the refund WhatsApp when the owner actually sends it. 182 backend tests green. Still not done: real phone + Instagram in-app browser |
+| 15 Oct 2026 | T2.8, T2.11, T2.17, T2.18 | Group bookings always use any-available (D46); salon-side refunds automatic with retry, customer refunds manual, switch on the Refunds screen (D45); Finished tap + real start/end prefilled in the assignment step (planned times no longer pose as actual); cancellation policy D47 (30% fee rounded to ₹10, min ₹100, deposit = fee, full payment default, free until 24h for every service and group size) and D49 (every service books instantly); artist leave auto-reassigns bookings to a free artist, named-artist customers told on WhatsApp, nobody-free flagged (D48). New WhatsApp template: `booking_artist_changed`. 195 backend tests |
+| 15 Oct 2026 | T2.17, T2.18 | Review-request WhatsApp removed (D50). Phase 2 loose ends (D51): deactivating or deleting an artist moves their coming bookings (flagged ones stay on the board); fees kept on late cancels / no-shows recorded and listed per month on Refunds; failed-refund reason + low-balance hint; salon-changed artist → free cancel. Cancellation policy, terms and privacy pages updated to match. 198 backend tests |
+| 15 Oct 2026 | T2.6, T2.13 | WhatsApp moved to Meta's Cloud API (D52): `utils/whatsapp.js` (Meta default, Wati kept as `WHATSAPP_PROVIDER=wati`), OTP in Meta's authentication format with the copy-code button, every other message ends with the "To talk to us" salon link, `WHATSAPP_TEMPLATES.md` has the exact template text and the Meta set-up checklist. 8 new tests. Needs before launch: Meta Business verification, a notification number, a permanent token, templates approved, env vars set |
 | 19 Oct 2026 | T0.3 / D53 | Owner's signed menu (WhatsApp sheet, 91 services) → `data/website-menu.csv` + `config/menuGroups.js` (17 groups) + M7 `npm run migrate:m7` (website fields, creates 13 new services, hides the rest, never touches billing prices). `/services`: one grid, full price lists, search matches options. Live dry run: 91 rows, 78 updated + 13 new, 0 problems, 15 billing prices differ (left). 214 backend tests green. Waiting on go-ahead to apply |
+| 19 Oct 2026 | K1 | Contact changed: WhatsApp + calls 9814830307; map pin https://www.google.com/maps?q=30.366743,76.402412 (SiteSettings defaults, JSON-LD geo). Live values are set in Website Settings. |
