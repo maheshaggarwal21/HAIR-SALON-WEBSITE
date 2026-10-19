@@ -18,10 +18,11 @@
  * Additional sidebar links appear when the owner grants extra permissions.
  */
 
-import { lazy, Suspense } from "react";
+import { lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, Inbox, CalendarDays, CalendarClock, RotateCcw } from "lucide-react";
+import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, CalendarCheck, AlertTriangle } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
+import PageBoundary from "@/components/PageBoundary";
 import { useAuth } from "@/context/AuthContext";
 const PaymentHistory = lazy(() => import("@/pages/dashboard/PaymentHistory"));
 const DataPipeline = lazy(() => import("@/pages/dashboard/DataPipeline"));
@@ -34,15 +35,15 @@ const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
 const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
 const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
 const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
+const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
+const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const receptionistLinks: SidebarLink[] = [
-  { to: "/dashboard/receptionist/today", label: "Today", icon: CalendarDays, requiredPermission: "bookings.view" },
-  { to: "/dashboard/receptionist/requests", label: "Website Requests", icon: Inbox, requiredPermission: "bookings.view" },
-  { to: "/dashboard/receptionist/online-booking", label: "Online Booking", icon: CalendarClock, requiredPermission: "bookings.view" },
-  { to: "/dashboard/receptionist/refunds", label: "Refunds", icon: RotateCcw, requiredPermission: "bookings.refund" },
+  { to: "/dashboard/receptionist/bookings", label: "Bookings", icon: CalendarCheck, requiredPermission: ["bookings.view", "bookings.refund"] },
+  { to: "/dashboard/receptionist/fix-numbers", label: "Fix Numbers", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
   { to: "/dashboard/receptionist/payments", label: "Payment History", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/receptionist/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/receptionist/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
@@ -85,14 +86,10 @@ const HOME = "/dashboard/receptionist";
  * and the Excel writer before the first screen (the receptionist never opens
  * either).
  */
-function PageFallback() {
-  return <div className="py-16 text-center text-sm text-stone-400">Loading…</div>;
-}
-
 export default function ReceptionistDashboard() {
   return (
     <DashboardLayout sidebarLinks={receptionistLinks} pageTitle="Receptionist Dashboard">
-      <Suspense fallback={<PageFallback />}>
+      <PageBoundary>
       <Routes>
         <Route index element={<DefaultRedirect />} />
         <Route
@@ -152,6 +149,22 @@ export default function ReceptionistDashboard() {
           }
         />
         <Route
+          path="bookings"
+          element={
+            <RequirePermission permission={["bookings.view", "bookings.refund"]} backTo={HOME}>
+              <BookingsHub />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="fix-numbers"
+          element={
+            <RequirePermission permission="datafixes.manage" backTo={HOME}>
+              <NumberFixes />
+            </RequirePermission>
+          }
+        />
+        <Route
           path="today"
           element={
             <RequirePermission permission="bookings.view" backTo={HOME}>
@@ -184,7 +197,7 @@ export default function ReceptionistDashboard() {
           }
         />
       </Routes>
-      </Suspense>
+      </PageBoundary>
     </DashboardLayout>
   );
 }

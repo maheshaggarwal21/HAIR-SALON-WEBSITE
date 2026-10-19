@@ -74,6 +74,8 @@ const ACTIONS = [
   "booking.refund_waived",
   // Data
   "migration.applied",
+  "visit.contact_corrected",
+  "datafix.resolved",
 ];
 
 const auditLogSchema = new mongoose.Schema(

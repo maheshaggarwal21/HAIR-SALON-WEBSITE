@@ -23,6 +23,16 @@ const visitSchema = new mongoose.Schema(
     // ── Client info ──
     name: { type: String, required: true, trim: true },
     contact: { type: String, required: true, trim: true },
+    /** Every correction of `contact` made from Fix Numbers (D54): what it was, when, by whom. Never removed. */
+    contactHistory: [
+      {
+        from: String,
+        to: String,
+        at: { type: Date, default: Date.now },
+        byName: String,
+        _id: false,
+      },
+    ],
     // Kept for legacy rows only; new rows no longer collect/store age.
     age: { type: String, required: false, trim: true, default: null },
     gender: {

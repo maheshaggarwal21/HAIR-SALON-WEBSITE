@@ -67,6 +67,7 @@ const ruleName = (g: Gender) => ({ female: "women's", male: "men's", other: "def
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}/api/artist-skills${path}`, { credentials: "include", headers: { "Content-Type": "application/json" }, ...init });
+  if (!(res.headers.get("content-type") || "").includes("json")) throw new Error("The server sent an unexpected reply. Reload the page and try again.");
   const d = await res.json();
   if (!res.ok) throw new Error(d.error || "Request failed");
   return d as T;
@@ -84,7 +85,7 @@ export default function ArtistSkills() {
   const [saved, setSaved] = useState("");
 
   const load = () =>
-    api<Data>("/")
+    api<Data>("")
       .then(setData)
       .catch((e) => setError(e.message));
   useEffect(() => {

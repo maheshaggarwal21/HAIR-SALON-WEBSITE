@@ -14,10 +14,11 @@
  *   /dashboard/manager/artist-skills → Artist skills (artists.view to see, artists.crud to change; CF D35)
  */
 
-import { lazy, Suspense } from "react";
+import { lazy } from "react";
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Inbox, Globe, Store, Clapperboard, Megaphone, UserCog, CalendarDays, CalendarClock, RotateCcw } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Globe, UserCog, CalendarCheck, AlertTriangle } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
+import PageBoundary from "@/components/PageBoundary";
 const DashboardOverview = lazy(() => import("@/pages/dashboard/shared/DashboardOverview"));
 const DashboardAnalyticsView = lazy(() => import("@/pages/dashboard/shared/DashboardAnalyticsView"));
 const ServiceManagement = lazy(() => import("@/pages/dashboard/ServiceManagement"));
@@ -27,7 +28,6 @@ const PaymentHistory = lazy(() => import("@/pages/dashboard/PaymentHistory"));
 const DataPipeline = lazy(() => import("@/pages/dashboard/DataPipeline"));
 const TeamManagement = lazy(() => import("@/pages/dashboard/TeamManagement"));
 const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
-const WebsiteSettings = lazy(() => import("@/pages/dashboard/WebsiteSettings"));
 const WebsiteMenu = lazy(() => import("@/pages/dashboard/WebsiteMenu"));
 const WebsiteReels = lazy(() => import("@/pages/dashboard/WebsiteReels"));
 const WebsiteOffers = lazy(() => import("@/pages/dashboard/WebsiteOffers"));
@@ -35,16 +35,18 @@ const ArtistSkills = lazy(() => import("@/pages/dashboard/ArtistSkills"));
 const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
 const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
 const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
+const WebsiteHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.WebsiteHub })));
+const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
+const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
-  { to: "/dashboard/manager/today", label: "Today", icon: CalendarDays, requiredPermission: "bookings.view" },
-  { to: "/dashboard/manager/requests", label: "Website Requests", icon: Inbox, requiredPermission: "bookings.view" },
-  { to: "/dashboard/manager/online-booking", label: "Online Booking", icon: CalendarClock, requiredPermission: "bookings.view" },
-  { to: "/dashboard/manager/refunds", label: "Refunds", icon: RotateCcw, requiredPermission: "bookings.refund" },
+  { to: "/dashboard/manager/bookings", label: "Bookings", icon: CalendarCheck, requiredPermission: ["bookings.view", "bookings.refund"] },
+  { to: "/dashboard/manager/website", label: "Website", icon: Globe, requiredPermission: "website.manage" },
+  { to: "/dashboard/manager/fix-numbers", label: "Fix Numbers", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
@@ -52,10 +54,6 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
   { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: "artists.view" },
   { to: "/dashboard/manager/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
-  { to: "/dashboard/manager/website", label: "Website Settings", icon: Globe, requiredPermission: "website.manage" },
-  { to: "/dashboard/manager/website-menu", label: "Website Menu", icon: Store, requiredPermission: "website.manage" },
-  { to: "/dashboard/manager/website-reels", label: "Website Reels", icon: Clapperboard, requiredPermission: "website.manage" },
-  { to: "/dashboard/manager/website-offers", label: "Website Offers", icon: Megaphone, requiredPermission: "website.manage" },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus, requiredPermission: "visit.create" },
 ];
 
@@ -73,14 +71,10 @@ const HOME = "/dashboard/manager";
  * and the Excel writer before the first screen (the receptionist never opens
  * either).
  */
-function PageFallback() {
-  return <div className="py-16 text-center text-sm text-stone-400">Loading…</div>;
-}
-
 export default function ManagerDashboard() {
   return (
     <DashboardLayout sidebarLinks={managerLinks} pageTitle="Manager Dashboard">
-      <Suspense fallback={<PageFallback />}>
+      <PageBoundary>
       <Routes>
         <Route index element={<DashboardOverview />} />
         <Route
@@ -140,6 +134,22 @@ export default function ManagerDashboard() {
           }
         />
         <Route
+          path="bookings"
+          element={
+            <RequirePermission permission={["bookings.view", "bookings.refund"]} backTo={HOME}>
+              <BookingsHub />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="fix-numbers"
+          element={
+            <RequirePermission permission="datafixes.manage" backTo={HOME}>
+              <NumberFixes />
+            </RequirePermission>
+          }
+        />
+        <Route
           path="today"
           element={
             <RequirePermission permission="bookings.view" backTo={HOME}>
@@ -175,7 +185,7 @@ export default function ManagerDashboard() {
           path="website"
           element={
             <RequirePermission permission="website.manage" backTo={HOME}>
-              <WebsiteSettings />
+              <WebsiteHub />
             </RequirePermission>
           }
         />
@@ -212,7 +222,7 @@ export default function ManagerDashboard() {
           }
         />
       </Routes>
-      </Suspense>
+      </PageBoundary>
     </DashboardLayout>
   );
 }

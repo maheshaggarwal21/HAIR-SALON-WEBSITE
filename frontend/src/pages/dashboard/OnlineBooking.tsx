@@ -78,6 +78,8 @@ class ApiError extends Error {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}/api/schedules${path}`, { credentials: "include", headers: { "Content-Type": "application/json" }, ...init });
+  // A reply that is not JSON (the app's own page, a proxy error) must never be read as data.
+  if (!(res.headers.get("content-type") || "").includes("json")) throw new ApiError("The server sent an unexpected reply. Reload the page and try again.", res.status, {});
   const d = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(d.error || "Request failed", res.status, d);
   return d as T;
@@ -106,7 +108,7 @@ export default function OnlineBooking() {
   const [error, setError] = useState("");
 
   const load = () =>
-    api<Data>("/")
+    api<Data>("")
       .then(setData)
       .catch((e) => setError(e.message));
   useEffect(() => {

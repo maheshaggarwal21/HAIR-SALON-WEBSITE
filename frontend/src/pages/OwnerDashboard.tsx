@@ -19,29 +19,11 @@
  *   /dashboard/owner/refunds        → Refunds owed to online customers (T2.17)
  */
 
-import { lazy, Suspense } from "react";
+import { lazy } from "react";
 import { Routes, Route } from "react-router-dom";
-import {
-  LayoutDashboard,
-  BarChart3,
-  Scissors,
-  Users,
-  Palette,
-  CalendarPlus,
-  Receipt,
-  Database,
-  Network,
-  Inbox,
-  Globe,
-  Store,
-  Clapperboard,
-  Megaphone,
-  UserCog,
-  CalendarDays,
-  CalendarClock,
-  RotateCcw,
-} from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Users, Palette, CalendarPlus, Receipt, Database, Network, Globe, UserCog, CalendarCheck, AlertTriangle } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
+import PageBoundary from "@/components/PageBoundary";
 const Management = lazy(() => import("@/pages/dashboard/Management"));
 const DashboardOverview = lazy(() => import("@/pages/dashboard/shared/DashboardOverview"));
 const DashboardAnalyticsView = lazy(() => import("@/pages/dashboard/shared/DashboardAnalyticsView"));
@@ -52,7 +34,6 @@ const ArtistDashboardView = lazy(() => import("@/pages/dashboard/ArtistDashboard
 const PaymentHistory = lazy(() => import("@/pages/dashboard/PaymentHistory"));
 const DataPipeline = lazy(() => import("@/pages/dashboard/DataPipeline"));
 const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
-const WebsiteSettings = lazy(() => import("@/pages/dashboard/WebsiteSettings"));
 const WebsiteMenu = lazy(() => import("@/pages/dashboard/WebsiteMenu"));
 const WebsiteReels = lazy(() => import("@/pages/dashboard/WebsiteReels"));
 const WebsiteOffers = lazy(() => import("@/pages/dashboard/WebsiteOffers"));
@@ -60,13 +41,15 @@ const ArtistSkills = lazy(() => import("@/pages/dashboard/ArtistSkills"));
 const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
 const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
 const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
+const WebsiteHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.WebsiteHub })));
+const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
+const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
-  { to: "/dashboard/owner/today", label: "Today", icon: CalendarDays },
-  { to: "/dashboard/owner/requests", label: "Website Requests", icon: Inbox },
-  { to: "/dashboard/owner/online-booking", label: "Online Booking", icon: CalendarClock },
-  { to: "/dashboard/owner/refunds", label: "Refunds", icon: RotateCcw },
+  { to: "/dashboard/owner/bookings", label: "Bookings", icon: CalendarCheck },
+  { to: "/dashboard/owner/website", label: "Website", icon: Globe },
+  { to: "/dashboard/owner/fix-numbers", label: "Fix Numbers", icon: AlertTriangle },
   { to: "/dashboard/owner/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/owner/payments", label: "Payments", icon: Receipt },
   { to: "/dashboard/owner/data-pipeline", label: "Data Pipeline", icon: Database },
@@ -75,10 +58,6 @@ const ownerLinks = [
   { to: "/dashboard/owner/artist-skills", label: "Artist Skills", icon: UserCog },
   { to: "/dashboard/owner/team", label: "Team", icon: Users },
   { to: "/dashboard/owner/management", label: "Management", icon: Network },
-  { to: "/dashboard/owner/website", label: "Website Settings", icon: Globe },
-  { to: "/dashboard/owner/website-menu", label: "Website Menu", icon: Store },
-  { to: "/dashboard/owner/website-reels", label: "Website Reels", icon: Clapperboard },
-  { to: "/dashboard/owner/website-offers", label: "Website Offers", icon: Megaphone },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus },
 ];
 
@@ -88,14 +67,10 @@ const ownerLinks = [
  * and the Excel writer before the first screen (the receptionist never opens
  * either).
  */
-function PageFallback() {
-  return <div className="py-16 text-center text-sm text-stone-400">Loading…</div>;
-}
-
 export default function OwnerDashboard() {
   return (
     <DashboardLayout sidebarLinks={ownerLinks} pageTitle="Owner Dashboard">
-      <Suspense fallback={<PageFallback />}>
+      <PageBoundary>
       <Routes>
         <Route index element={<DashboardOverview />} />
         <Route path="analytics" element={<DashboardAnalyticsView />} />
@@ -111,12 +86,14 @@ export default function OwnerDashboard() {
         <Route path="today" element={<TodayBoard />} />
         <Route path="online-booking" element={<OnlineBooking />} />
         <Route path="refunds" element={<Refunds />} />
-        <Route path="website" element={<WebsiteSettings />} />
+        <Route path="website" element={<WebsiteHub />} />
+        <Route path="bookings" element={<BookingsHub />} />
+        <Route path="fix-numbers" element={<NumberFixes />} />
         <Route path="website-menu" element={<WebsiteMenu />} />
         <Route path="website-reels" element={<WebsiteReels />} />
         <Route path="website-offers" element={<WebsiteOffers />} />
       </Routes>
-      </Suspense>
+      </PageBoundary>
     </DashboardLayout>
   );
 }
