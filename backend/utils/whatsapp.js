@@ -41,6 +41,8 @@ const ORDER = {
   booking_declined: ["name", "ref", "refund", "salon_link"],
   booking_refund: ["name", "ref", "amount", "salon_link"],
   booking_moved: ["name", "ref", "when", "link", "salon_link"],
+  // To the ARTIST at 08:15 (D56); no salon link — they are staff.
+  artist_day_sheet: ["name", "date", "count", "list"],
   booking_artist_changed: ["name", "ref", "when", "oldArtist", "newArtist", "reason", "link", "salon_link"],
 };
 

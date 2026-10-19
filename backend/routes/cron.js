@@ -9,6 +9,7 @@
  *
  *   GET https://api.thexpertshair.com/api/cron/requests-tick    every 15 min
  *   GET https://api.thexpertshair.com/api/cron/bookings-tick    every 15 min (Phase 2)
+ *   GET https://api.thexpertshair.com/api/cron/daily-morning    daily 08:15 IST (= 02:45 UTC)
  *   GET https://api.thexpertshair.com/api/cron/reviews-refresh  daily (Vercel Cron
  *       can run this one even on Hobby — it is in vercel.json)
  *   Header  Authorization: Bearer <CRON_SECRET>
@@ -111,6 +112,22 @@ for (const method of ["get", "post"]) {
       return res.json(out);
     } catch (err) {
       console.error("[cron] requests-tick failed:", err);
+      return res.status(500).json({ error: "Job failed" });
+    }
+  });
+}
+
+/**
+ * 08:15 IST morning push (§16, D56): each artist's day sheet on WhatsApp and the
+ * owner's summary on Telegram. Safe to call twice — see utils/morning.js.
+ */
+for (const method of ["get", "post"]) {
+  router[method]("/daily-morning", async (_req, res) => {
+    try {
+      const { morningRun } = require("../utils/morning");
+      return res.json(await runJob("daily-morning", () => morningRun()));
+    } catch (err) {
+      console.error("[cron] daily-morning failed:", err);
       return res.status(500).json({ error: "Job failed" });
     }
   });
