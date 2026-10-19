@@ -118,6 +118,31 @@ function PasswordChangeGuard({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * A deploy renames every page's file. A tab opened before it still asks for the
+ * old names, so opening a page fails. Vite reports that as `vite:preloadError`;
+ * reloading once fetches the new build. The sessionStorage flag stops a loop if
+ * the server is genuinely broken.
+ */
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  try {
+    if (sessionStorage.getItem('reloadedForNewBuild')) return
+    sessionStorage.setItem('reloadedForNewBuild', '1')
+  } catch {
+    return
+  }
+  window.location.reload()
+})
+// Once the new build has been running for a while, allow the next deploy to reload again.
+setTimeout(() => {
+  try {
+    sessionStorage.removeItem('reloadedForNewBuild')
+  } catch {
+    /* storage blocked: nothing to clear */
+  }
+}, 15000)
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
