@@ -8,9 +8,9 @@
  * getServiceImage(card) resolves in this order, so every card gets a photo and a
  * service added later never breaks the page:
  *   0. the owner's own photo for that service (Service.images[0]) wins;
- *   1. exact name match (case, spacing and punctuation ignored);
- *   2. men's cards: beard / moustache / Grooming → "for-him", other men-only
+ *   1. men's cards: beard / moustache / Grooming → "for-him", other men-only
  *      hair cards → "mens-haircut";
+ *   2. exact name match (case, spacing and punctuation ignored);
  *   3. keyword rules, MOST SPECIFIC FIRST ("Split Ends (… Blow Dry)" is hair
  *      spa, not blow-dry; "Organic Bleach Neck" is face bleach, not body;
  *      "Bridal Draping" is draping, not bridal make-up);
@@ -188,6 +188,15 @@ const EXACT_LIST: [ImageSlug, string[]][] = [
   ["haircut", ["Haircut"]],
   ["mens-haircut", ["Men's haircut"]],
   ["duo-haircut", ["Couple haircut"]],
+  // The owner's menu groups (19 Oct 2026, CF D53) whose title the keyword rules would miss or misread.
+  ["haircut", ["Hair services"]],
+  ["balayage", ["Hair colour"]],
+  ["keratin", ["Hair treatments"]],
+  ["wax-face", ["Waxing & threading"]],
+  ["wax-legs", ["Waxing (honey)"]],
+  ["wax-arms", ["Waxing (Rica)"]],
+  ["bleach-face", ["Bleach"]],
+  ["bridal-makeup", ["Make-up"]],
   ["wax-face", ["Forehead (wax) Women", "Chin (wax)", "Nose (wax)", "Upper lips (wax)", "Side locks (wax)", "Face Wax"]],
   ["wax-underarm", ["Under arms wax (honey)", "Under arms wax (rica)"]],
   ["wax-arms", ["Half Arms wax (honey)", "Half Arms wax (rica)", "Full Arms wax (honey)", "Full Arms wax (rica)"]],
@@ -288,13 +297,15 @@ export function getServiceImage(service: ImageInput): ServiceImage {
   const category = normaliseName(service.displayCategory ?? "");
   const pick = (slug: ImageSlug, via: ServiceImage["via"]): ServiceImage => ({ ...imageBySlug(slug), slug, via });
 
-  const exact = EXACT.get(name);
-  if (exact) return pick(exact, "exact");
-
+  // Men's hair and grooming cards first, so the men's "Hair services" card shows a
+  // barber rather than the women's haircut photo its title matches exactly.
   if (service.audience === "him") {
     if (category === "grooming" || /\b(beard|moustache|mustache)\b/.test(name)) return pick("for-him", "men");
     if (category === "hair") return pick("mens-haircut", "men");
   }
+
+  const exact = EXACT.get(name);
+  if (exact) return pick(exact, "exact");
 
   for (const [re, slug] of KEYWORDS) if (re.test(name)) return pick(slug, "keyword");
 

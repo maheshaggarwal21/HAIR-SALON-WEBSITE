@@ -44,9 +44,9 @@ const call = async (method, path, body) => {
 test("rules: all by default; section, sub-group and single service each allow; gender default vs own rule", () => {
   const eyebrows = { _id: "s1", name: "Eyebrows", displayCategory: "Threading" };
   const beard = { _id: "s2", name: "Beard Trim", displayCategory: "Grooming" };
-  const hd = { _id: "s3", name: "HD Bridal Make-up", displayCategory: "Makeup" };
+  const hd = { _id: "s3", name: "Basic Bridal Make-up", displayCategory: "Makeup" };
   const k = (s) => serviceKeys(s);
-  const defaults = { female: { all: false, categories: ["Threading"], groups: ["bridal-makeup"] }, male: { all: false, categories: ["Grooming"] } };
+  const defaults = { female: { all: false, categories: ["Threading"], groups: ["makeup"] }, male: { all: false, categories: ["Grooming"] } };
 
   assert.ok(ruleAllows(effectiveRule({ gender: "female" }, {}), k(beard)), "no defaults saved = all services");
   const her = effectiveRule({ gender: "female" }, defaults);
@@ -59,9 +59,9 @@ test("rules: all by default; section, sub-group and single service each allow; g
 });
 
 test("engine: canDo follows the rule (all, section, sub-group)", () => {
-  const item = { serviceId: "s9", category: "Waxing", group: "legs-waxing" };
+  const item = { serviceId: "s9", category: "Waxing", group: "honey-waxing" };
   assert.ok(canDo({ ...ruleSets({ all: true, categories: [], groups: [], services: [] }) }, item));
-  assert.ok(canDo({ ...ruleSets({ all: false, categories: [], groups: ["legs-waxing"], services: [] }) }, item));
+  assert.ok(canDo({ ...ruleSets({ all: false, categories: [], groups: ["honey-waxing"], services: [] }) }, item));
   assert.ok(!canDo({ ...ruleSets({ all: false, categories: ["Threading"], groups: [], services: [] }) }, item));
 });
 

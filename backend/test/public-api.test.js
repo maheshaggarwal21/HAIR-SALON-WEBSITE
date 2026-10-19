@@ -413,25 +413,25 @@ test("packages: live ones are listed with server prices; requesting one derives 
   }
 });
 
-test("menu groups (D34): one card per group, detail by group URL or a member's old URL", async () => {
-  const common = { category: "Hair", isActive: true, showOnWebsite: true, bookingMode: "request", audience: "unisex", displayCategory: "Hands & feet" };
+test("menu groups (D34, D53): one card per group, detail by group URL or a member's old URL", async () => {
+  const common = { category: "Skin", isActive: true, showOnWebsite: true, bookingMode: "request", audience: "unisex", displayCategory: "Skin" };
   await Service.create([
-    { ...common, name: "Mini Pedicure", price: 1000, publicPrice: 500, slug: "mini-pedicure" },
-    { ...common, name: "Pedicure", price: 1500, publicPrice: 750, slug: "pedicure" },
-    { ...common, name: "Luxury Pedicure", price: 3000, publicPrice: 1500, slug: "luxury-pedicure" },
+    { ...common, name: "Facial (Basic)", price: 2400, publicPrice: 1200, slug: "basic-facial" },
+    { ...common, name: "Facial (Premium)", price: 3000, publicPrice: 1500, slug: "premium-facial" },
+    { ...common, name: "Facial (Luxury)", price: 5000, publicPrice: 2500, slug: "luxury-facial" },
   ]);
   const menu = (await get("/services?for=her")).body.services;
-  const pedi = menu.filter((c) => c.name === "Pedicure" || c.slug === "pedicure");
-  assert.equal(pedi.length, 1);
-  assert.equal(pedi[0].slug, "pedicure");
-  assert.deepEqual(pedi[0].options.map((o) => o.label), ["Mini", "Classic", "Luxury"]);
+  const facials = menu.filter((c) => c.name === "Facials" || c.slug === "facials");
+  assert.equal(facials.length, 1);
+  assert.equal(facials[0].slug, "facials");
+  assert.deepEqual(facials[0].options.map((o) => o.label), ["Basic", "Premium", "Luxury"]);
   assertPublicOnly({ services: menu }, "/services");
 
-  const byGroup = await get("/services/pedicure");
+  const byGroup = await get("/services/facials");
   assert.equal(byGroup.status, 200);
   assert.equal(byGroup.body.service.options.length, 3);
-  const byMember = await get("/services/luxury-pedicure");
-  assert.equal(byMember.body.service.slug, "pedicure");
+  const byMember = await get("/services/luxury-facial");
+  assert.equal(byMember.body.service.slug, "facials");
   assert.equal(byMember.body.service.options.length, 3);
-  assert.equal((await get("/services/manicure")).status, 404, "a group with no live services is not a page");
+  assert.equal((await get("/services/manicure-pedicure")).status, 404, "a group with no live services is not a page");
 });

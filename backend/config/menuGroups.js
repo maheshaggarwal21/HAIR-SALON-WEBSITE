@@ -1,370 +1,261 @@
 /**
  * @file config/menuGroups.js
- * @description Website menu groups (CF D34): services that are the same kind of
- * thing with small differences ("Blow dry", "Hair style", "Open hair styling
- * (curls)"…) are shown as ONE card with a choice of options, each with its own
- * price. Every option is still the real service (its own id and price), so
- * requests, packages, Visits and analytics are unchanged (D8).
+ * @description Website menu groups (CF D34, D53): the cards of the customer
+ * menu. Each card is one of the owner's groups ("Hair services", "Waxing
+ * (honey)", "Bleach"…) with a choice of options, each with its own price.
+ * Every option is still the real service (its own id and price), so requests,
+ * packages, Visits and analytics are unchanged (D8).
+ *
+ * The groups, their order and the option names come from the owner's signed
+ * menu (19 Oct 2026, docs/customer-platform/data/website-menu.csv). Which
+ * services are on the website, their price, who they are for and their full
+ * website name live in the database and are set by migration M7 from that
+ * same sheet; this file only decides how they are grouped and labelled.
+ * test/website-menu.test.js keeps the two in step.
  *
  * This is a display overlay for the public API only. Nothing in the database is
  * changed; a service the owner has put in a variant group in the database
  * (`Service.variantGroup`, e.g. Keratin Short / Medium / Long) keeps that group.
  * A service not listed here stays its own card, so new services never break.
  *
- * Matching is by the service's website name or internal name, ignoring case,
- * spacing and punctuation. `label` is what the option is called on the card.
- * `category` (optional) puts the card in that menu section regardless of where
- * its first option sits (e.g. Eyebrows lives under Skin in the data but belongs
- * with threading).
+ * Matching is by the service's internal (billing) name, which is unique, then
+ * its website name, ignoring case, spacing and punctuation. Internal name
+ * first, because website names repeat across groups ("Keratin" for her and for
+ * him). `label` is what the option is called on the card. `category` puts the
+ * card in that menu section.
  *
- * `keepTitle: true` shows the group's title even with a single member, which is
- * how a service is renamed for the website without touching the database.
+ * `keepTitle: true` shows the group's title even with a single member (the
+ * men's "Hair colour" card has only Global colour).
+ *
+ * `description` is the line under the card title (e.g. "Starting prices…").
  *
  * `pick: "many"` lets a customer tick several options of one card in the
  * request sheet (Eyebrows + Upper lip, Underarms + Half arms). Otherwise the
- * options are alternatives and picking one replaces the other (Mini vs
- * Premium manicure, Basic vs HD bridal).
+ * options are alternatives and picking one replaces the other (Basic vs
+ * Luxury facial, Party vs Bridal make-up).
  */
 
 const GROUPS = [
-  // ── Hair ──────────────────────────────────────────────────────────────────
   {
-    slug: "hair-styling-blow-dry",
-    title: "Hair styling & blow-dry",
+    slug: "hair-services-men",
+    title: "Hair services",
+    category: "Hair",
+    pick: "many",
     members: [
-      ["Blowdry & styling", "Blow-dry & styling"],
-      ["hair style", "Hair style"],
-      ["Hair Styling", "Hair styling (men)"],
-      ["Blow dry", "Blow-dry"],
-      ["Blow Dry (Wash, Conditioning, Blow Dry)", "Wash, condition & blow-dry"],
-      ["Blow dry nd wash", "Wash & blow-dry (men)"],
-      ["Flat Iron Straightening (Wash, Conditioning)", "Flat-iron straightening"],
-      ["Open Hair Styling (crimping)", "Open hair: crimping"],
-      ["Open Hair Styling (curls)", "Open hair: curls"],
-      ["Open Hair Styling (waves)", "Open hair: waves"],
+      ["Hair Cut (Wash Styling) (men)", "Haircut"],
+      ["Hair Styling (Men)", "Hair styling"],
+      ["Head Massage", "Head massage"],
+      ["Baby Boy Hair Cut (Styling)", "Baby boy haircut"],
     ],
   },
   {
-    slug: "hair-wash",
-    title: "Hair wash & shampoo",
+    slug: "beard-moustache",
+    title: "Beard & moustache",
+    category: "Grooming",
+    pick: "many",
     members: [
-      ["Shampoo (Conditioning, Natural Dry)", "Shampoo, condition & natural dry"],
-      ["Shampoo (Wash Styling)", "Shampoo & styling (men)"],
+      ["Beard Trim", "Beard trim"],
+      ["Beard Shave", "Beard shave"],
+      ["Moustache Pasting", "Moustache pasting"],
+      ["Moustache Pasting (Color)", "Moustache colour"],
+      ["Beard Color", "Beard colour"],
     ],
   },
   {
-    slug: "haircut",
-    title: "Haircut",
-    members: [
-      ["Hair Cut (By Creative Styling)", "Creative cut"],
-      ["Hair Cut (Wash, Conditioning, Blow Dry)", "Cut with wash & blow-dry"],
-      ["Baby Girls Hair Cut (Wash, Conditioning)", "Girls' cut (kids)"],
-    ],
-  },
-  {
-    slug: "mens-haircut",
-    title: "Men's haircut",
-    members: [
-      ["Hair Cut (Wash Styling)", "Cut with wash & styling"],
-      ["Baby Boy Hair Cut (Styling)", "Boys' cut (kids)"],
-    ],
-  },
-  {
-    // The owner's team: "Hair Cut (Creative Styling)" is the couple cut (14 Oct 2026).
-    slug: "couple-haircut",
-    title: "Couple haircut",
-    keepTitle: true,
-    members: [["Hair Cut (Creative Styling)", "Couple haircut"]],
-  },
-  {
-    slug: "head-massage",
-    title: "Head massage",
-    members: [
-      ["Basic Head Massage", "Basic"],
-      ["Head Massage (Coconut, Olive Oil, Natural Dry)", "Oil massage (coconut / olive)"],
-    ],
-  },
-  {
-    slug: "party-hairdo",
-    title: "Party hairdo",
-    members: [
-      ["Hairdo (braid)", "Braid"],
-      ["Party Hairdo (bun)", "Bun"],
-    ],
-  },
-  // ── Colour ────────────────────────────────────────────────────────────────
-  {
-    slug: "hair-colour",
+    slug: "hair-colour-men",
     title: "Hair colour",
+    category: "Colour",
+    keepTitle: true,
     members: [
-      ["Root touchup", "Root touch-up"],
-      ["Global Color", "Global colour (men)"],
-      ["Men hair colour", "Men's hair colour"],
-      ["Highlighting", "Highlights (men)"],
-      ["Color Remove (Henna, Dye)", "Colour removal (henna, dye)"],
-    ],
-  },
-  // ── Treatments ────────────────────────────────────────────────────────────
-  {
-    // Olaplex spa stays its own card (it has its own bond-repair photo).
-    slug: "hair-spa-repair",
-    title: "Hair spa & repair",
-    members: [
-      ["Hair spa", "Hair spa"],
-      ["Split Ends (Wash, Conditioning, Blow Dry)", "Split-end treatment"],
-    ],
-  },
-  // ── Skin ──────────────────────────────────────────────────────────────────
-  {
-    slug: "facials",
-    title: "Facials",
-    members: [
-      ["Fruit Facial", "Fruit"],
-      ["Radiant Facial (Lotus Professional)", "Radiant (Lotus Professional)"],
-      ["Power Brightening (Paragon)", "Power brightening (Paragon)"],
-      ["Pure Vitamin Facial (Paragon)", "Pure vitamin (Paragon)"],
-      ["Pro Hydra (dry skin)", "Pro Hydra, dry skin"],
-      ["Pro Hydra (oily skin)", "Pro Hydra, oily skin"],
+      ["Global Color (Men)", "Global colour"],
     ],
   },
   {
-    slug: "advanced-facials",
-    title: "Advanced facials",
+    slug: "hair-treatments-men",
+    title: "Hair treatments",
+    category: "Treatments",
     members: [
-      ["Hydra Facial", "Hydra facial"],
-      ["Dermasyl Range", "Dermasyl"],
-      ["Blanch", "Blanch"],
-      ["Sensi-Age", "Sensi-Age"],
-      ["Save The Date (Instant Glow For Bride & Groom)", "Save the Date (bride & groom glow)"],
+      ["Highlighting (Men)", "Highlighting"],
+      ["Keratin (Men)", "Keratin"],
+      ["Smoothening (Men)", "Smoothening"],
+      ["Botox (Men)", "Botox"],
+      ["Hair Perming (Men)", "Hair perming"],
+    ],
+  },
+  {
+    slug: "waxing-threading-men",
+    title: "Waxing & threading",
+    category: "Waxing",
+    pick: "many",
+    members: [
+      ["Cheeks wax (men)", "Cheeks wax"],
+      ["Nose wax (men) (outer)", "Nose wax"],
+      ["Ear wax (men)", "Ear wax"],
+      ["Forehead wax (men)", "Forehead wax"],
+      ["Full Face wax (men)", "Full face wax"],
+      ["Men thread", "Threading"],
+    ],
+  },
+  {
+    slug: "manicure-pedicure",
+    title: "Manicure & pedicure",
+    category: "Hands & feet",
+    members: [
+      ["Manicure & Pedicure (Basic)", "Basic"],
+      ["Manicure & Pedicure (Premium)", "Premium"],
+      ["Manicure & Pedicure (Luxury)", "Luxury"],
     ],
   },
   {
     slug: "clean-up",
     title: "Clean-up",
+    category: "Skin",
     members: [
       ["Clean-up (Basic)", "Basic"],
-      ["Brightening Cleanup (Paragon)", "Brightening (Paragon)"],
-      ["Deep Cleaning (For Oily/Dry) (Kanpeki)", "Deep cleaning, oily/dry (Kanpeki)"],
+      ["Brightening Cleanup (Paragon)", "Brightening"],
+      ["De-tan Cleansing", "De-tan cleansing"],
+      ["Deep Cleaning (For Oily/Dry) (Kanpeki)", "Deep cleansing (Kanpeki)"],
     ],
   },
   {
-    slug: "de-tan",
-    title: "De-tan",
+    slug: "facials",
+    title: "Facials",
+    category: "Skin",
     members: [
-      ["De-tan Cleansing", "De-tan cleansing"],
-      ["Ruber Mask (De Tan Mask)", "De-tan rubber mask"],
-      ["Dull Skin (For Tan Skin) (Brillare)", "Dull, tanned skin (Brillare)"],
-      ["D-tan facial (paragon)", "De-tan facial (Paragon)"],
-      ["D-tan Facial (Brillare)", "De-tan facial (Brillare)"],
-      ["D-tan", "De-tan (men)"],
-      ["Dtan paragon", "De-tan, Paragon (men)"],
+      ["Facial (Basic)", "Basic"],
+      ["Facial (Premium)", "Premium"],
+      ["Facial (Luxury)", "Luxury"],
+    ],
+  },
+  {
+    slug: "hair-services-women",
+    title: "Hair services",
+    category: "Hair",
+    pick: "many",
+    members: [
+      ["head wash", "Head wash (natural dry)"],
+      ["Blow dry (women)", "Blow-dry"],
+      ["Head Massage (Coconut, Olive Oil, Natural Dry)", "Head massage with wash"],
+      ["Hair Cut (Wash, Conditioning, Blow Dry) (women)", "Haircut with wash & blow-dry"],
+      ["Split Ends (Wash, Conditioning, Blow Dry)", "Split ends with wash & blow-dry"],
+      ["Baby Girls Hair Cut (Wash, Conditioning)", "Baby girl haircut & blow-dry"],
+      ["Flat Iron Straightening (Wash, Conditioning)", "Flat-iron straightening"],
+      ["Open Hair Styling (curls)", "Spiral curls with wash"],
+      ["Root touchup", "Root touch-up"],
+    ],
+  },
+  {
+    slug: "hair-colour-women",
+    title: "Hair colour",
+    category: "Colour",
+    description: "Starting prices. The final price depends on your hair length; we confirm it before we start.",
+    members: [
+      ["Global Highlights Balayage Ombre Baby Light (Short)", "Global colour"],
+      ["Highlights (Women)", "Highlights"],
+      ["Balayage", "Balayage"],
+      ["Ombre", "Ombré"],
+      ["Baby Light", "Baby lights"],
+      ["Color Remove (Henna, Dye)", "Colour removal (henna, dye)"],
+    ],
+  },
+  {
+    slug: "hair-treatments-women",
+    title: "Hair treatments",
+    category: "Treatments",
+    description: "Starting prices, for short hair. Medium and long hair cost more; we confirm the price before we start.",
+    members: [
+      ["Keratin (Women) Short", "Keratin"],
+      ["Smoothening (Women) Short", "Smoothening"],
+      ["Rebonding", "Rebonding"],
+      ["Botox (Women) Short", "Botox"],
+      ["Silk Therapy/Straight Therapy Short", "Silk / straight therapy"],
+      ["Nanoplastia Short", "Nanoplastia"],
+    ],
+  },
+  {
+    slug: "honey-waxing",
+    title: "Waxing (honey)",
+    category: "Waxing",
+    pick: "many",
+    members: [
+      ["Full Arms wax ( honey)", "Full arms"],
+      ["Full legs wax (honey)", "Full legs"],
+      ["Half Arms wax (honey)", "Half arms"],
+      ["Half legs wax (honey)", "Half legs"],
+      ["Under arms wax (honey)", "Underarms"],
+      ["Bikini wax (honey)", "Bikini"],
+      ["Body wax (excluded bikini) (honey)", "Full body except bikini"],
+      ["Body wax (included bikini) (honey)", "Full body express"],
+    ],
+  },
+  {
+    slug: "rica-waxing",
+    title: "Waxing (Rica)",
+    category: "Waxing",
+    pick: "many",
+    members: [
+      ["Full Arms wax (rica)", "Full arms"],
+      ["Full legs wax (rica)", "Full legs"],
+      ["Half Arms wax (rica)", "Half arms"],
+      ["Half legs wax (rica)", "Half legs"],
+      ["Under arms wax (rica)", "Underarms"],
+      ["Bikini wax (rica)", "Bikini"],
+      ["Body wax (excluded bikini) (rica)", "Full body except bikini"],
+      ["Body wax (included bikini) (rica)", "Full body express"],
+    ],
+  },
+  {
+    slug: "face-wax",
+    title: "Face wax",
+    category: "Waxing",
+    pick: "many",
+    members: [
+      ["Eyebrow wax", "Eyebrows"],
+      ["Side locks (wax)", "Side locks"],
+      ["Upper lips (wax)", "Upper lip"],
+      ["Chin (wax)", "Chin"],
+      ["Face Wax", "Full face"],
+    ],
+  },
+  {
+    slug: "threading",
+    title: "Threading",
+    category: "Threading",
+    pick: "many",
+    members: [
+      ["Threading Full Face", "Full face"],
+      ["Eyebrows", "Eyebrows"],
+      ["Forehead ( Thread)", "Forehead"],
+      ["Upper Lips ( Thread)", "Upper lip"],
+      ["Chin (Thread)", "Chin"],
+      ["Side Locks (Thread)", "Side locks"],
     ],
   },
   {
     slug: "bleach",
-    pick: "many",
     title: "Bleach",
+    category: "Skin",
+    pick: "many",
     members: [
       ["Bleach Face", "Face"],
-      ["Face Bleach", "Face (men)"],
       ["Bleach Neck", "Neck"],
-      ["Bleach Hand/Feet", "Hands / feet"],
+      ["Bleach Stomach", "Stomach"],
+      ["Bleach Back", "Back"],
       ["Bleach Arms", "Arms"],
       ["Bleach Legs", "Legs"],
-      ["Bleach Back", "Back"],
-      ["Bleach Stomach", "Stomach"],
+      ["Bleach Hand/Feet", "Hands / feet"],
       ["Bleach Full Body", "Full body"],
-      ["Body Bleach", "Body bleach"],
     ],
   },
   {
-    slug: "organic-bleach",
-    pick: "many",
-    title: "Organic bleach",
+    slug: "makeup",
+    title: "Make-up",
+    category: "Makeup",
     members: [
-      ["Organic Bleach Neck", "Neck"],
-      ["Organic Bleach Hand/Feet", "Hands / feet"],
-      ["Organic Bleach Arms", "Arms"],
-      ["Organic Bleach Legs", "Legs"],
-      ["Organic Bleach Back", "Back"],
-      ["Organic Bleach Stomach", "Stomach"],
-      ["Organic Bleach Full Body", "Full body"],
-    ],
-  },
-  {
-    slug: "body-scrub-polish-wrap",
-    title: "Body scrub, polish & wrap",
-    members: [
-      ["Body Scrub", "Body scrub"],
-      ["Body Polishing", "Body polishing"],
-      ["Body Wrap", "Body wrap"],
-      ["Body Polishing + Wrap Combo", "Polishing + wrap combo"],
-      ["Papaya & Marshmallow", "Papaya & marshmallow"],
-      ["Ginger & Walnut", "Ginger & walnut"],
-      ["Jamaican Sorrel", "Jamaican sorrel"],
-    ],
-  },
-  // ── Threading ─────────────────────────────────────────────────────────────
-  {
-    slug: "threading",
-    pick: "many",
-    title: "Threading",
-    category: "Threading",
-    members: [
-      ["Eyebrows", "Eyebrows"],
-      ["Upper Lips (Thread)", "Upper lip"],
-      ["Chin (Thread)", "Chin"],
-      ["Forehead (Thread)", "Forehead"],
-      ["Men thread", "Men's threading"],
-      ["Thread combo", "Combo"],
-      ["Threading Full Face", "Full face"],
-    ],
-  },
-  // ── Hands & feet ──────────────────────────────────────────────────────────
-  {
-    slug: "manicure",
-    title: "Manicure",
-    members: [
-      ["Mini Manicure", "Mini"],
-      ["Manicure", "Classic"],
-      ["Premium Manicure", "Premium"],
-      ["Luxury Manicure", "Luxury"],
-    ],
-  },
-  {
-    slug: "pedicure",
-    title: "Pedicure",
-    members: [
-      ["Mini Pedicure", "Mini"],
-      ["Pedicure", "Classic"],
-      ["Premium Pedicure", "Premium"],
-      ["Luxury Pedicure", "Luxury"],
-    ],
-  },
-  // ── Makeup ────────────────────────────────────────────────────────────────
-  {
-    slug: "party-makeup",
-    title: "Party make-up",
-    members: [
-      ["Basic Party Make-up", "Basic"],
-      ["HD Party Make-up", "HD"],
-      ["Signature Make-up", "Signature"],
-    ],
-  },
-  {
-    slug: "engagement-makeup",
-    title: "Engagement make-up",
-    members: [
-      ["Basic Engagement Make-up", "Basic"],
-      ["HD Engagement Make-up", "HD"],
-      ["Signature Engagement Make-up", "Signature"],
-      ["Celebrity Engagement Make-up", "Celebrity"],
-    ],
-  },
-  {
-    slug: "reception-makeup",
-    title: "Reception make-up",
-    members: [
-      ["Basic Reception Make-up", "Basic"],
-      ["HD Make-up (Reception)", "HD"],
-      ["Signature Reception Make-up", "Signature"],
-      ["Celebrity Reception Make-up", "Celebrity"],
-    ],
-  },
-  {
-    slug: "bridal-makeup",
-    title: "Bridal make-up",
-    members: [
-      ["Basic Bridal Make-up", "Basic"],
-      ["HD Bridal Make-up", "HD"],
-    ],
-  },
-  {
-    slug: "draping-dress-up",
-    pick: "many",
-    title: "Draping & dress-up",
-    members: [
-      ["Saree Draping", "Saree draping"],
-      ["Bridal Draping", "Bridal draping"],
-      ["Dress up Setting", "Dress-up setting"],
-    ],
-  },
-  // ── Waxing ────────────────────────────────────────────────────────────────
-  {
-    slug: "face-waxing",
-    pick: "many",
-    title: "Face waxing",
-    members: [
-      ["Upper lips (wax)", "Upper lip"],
-      ["Chin (wax)", "Chin"],
-      ["Nose (wax)", "Nose"],
-      ["Nose wax (inner)", "Nose, inner (men)"],
-      ["Nose wax (outer)", "Nose, outer (men)"],
-      ["Forehead (wax) Women", "Forehead"],
-      ["Forehead wax", "Forehead (men)"],
-      ["Side locks (wax)", "Side locks"],
-      ["Ear wax", "Ears (men)"],
-      ["Face Wax", "Full face"],
-      ["Full Face wax", "Full face (men)"],
-    ],
-  },
-  {
-    slug: "arms-underarms-waxing",
-    pick: "many",
-    title: "Arms & underarms waxing",
-    members: [
-      ["Under arms wax (honey)", "Underarms, honey"],
-      ["Under arms wax (rica)", "Underarms, Rica"],
-      ["Half Arms wax (honey)", "Half arms, honey"],
-      ["Half Arms wax (rica)", "Half arms, Rica"],
-      ["Full Arms wax (honey)", "Full arms, honey"],
-      ["Full Arms wax (rica)", "Full arms, Rica"],
-    ],
-  },
-  {
-    slug: "legs-waxing",
-    pick: "many",
-    title: "Legs waxing",
-    members: [
-      ["Half legs wax (honey)", "Half legs, honey"],
-      ["Half legs wax (rica)", "Half legs, Rica"],
-      ["Full legs wax (honey)", "Full legs, honey"],
-      ["Full legs wax (rica)", "Full legs, Rica"],
-    ],
-  },
-  {
-    slug: "back-stomach-waxing",
-    pick: "many",
-    title: "Back & stomach waxing",
-    members: [
-      ["Half back wax (rica)", "Half back, Rica"],
-      ["Back wax (honey)", "Full back, honey"],
-      ["Back wax (rica)", "Full back, Rica"],
-      ["Stomach wax (honey)", "Stomach, honey"],
-      ["Stomach wax (rica)", "Stomach, Rica"],
-    ],
-  },
-  {
-    slug: "bikini-body-waxing",
-    pick: "many",
-    title: "Bikini & full-body waxing",
-    members: [
-      ["Bikini wax (honey)", "Bikini, honey"],
-      ["Bikini wax (rica)", "Bikini, Rica"],
-      ["Body wax (excluded bikini) (honey)", "Full body except bikini, honey"],
-    ],
-  },
-  // ── Grooming ──────────────────────────────────────────────────────────────
-  {
-    slug: "beard-moustache",
-    pick: "many",
-    title: "Beard & moustache",
-    members: [
-      ["Beard cut", "Beard cut"],
-      ["Beard Trim", "Beard trim"],
-      ["Beard Color", "Beard colour"],
-      ["Moustache Pasting", "Moustache setting"],
-      ["Moustache Pasting (Color)", "Moustache colour"],
+      ["Basic Party Make-up", "Party make-up"],
+      ["Basic Engagement Make-up", "Engagement make-up"],
+      ["Basic Reception Make-up", "Reception make-up"],
+      ["Basic Bridal Make-up", "Bridal make-up"],
     ],
   },
 ];
@@ -386,7 +277,7 @@ for (const g of GROUPS) {
 
 /** The config group (and this service's label in it) for a service, or null. */
 function groupFor(service) {
-  return BY_NAME.get(norm(service.publicName)) || BY_NAME.get(norm(service.name)) || null;
+  return BY_NAME.get(norm(service.name)) || BY_NAME.get(norm(service.publicName)) || null;
 }
 
 module.exports = { GROUPS, groupFor, groupBySlug: (slug) => BY_SLUG.get(slug) || null, norm };

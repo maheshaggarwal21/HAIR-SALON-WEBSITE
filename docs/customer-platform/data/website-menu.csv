@@ -1,0 +1,92 @@
+order,section,group,audience,website_name,website_price,list_price,slug,billing_id,billing_name,billing_price,new_category,owner_group,owner_name
+1,Hair,hair-services-men,him,Haircut (men),200,400,haircut-men,699ff90489fbabf985075442,Hair Cut (Wash Styling) (men),400,,Hair Services,Hair Cut
+2,Hair,hair-services-men,him,Hair styling (men),150,300,hair-styling-men,699ff96d89fbabf98507545a,Hair Styling (Men),200,,Hair Services,Hair Styling
+3,Hair,hair-services-men,him,Head massage (men),350,700,head-massage-men,6a4a362d58bbe9041a34ade1,Head Massage,700,,Hair Services,Head Massage
+4,Grooming,beard-moustache,him,Beard trim,150,300,beard-trim-men,699ff07883c21439c00614d1,Beard Trim,300,,Beard,Beard Trim
+5,Grooming,beard-moustache,him,Beard shave,150,300,beard-shave-men,,Beard Shave,,Hair,Beard,Beard Shave
+6,Hair,hair-services-men,him,Baby boy haircut,150,300,baby-boy-haircut-men,699fef81598c6761f9eb3b94,Baby Boy Hair Cut (Styling),300,,Beard,Baby Boy Haircut
+7,Grooming,beard-moustache,him,Moustache pasting,200,400,moustache-pasting-men,699ffb7889fbabf9850754bf,Moustache Pasting,400,,Beard,Moustache Pasting
+8,Grooming,beard-moustache,him,Moustache colour,100,200,moustache-colour-men,699ffb8f89fbabf9850754c3,Moustache Pasting (Color),200,,Beard,Moustache Colour
+9,Grooming,beard-moustache,him,Beard colour,200,400,beard-colour-men,699ff047598c6761f9eb3bb5,Beard Color,400,,Beard,Beard Color
+10,Colour,hair-colour-men,him,Global colour (men),400,800,global-colour-men,699ff85e89fbabf98507541e,Global Color (Men),800,,Hair,Global Color
+11,Treatments,hair-treatments-men,him,Highlighting (men),750,1500,highlighting-men,699ffa5a89fbabf98507548a,Highlighting (Men),2000,,Hair Treatments,Highlighting
+12,Treatments,hair-treatments-men,him,Keratin (men),1500,3000,keratin-men,699ffa9289fbabf985075496,Keratin (Men),3000,,Hair Treatments,Keratin
+13,Treatments,hair-treatments-men,him,Smoothening (men),1500,3000,smoothening-men,699fff0a89fbabf985075577,Smoothening (Men),3000,,Hair Treatments,Smoothening
+14,Treatments,hair-treatments-men,him,Hair botox (men),1500,3000,hair-botox-men,699ff30183c21439c006152f,Botox (Men),3000,,Hair Treatments,Botox
+15,Treatments,hair-treatments-men,him,Hair perming (men),2000,4000,hair-perming-men,699ff92589fbabf98507544a,Hair Perming (Men),4000,,Hair Treatments,Hair Perming
+16,Waxing,waxing-threading-men,him,Cheeks wax (men),200,400,cheeks-wax-men,699fef22598c6761f9eb3b85,Cheeks wax (men),400,,Waxing & Thread,Cheeks wax
+17,Waxing,waxing-threading-men,him,Nose wax (men),100,200,nose-wax-men,699ffc0b89fbabf9850754df,Nose wax (men) (outer),200,,Waxing & Thread,Nose wax
+18,Waxing,waxing-threading-men,him,Ear wax (men),100,200,ear-wax-men,699ff76389fbabf9850753e6,Ear wax (men),400,,Waxing & Thread,Ear wax
+19,Waxing,waxing-threading-men,him,Forehead wax (men),100,200,forehead-wax-men,699ff7e589fbabf9850753fe,Forehead wax (men),400,,Waxing & Thread,Forehead wax
+20,Waxing,waxing-threading-men,him,Full face wax (men),500,1000,full-face-wax-men,699ff81f89fbabf98507540e,Full Face wax (men),1000,,Waxing & Thread,Full Face wax
+21,Waxing,waxing-threading-men,him,Threading (men),50,100,threading-men,699ffb1a89fbabf9850754b2,Men thread,100,,Waxing & Thread,Men thread
+22,Hands & feet,manicure-pedicure,unisex,"Manicure & pedicure, basic",750,1500,manicure-and-pedicure-basic,,Manicure & Pedicure (Basic),,Body,Manicure & Pedicure,Basic
+23,Hands & feet,manicure-pedicure,unisex,"Manicure & pedicure, premium",1500,3000,manicure-and-pedicure-premium,,Manicure & Pedicure (Premium),,Body,Manicure & Pedicure,Premium
+24,Hands & feet,manicure-pedicure,unisex,"Manicure & pedicure, luxury",2500,5000,manicure-and-pedicure-luxury,,Manicure & Pedicure (Luxury),,Body,Manicure & Pedicure,Luxury
+25,Skin,clean-up,unisex,Basic clean-up,600,1200,basic-clean-up,699ff43583c21439c006155b,Clean-up (Basic),700,,Cleanup,Cleanup(Basic)
+26,Skin,clean-up,unisex,Brightening clean-up,800,1600,brightening-clean-up,699ff3b283c21439c0061543,Brightening Cleanup (Paragon),1000,,Cleanup,Brightening Cleanup
+27,Skin,clean-up,unisex,De-tan cleansing,1000,2000,de-tan-cleansing,699fef3a598c6761f9eb3b8a,De-tan Cleansing,1200,,Cleanup,D-tan Cleansing
+28,Skin,clean-up,unisex,Deep cleansing (Kanpeki),1200,2400,deep-cleansing-kanpeki,699ff4f183c21439c006156b,Deep Cleaning (For Oily/Dry) (Kanpeki),1600,,Cleanup,Deep Cleansing(Kanpeki)
+29,Skin,facials,unisex,Basic facial,1200,2400,basic-facial,,Facial (Basic),,Skin,Facial,Basic Facial
+30,Skin,facials,unisex,Premium facial,1500,3000,premium-facial,,Facial (Premium),,Skin,Facial,Premium Facial
+31,Skin,facials,unisex,Luxury facial,2500,5000,luxury-facial,,Facial (Luxury),,Skin,Facial,Luxury Facial
+32,Hair,hair-services-women,her,Head wash (natural dry),200,400,head-wash-natural-dry,6aabb99f87d1a72a595e6612,head wash,400,,Hair Services,Head Wash (Natural dry)
+33,Hair,hair-services-women,her,Blow-dry,400,800,blow-dry,699ff1cc83c21439c006150a,Blow dry (women),600,,Hair Services,Blow Dry
+34,Hair,hair-services-women,her,Head massage with wash,700,1400,head-massage-with-wash,699ffa2489fbabf985075482,"Head Massage (Coconut, Olive Oil, Natural Dry)",1400,,Hair Services,Head Massage (with wash)
+35,Hair,hair-services-women,her,Haircut with wash & blow-dry,500,1000,haircut-with-wash-and-blow-dry,699ff91689fbabf985075446,"Hair Cut (Wash, Conditioning, Blow Dry) (women)",1000,,Hair Services,"Hair Cut (Wash, Conditioning, Blowdry)"
+36,Hair,hair-services-women,her,Split ends with wash & blow-dry,500,1000,split-ends-with-wash-and-blow-dry,699fff5389fbabf985075587,"Split Ends (Wash, Conditioning, Blow Dry)",1000,,Hair Services,"Split Ends(Wash, Conditioning, Blowdry)"
+37,Hair,hair-services-women,her,Baby girl haircut & blow-dry,500,1000,baby-girl-haircut-and-blow-dry,699fef98598c6761f9eb3b98,"Baby Girls Hair Cut (Wash, Conditioning)",1000,,Hair Services,"Baby Girl Haircut(Wash, Conditioning, Blowdry)"
+38,Hair,hair-services-women,her,Flat-iron straightening,700,1400,flat-iron-straightening,699ff7c289fbabf9850753f6,"Flat Iron Straightening (Wash, Conditioning)",1400,,Hair Services,Flat Iron Straightening
+39,Hair,hair-services-women,her,Spiral curls with wash,800,1600,spiral-curls-with-wash,699ffc2a89fbabf9850754e7,Open Hair Styling (curls),1600,,Hair Services,"Spiral Curls(Wash, Condition)"
+40,Hair,hair-services-women,her,Root touch-up,1200,2400,root-touch-up,699ffdaa89fbabf985075537,Root touchup,2000,,Hair Services,Root Touchup
+41,Colour,hair-colour-women,her,Global colour,3500,7000,global-colour,699ff88a89fbabf98507542a,Global Highlights Balayage Ombre Baby Light (Short),7000,,Hair Color (Starting From,Global Color
+42,Colour,hair-colour-women,her,Highlights,3500,7000,highlights,,Highlights (Women),,Hair,Hair Color (Starting From,Highlights
+43,Colour,hair-colour-women,her,Balayage,3500,7000,balayage,,Balayage,,Hair,Hair Color (Starting From,Balayage
+44,Colour,hair-colour-women,her,Ombré,3500,7000,ombre,,Ombre,,Hair,Hair Color (Starting From,Ombre
+45,Colour,hair-colour-women,her,Baby lights,3500,7000,baby-lights,,Baby Light,,Hair,Hair Color (Starting From,Baby Light
+46,Colour,hair-colour-women,her,"Colour removal (henna, dye)",3000,6000,colour-removal-henna-dye,699ff44d83c21439c006155f,"Color Remove (Henna, Dye)",6000,,Hair Color (Starting From,"Color Remove(Heena, Die)"
+47,Treatments,hair-treatments-women,her,Keratin,3500,7000,keratin,699ffad989fbabf9850754a2,Keratin (Women) Short,7000,,Hair Treatments,Keratin
+48,Treatments,hair-treatments-women,her,Smoothening,3500,7000,smoothening,699fff4589fbabf985075583,Smoothening (Women) Short,7000,,Hair Treatments,Smoothening
+49,Treatments,hair-treatments-women,her,Rebonding,3500,7000,rebonding,,Rebonding,,Hair,Hair Treatments,Rebonding
+50,Treatments,hair-treatments-women,her,Hair botox,3500,7000,hair-botox,699ff36883c21439c006153b,Botox (Women) Short,8000,,Hair Treatments,Botox
+51,Treatments,hair-treatments-women,her,Silk / straight therapy,5000,10000,silk-straight-therapy,699ffefd89fbabf985075573,Silk Therapy/Straight Therapy Short,8000,,Hair Treatments,Silk Therapy/ Strat Therapy
+52,Treatments,hair-treatments-women,her,Nanoplastia,3500,7000,nanoplastia,699ffbd689fbabf9850754d3,Nanoplastia Short,9000,,Hair Treatments,Nano Plastia
+53,Waxing,honey-waxing,her,Full arms wax (honey),350,700,full-arms-wax-honey,699ff80189fbabf985075406,Full Arms wax ( honey),700,,Waxing (Honey),Full Arm Wax
+54,Waxing,honey-waxing,her,Full legs wax (honey),600,1200,full-legs-wax-honey,699ff83389fbabf985075412,Full legs wax (honey),1200,,Waxing (Honey),Full Leg Wax
+55,Waxing,honey-waxing,her,Half arms wax (honey),150,300,half-arms-wax-honey,699ff99289fbabf985075462,Half Arms wax (honey),300,,Waxing (Honey),Half Arm Wax
+56,Waxing,honey-waxing,her,Half legs wax (honey),350,700,half-legs-wax-honey,699ff9b689fbabf98507546a,Half legs wax (honey),700,,Waxing (Honey),Half Leg Wax
+57,Waxing,honey-waxing,her,Underarms wax (honey),100,200,underarms-wax-honey,699fffa889fbabf98507559b,Under arms wax (honey),200,,Waxing (Honey),Under Arm
+58,Waxing,honey-waxing,her,Bikini wax (honey),1000,2000,bikini-wax-honey,699ff08c83c21439c00614d5,Bikini wax (honey),2000,,Waxing (Honey),Bikini Wax
+59,Waxing,honey-waxing,her,Full body except bikini wax (honey),2400,4800,full-body-except-bikini-wax-honey,699ebf3558e1904a032dfc11,Body wax (excluded bikini) (honey),4800,,Waxing (Honey),Body Wax (Excluded Bikini)
+60,Waxing,honey-waxing,her,Full body express wax (honey),3500,7000,full-body-express-wax-honey,699ff25a83c21439c0061522,Body wax (included bikini) (honey),7000,,Waxing (Honey),Full Body Express wax
+61,Waxing,rica-waxing,her,Full arms wax (Rica),500,1000,full-arms-wax-rica,699ff80f89fbabf98507540a,Full Arms wax (rica),1000,,Waxing (Rica),Full Arm Wax
+62,Waxing,rica-waxing,her,Full legs wax (Rica),750,1500,full-legs-wax-rica,699ff84389fbabf985075416,Full legs wax (rica),1900,,Waxing (Rica),Full Leg Wax
+63,Waxing,rica-waxing,her,Half arms wax (Rica),300,600,half-arms-wax-rica,699ff9a389fbabf985075466,Half Arms wax (rica),600,,Waxing (Rica),Half Arm Wax
+64,Waxing,rica-waxing,her,Half legs wax (Rica),450,900,half-legs-wax-rica,699ff9c889fbabf98507546e,Half legs wax (rica),900,,Waxing (Rica),Half Leg Wax
+65,Waxing,rica-waxing,her,Underarms wax (Rica),250,500,underarms-wax-rica,699fffb689fbabf98507559f,Under arms wax (rica),500,,Waxing (Rica),Under Arm
+66,Waxing,rica-waxing,her,Bikini wax (Rica),1200,2400,bikini-wax-rica,699ff09e83c21439c00614d9,Bikini wax (rica),2400,,Waxing (Rica),Bikini Wax
+67,Waxing,rica-waxing,her,Full body except bikini wax (Rica),3500,7000,full-body-except-bikini-wax-rica,699ebf5e58e1904a032dfc15,Body wax (excluded bikini) (rica),7000,,Waxing (Rica),Body Wax (Excluded Bikini)
+68,Waxing,rica-waxing,her,Full body express wax (Rica),4500,9000,full-body-express-wax-rica,699ff26d83c21439c0061526,Body wax (included bikini) (rica),9000,,Waxing (Rica),Full Body Express wax
+69,Waxing,face-wax,her,Eyebrow wax,200,400,eyebrow-wax,,Eyebrow wax,,Skin,Face Wax,Eyebrow Wax
+70,Waxing,face-wax,her,Side locks wax,200,400,side-locks-wax,699ffe6689fbabf98507555b,Side locks (wax),400,,Face Wax,Side Locks
+71,Waxing,face-wax,her,Upper lip wax,50,100,upper-lip-wax,699fffd289fbabf9850755a7,Upper lips (wax),100,,Face Wax,Upperlips
+72,Waxing,face-wax,her,Chin wax,50,100,chin-wax,699ff42183c21439c0061557,Chin (wax),100,,Face Wax,Chin
+73,Waxing,face-wax,her,Full face wax,500,1000,full-face-wax,699ff7ae89fbabf9850753f2,Face Wax,1000,,Face Wax,Full Face Wax
+74,Threading,threading,her,Full face threading,200,400,full-face-threading,699fff9889fbabf985075597,Threading Full Face,400,,Thread work,Full Face
+75,Threading,threading,her,Eyebrow threading,50,100,eyebrow-threading,699ff77789fbabf9850753ea,Eyebrows,100,,Thread work,Eyebrows
+76,Threading,threading,her,Forehead threading,30,60,forehead-threading,699fef55598c6761f9eb3b8f,Forehead ( Thread),60,,Thread work,Forehead
+77,Threading,threading,her,Upper lip threading,30,60,upper-lip-threading,699fffc489fbabf9850755a3,Upper Lips ( Thread),60,,Thread work,Upperlips
+78,Threading,threading,her,Chin threading,30,60,chin-threading,699ff40b83c21439c0061553,Chin (Thread),60,,Thread work,Chin
+79,Threading,threading,her,Side locks threading,200,400,side-locks-threading,699ffe3a89fbabf985075557,Side Locks (Thread),4000,,Thread work,Side Locks
+80,Skin,bleach,her,Face bleach,300,600,face-bleach,699ff11183c21439c00614e9,Bleach Face,600,,Bleach,Face
+81,Skin,bleach,her,Neck bleach,200,400,neck-bleach,699ff16f83c21439c00614fa,Bleach Neck,400,,Bleach,Neck
+82,Skin,bleach,her,Stomach bleach,600,1200,stomach-bleach,699ff19583c21439c00614fe,Bleach Stomach,1200,,Bleach,Stomach
+83,Skin,bleach,her,Back bleach,600,1200,back-bleach,699ff0f983c21439c00614e5,Bleach Back,1200,,Bleach,Back
+84,Skin,bleach,her,Arms bleach,400,800,arms-bleach,699ff0e383c21439c00614e1,Bleach Arms,800,,Bleach,Arms
+85,Skin,bleach,her,Legs bleach,500,1000,legs-bleach,699ff15583c21439c00614f5,Bleach Legs,1000,,Bleach,Legs
+86,Skin,bleach,her,Hands / feet bleach,250,500,hands-feet-bleach,699ff13b83c21439c00614f1,Bleach Hand/Feet,500,,Bleach,Hand/Feet
+87,Skin,bleach,her,Full body bleach,2000,4000,full-body-bleach,699ff12383c21439c00614ed,Bleach Full Body,4000,,Bleach,Full Body
+88,Makeup,makeup,her,Party make-up,3000,6000,party-make-up,699ff017598c6761f9eb3bad,Basic Party Make-up,5000,,Make up,Party Make-up
+89,Makeup,makeup,her,Engagement make-up,5000,10000,engagement-make-up,699ff000598c6761f9eb3ba9,Basic Engagement Make-up,10000,,Make up,Engagement Makeup
+90,Makeup,makeup,her,Reception make-up,6000,12000,reception-make-up,699ff02b598c6761f9eb3bb1,Basic Reception Make-up,12000,,Make up,Reception Makeup
+91,Makeup,makeup,her,Bridal make-up,15000,30000,bridal-make-up,699fefe9598c6761f9eb3ba5,Basic Bridal Make-up,30000,,Make up,Bridal Makeup

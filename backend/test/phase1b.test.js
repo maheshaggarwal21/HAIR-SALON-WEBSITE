@@ -85,7 +85,7 @@ async function call(method, path, body, headers = {}) {
 const revalidations = () => calls.filter((c) => c.url === "/api/revalidate").map((c) => JSON.parse(c.body).tags);
 
 test("reels: owner adds, hides and tags a reel; the public feed shows visible ones with 'Book this look'", async () => {
-  const svc = await Service.create({ name: "Balayage", price: 9000, publicPrice: 4500, showOnWebsite: true, slug: "balayage", bookingMode: "request" });
+  const svc = await Service.create({ name: "Olaplex spa", price: 7000, publicPrice: 3500, showOnWebsite: true, slug: "olaplex-spa", bookingMode: "request" });
   const a = await call("POST", "/website/reels", { mediaUrl: "https://blob.example/a.mp4", caption: "Balayage", serviceId: String(svc._id) });
   assert.equal(a.status, 201, JSON.stringify(a.body));
   const b = await call("POST", "/website/reels", { mediaUrl: "https://blob.example/b.mp4" });
@@ -94,7 +94,7 @@ test("reels: owner adds, hides and tags a reel; the public feed shows visible on
 
   const pub = await call("GET", "/public/reels");
   assert.equal(pub.body.reels.length, 1);
-  assert.deepEqual(pub.body.reels[0].service, { slug: "balayage", name: "Balayage", optionId: String(svc._id) });
+  assert.deepEqual(pub.body.reels[0].service, { slug: "olaplex-spa", name: "Olaplex spa", optionId: String(svc._id) });
   assert.ok(revalidations().every((t) => t.includes("reels")));
   assert.equal(revalidations().length, 3); // two creates + one hide; the refused one does not ping
   assert.equal(calls.find((c) => c.url === "/api/revalidate").headers["x-revalidate-secret"], "reval-secret");

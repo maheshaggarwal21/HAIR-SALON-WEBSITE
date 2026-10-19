@@ -25,7 +25,7 @@ const { PERMISSIONS } = require("../constants/permissions");
 const validateId = require("../middleware/validateId");
 const audit = require("../utils/audit");
 const { GENDER_KEYS, normaliseRule, effectiveRule, serviceKeys, ruleAllows } = require("../utils/skills");
-const { groupBySlug } = require("../config/menuGroups");
+const { groupBySlug, norm } = require("../config/menuGroups");
 const { DISPLAY_CATEGORIES } = require("../models/Service");
 
 const router = express.Router();
@@ -74,7 +74,9 @@ async function serviceTree() {
       const cfg = groupBySlug(k.group);
       groups.set(k.group, { slug: k.group, title: cfg?.title || s.publicName || s.name, services: [] });
     }
-    groups.get(k.group).services.push({ _id: String(s._id), name: s.publicName && s.variantLabel ? `${s.publicName} ${s.variantLabel}` : s.publicName || s.name, audience: s.audience ?? null });
+    // "Keratin" + "Short" reads as one name; a full website name ("Upper lip wax") is used as it is.
+    const withLabel = s.publicName && s.variantLabel && !norm(s.publicName).includes(norm(s.variantLabel));
+    groups.get(k.group).services.push({ _id: String(s._id), name: withLabel ? `${s.publicName} ${s.variantLabel}` : s.publicName || s.name, audience: s.audience ?? null });
   }
   const order = (c) => (DISPLAY_CATEGORIES.indexOf(c) === -1 ? 99 : DISPLAY_CATEGORIES.indexOf(c));
   return [...sections.entries()]
