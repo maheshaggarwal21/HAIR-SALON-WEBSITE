@@ -29,7 +29,7 @@ flowchart TB
   end
   DB[("MongoDB Atlas<br/>single source of truth")]
   RZ["Razorpay"]
-  WA["WhatsApp (Wati)"]
+  WA["WhatsApp (Meta Cloud API)"]
   TG["Telegram bot"]
   IG["Instagram API"]
   GP["Google Places API"]
@@ -367,7 +367,7 @@ sequenceDiagram
   participant A as API /api/public
   participant D as MongoDB
   participant R as Razorpay
-  participant W as WhatsApp (Wati)
+  participant W as WhatsApp (Meta Cloud API)
   participant T as Telegram
 
   U->>A: GET /availability?date&items&artist
@@ -585,7 +585,7 @@ is recognised when redeemed inside a Visit.
 | ~~Visit completed + 2h~~ | ~~review request~~ — removed, D50 | — | — |
 | Rebook nudge | per service rule (root touch-up 30d, threading 21d, facial 30d, beard 14d) only if `whatsappOptIn` | — | — |
 
-All WhatsApp templates need Meta approval through Wati. Submit them on day 1 (T0.9) —
+All WhatsApp templates need Meta approval in Meta's WhatsApp Manager. Submit them on day 1 (T0.9) —
 approval can take 1–2 days. Every send goes through `notify(key, ...)`, which checks
 `NotificationLog` first (idempotent) and records the result. Failures never block a booking.
 
@@ -800,8 +800,8 @@ Proposal rules (display category, audience, variants, outlier flags) live in
 
 ## 22. Environment variables (backend additions)
 
-`PUBLIC_TOKEN_SECRET` · `TURNSTILE_SECRET_KEY` · `WATI_API_URL` · `WATI_API_TOKEN` ·
-`WATI_TEMPLATE_*` · `CRON_SECRET` · `REVALIDATE_SECRET` · `CUSTOMER_SITE_URL` ·
+`PUBLIC_TOKEN_SECRET` · `TURNSTILE_SECRET_KEY` · `META_WA_TOKEN` · `META_WA_PHONE_NUMBER_ID` ·
+`WHATSAPP_TEMPLATE_*` · `CRON_SECRET` · `REVALIDATE_SECRET` · `CUSTOMER_SITE_URL` ·
 `INSTAGRAM_ACCESS_TOKEN` (stored in DB after first refresh) · `GOOGLE_PLACES_API_KEY` ·
 `SALON_PLACE_ID`.
 
@@ -830,7 +830,7 @@ Customer site: `NEXT_PUBLIC_API_BASE` · `NEXT_PUBLIC_TURNSTILE_SITE_KEY` ·
 | D4 | `SlotLock` unique index + transaction prevents double booking | Correct under concurrency on serverless |
 | D5 | Walk-ins are Appointments (`channel=walkin`) | One timeline, one lock system |
 | D6 | Request bookings pay the deposit upfront, refunded if declined | One payment path; filters non-serious requests |
-| D7 | OTP over WhatsApp (Wati) until MSG91 DLT clears | SMS fallback is not available yet |
+| D7 | OTP over WhatsApp (Meta Cloud API; Wati until D57) until MSG91 DLT clears | SMS fallback is not available yet |
 | D8 | Variants = existing services grouped by `variantGroup` | Visits and analytics stay unchanged |
 | D9 | One artist per item; a guest's items chain back-to-back; group guests run in parallel | Covers "cut + threading" combos without colour processing complexity |
 | D10 | Instagram via API sync, not iframe embeds | Speed and design control |
@@ -875,11 +875,12 @@ Customer site: `NEXT_PUBLIC_API_BASE` · `NEXT_PUBLIC_TURNSTILE_SITE_KEY` ·
 | D49 | Once online booking is on, EVERY service the website shows is booked instantly and paid for — colour, keratin and bridal included. The engine has no "request" tier (`effectiveMode` maps `request` → `instant` and ignores `requiresConsultation`); hidden and walk-in-only services stay off the site. The Website Requests inbox is only for when online booking is off (request-lite). Approve/expire code is kept for requests made before this change. The patch-test lead time (48h before colour for a first-timer, E14) is unchanged: it limits which times are offered, it doesn't make the booking a request | Owner, 15 Oct 2026 |
 | D50 | No review-request WhatsApp: it is billed as a marketing message (about ₹0.86 against ₹0.115 for the others), the dearest message per booking. Removed from `bookings-tick`, along with `SiteSettings.reviewUrl` and the `review_request` template. Reviews are asked for in person or from the website's Google link (D38) | Owner, 15 Oct 2026 |
 | D51 | Loose ends from the Phase 2 review: (1) an artist who is deactivated or deleted has their coming bookings moved to free artists exactly like leave (D48); one nobody can take stays on the Today board under the departed artist ("no longer here — move these") and in the owner's Telegram alert. (2) Cancellation fees and forfeited deposits the salon KEEPS are recorded on the Appointment (`feeKept`, `feeKeptAt`; updated when the owner waives or changes a refund) and listed per IST month on the Refunds screen (`GET /api/bookings/fees`), because no Visit records them and Analytics can't see them. (3) A failed refund shows Razorpay's reason in Telegram and on the Refunds screen, with a "balance looks too low — add funds, then Try again" hint when it says so. (4) If the SALON changes the artist a customer had named, `artistChangedBySalon` is set and a customer cancellation is then free whatever the notice. The cancellation policy, terms and privacy pages say all this and follow the online-booking switch | Owner, 15 Oct 2026 |
-| D52 | WhatsApp goes through Meta's own WhatsApp Cloud API instead of Wati (the client didn't want a middleman platform): one door, `utils/whatsapp.js`, with `WHATSAPP_PROVIDER` = `meta` (default) or `wati` (kept for rollback). Same approved-template rule; variables are filled in a fixed order per message type (`ORDER`), written down with the exact template text in `WHATSAPP_TEMPLATES.md`. Every message except the code ends with "To talk to us, click here to message our main salon number: {{n}}" (a `wa.me` link built from Website Settings → contact → WhatsApp); the code can't carry it because Meta's authentication templates allow no extra text. No monthly platform fee, only Meta's per-message price. Replies to our messages go to the notification number, not to a shared inbox — hence the line above. Marketing broadcasts are NOT built (separate marketing templates, opted-in customers only, higher Meta price) | Owner, 15 Oct 2026 |
+| D52 | WhatsApp goes through Meta's own WhatsApp Cloud API instead of Wati (the client didn't want a middleman platform): one door, `utils/whatsapp.js`, (the `WHATSAPP_PROVIDER` switch and the Wati fallback were removed in D57). Same approved-template rule; variables are filled in a fixed order per message type (`ORDER`), written down with the exact template text in `WHATSAPP_TEMPLATES.md`. Every message except the code ends with "To talk to us, click here to message our main salon number: {{n}}" (a `wa.me` link built from Website Settings → contact → WhatsApp); the code can't carry it because Meta's authentication templates allow no extra text. No monthly platform fee, only Meta's per-message price. Replies to our messages go to the notification number, not to a shared inbox — hence the line above. Marketing broadcasts are NOT built (separate marketing templates, opted-in customers only, higher Meta price) | Owner, 15 Oct 2026 |
 | D53 | The website menu is the owner's signed list (19 Oct 2026): 91 services in 17 groups (`docs/customer-platform/data/website-menu.csv`), names, prices (half the owner's list price), who for and section as the owner wrote them; every other service is off the website. Grouping and option labels in `backend/config/menuGroups.js` (one card per owner group, matched by internal name first, so "Keratin" for her and for him stay apart); database fields set by migration M7 (supersedes M6). 13 services the billing app lacked are created (Beard Shave, Rebonding, Eyebrow wax, Facial / Manicure & Pedicure Basic-Premium-Luxury, women's Highlights, Balayage, Ombre, Baby Light) so the desk can bill them. Where the billing price differs from the owner's list (15 services, e.g. Clean-up Basic ₹700 vs ₹1,200), the owner chose **website only**: the website shows the list's price, billing is unchanged. Women's colour and treatments say "Starting prices" (treatments map to the Short-hair billing service). The sheet put Baby Boy Haircut under Beard; the website shows it with the men's hair services. `/services` is one grid of cards with every price listed, and search also matches option names. | Owner's signed list, 19 Oct 2026 |
 | D54 | Fix Numbers (`datafixes.manage`, default for manager and receptionist; route `/api/data-fixes`, staff tab "Fix Numbers"): a daily list of what the front desk typed wrong, from the owner's August/September PDF review. Four lists, all computed live over Visits up to YESTERDAY (today is never listed, so nobody "fixes" a number mid-conversation): possible duplicates (same name, numbers differing by 1–3 digits or a swap; `utils/numberChecks.js`), invalid numbers (not a 10-digit mobile starting 6–9), refunded or failed Razorpay payments in the window (read live from Razorpay, named from the Visit/PaymentEvent when one exists), and paid visits still waiting for artists. A correction changes `Visit.contact` for every visit filed under the wrong number and nothing else: amounts, dates and payment buckets are untouched. Each change is kept on the visit (`Visit.contactHistory`) and in the audit log (`visit.contact_corrected`), so it is reversible by correcting back; this is a data-entry fix, not an analytics edit, and is the one sanctioned write to `Visit` history besides migrations. "Different people", "fixed" and "identified as" are stored in `DataFix` so a list only shrinks; nothing is deleted. Refunded payments with no visit cannot be re-filed (there is none): reception records who they were as a note | Owner/client, 19 Oct 2026: wrong numbers were confusing payment tracking and had to be found by a periodic report |
 | D55 | Artist day sheet: `GET /api/artist-dashboard/my-day?date=` and the staff-app page **My Day**, the artist's landing page (stats moved to `/dashboard/artist/stats`). An artist sees only their own firm bookings (confirmed, checked in, completed, no-show) for one day, last week to three weeks ahead, plus their leave and blocked time. Never a phone number, price or deposit; unpaid holds and unapproved requests are left out (they may never happen). It reads the same `dayBoard` as the Today board, so the desk and the artist cannot disagree, and refreshes every minute. This is the in-app half of §16's `daily-morning` day sheet; the 08:15 WhatsApp/Telegram push and the owner's morning summary are still to build | Owner, 19 Oct 2026 |
 | D56 | The 08:15 morning push (`GET /api/cron/daily-morning`, `utils/morning.js`): (1) each artist with firm bookings that day gets ONE WhatsApp day sheet (clients' first names, services, times; no client phone numbers or money), template `artist_day_sheet`, one message per artist per day via `notify()` (`{artistId}:{date}:artist_day_sheet`); artists with nothing booked get nothing; (2) the owner gets a Telegram summary (bookings today and how many came from the website, first and last time, deposits already paid, requests waiting, refunds owed, who is away), claimed per owner per day and only marked done once Telegram accepted it, so a failed send is retried by the next call. Nothing is sent on a closed day. Runs from cron-job.org like the other jobs; it is safe to call twice. Cost: one Utility message per working artist per day (about ₹0.115 each) | Owner, 19 Oct 2026 |
+| D57 | Wati is removed: `utils/wati.js`, `WHATSAPP_PROVIDER` and the `WATI_*` variables are gone; `utils/whatsapp.js` talks only to Meta's Cloud API. The same number (+91 99888 72800) is registered with AiSensy (free plan) so the owner can run marketing broadcasts from its dashboard; the app never calls AiSensy. Marketing sends only to customers with `whatsappOptIn`. | Client wants the cheapest setup that meets the requirements; AiSensy has no platform fee for broadcasts and Meta direct has no markup |
 
 ### Owner answers (T0.2, 14 Oct 2026)
 Q2/Q3 are superseded by D18: ₹500 deposit/cancellation fee on every online booking; no free-cancellation window unless the owner adds one.
@@ -898,7 +899,7 @@ Q2/Q3 are superseded by D18: ₹500 deposit/cancellation fee on every online boo
 | Q4 | All artists bookable online, limited only by free time | `onlineShare` 100% for everyone (Phase 2) |
 | Q5 | Default — not tracked | — |
 | Q7 | Business account | Instagram API sync possible (T1.20+) |
-| Q8 | Default — ask Wati to upgrade | — |
+| Q8 | Closed — Wati removed (D57); Meta authentication templates are used | — |
 | Q9 | Vercel **Free (Hobby)** | Hobby crons run at most daily and the plan is for non-commercial use; Phase 2 `bookings-tick` (every 15 min) needs Pro or an external scheduler. Existing `*/5` health cron to be checked |
 | Q10 | Decide later | Phase 1.5 waits |
 | F1 | Side Locks (Thread) ₹4,000 is correct | Website ₹2,000 |
@@ -915,6 +916,6 @@ Q2/Q3 are superseded by D18: ₹500 deposit/cancellation fee on every online boo
 | Q5 | Shared resources (facial bed, pedicure station, makeup chair) and counts | None modelled until answered |
 | Q6 | Opening hours, weekly off, festive extended hours | 09:00–20:00 daily |
 | Q7 | Instagram account type (Business/Creator?) | Manual reel upload until confirmed |
-| Q8 | Wati plan supports authentication templates? | Request Wati upgrade |
+| Q8 | Closed (D57) — Wati removed | — |
 | Q9 | Vercel plan (cron frequency) | Assume Pro |
 | Q10 | Gift card validity and allowed amounts | 12 months; ₹1k/2k/3k/5k + custom |

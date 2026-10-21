@@ -3,13 +3,13 @@
  * @description The one door every WhatsApp template message goes through
  * (CONTROL_FLOW_AND_DATA_LOGIC.md §11, D7, D52).
  *
- * Two providers behind one function, picked by WHATSAPP_PROVIDER:
- *   - "meta" (default): Meta's own WhatsApp Cloud API — no middleman, no monthly
- *     platform fee, just Meta's per-message price;
- *   - "wati": the Wati platform (kept so a rollback is a setting, not a deploy).
+ * Everything goes through Meta's own WhatsApp Cloud API — no middleman platform,
+ * just Meta's per-message price (Wati was removed, D57). The number is shared
+ * with AiSensy, which is used only by the owner for marketing broadcasts; this
+ * app never calls AiSensy.
  *
  * Callers (notify.js, otp.js, public.js) only know `sendTemplate`, `isConfigured`
- * and `templateFor`; nothing else in the app knows which provider is live.
+ * and `templateFor`.
  *
  * ── Meta specifics ───────────────────────────────────────────────────────────
  * WhatsApp only delivers business-initiated messages from templates approved in
@@ -17,8 +17,8 @@
  * its {{1}}, {{2}}… variables IN ORDER. ORDER below is that order per message
  * type; docs/customer-platform/WHATSAPP_TEMPLATES.md holds the exact template
  * text to submit, with the variables numbered to match. Change one, change both.
- * Template names come from env (WHATSAPP_TEMPLATE_<TYPE>, or the older
- * WATI_TEMPLATE_<TYPE>), so a renamed template is a settings change.
+ * Template names come from env (WHATSAPP_TEMPLATE_<TYPE>), so a renamed
+ * template is a settings change.
  *
  * NEVER THROWS: it returns {status: "sent" | "failed" | "skipped"}. A booking is
  * already saved by the time anything is sent, and a WhatsApp outage must not
@@ -26,8 +26,6 @@
  * console (so the whole flow, OTP included, works with no provider); in
  * production it is "skipped" with a reason.
  */
-
-const wati = require("./wati");
 
 const TIMEOUT_MS = 8000;
 
@@ -46,8 +44,6 @@ const ORDER = {
   booking_artist_changed: ["name", "ref", "when", "oldArtist", "newArtist", "reason", "link", "salon_link"],
 };
 
-const provider = () => (String(process.env.WHATSAPP_PROVIDER || "meta").toLowerCase() === "wati" ? "wati" : "meta");
-
 function metaConfig() {
   return {
     base: (process.env.META_WA_API_BASE || "https://graph.facebook.com").replace(/\/+$/, ""),
@@ -59,15 +55,14 @@ function metaConfig() {
 }
 
 function isConfigured() {
-  if (provider() === "wati") return wati.isConfigured();
   const { token, phoneNumberId } = metaConfig();
   return Boolean(token && phoneNumberId);
 }
 
-/** Template name for a message type: "booking_confirmed" → WHATSAPP_TEMPLATE_BOOKING_CONFIRMED (or WATI_TEMPLATE_…). */
+/** Template name for a message type: "booking_confirmed" → WHATSAPP_TEMPLATE_BOOKING_CONFIRMED . */
 function templateFor(type) {
   const key = String(type).toUpperCase();
-  return process.env[`WHATSAPP_TEMPLATE_${key}`] || process.env[`WATI_TEMPLATE_${key}`] || null;
+  return process.env[`WHATSAPP_TEMPLATE_${key}`] || null;
 }
 
 /** Meta rejects newlines, tabs and runs of 4+ spaces inside a variable, and caps its length. */
@@ -122,15 +117,14 @@ async function sendMeta({ phone, type, params, template }) {
 async function sendTemplate({ phone, type, params = {} }) {
   const template = templateFor(type);
   if (!isConfigured() || !template) {
-    const reason = !isConfigured() ? `${provider()}_not_configured` : `no template for ${type}`;
+    const reason = !isConfigured() ? "meta_not_configured" : `no template for ${type}`;
     if (process.env.NODE_ENV !== "production") {
       console.warn(`[whatsapp] ${reason} — DEV message to +91${phone} [${type}]`, params);
       return { status: "skipped", error: reason, channel: "dev" };
     }
     return { status: "skipped", error: reason, channel: "whatsapp" };
   }
-  if (provider() === "wati") return wati.sendTemplate({ phone, type, params });
   return sendMeta({ phone, type, params, template });
 }
 
-module.exports = { sendTemplate, isConfigured, templateFor, provider, ORDER };
+module.exports = { sendTemplate, isConfigured, templateFor, ORDER };

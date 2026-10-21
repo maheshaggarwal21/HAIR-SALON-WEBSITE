@@ -20,7 +20,7 @@ let sent = [];
 let telegramOk = true;
 
 before(async () => {
-  Object.assign(process.env, { TELEGRAM_BOT_TOKEN: "x", WATI_API_URL: "", WATI_API_TOKEN: "", PUBLIC_TOKEN_SECRET: "t", META_WA_TOKEN: "", META_WA_PHONE_NUMBER_ID: "" });
+  Object.assign(process.env, { TELEGRAM_BOT_TOKEN: "x", PUBLIC_TOKEN_SECRET: "t", META_WA_TOKEN: "", META_WA_PHONE_NUMBER_ID: "" });
   await startDb();
   Appointment = require("../models/Appointment");
   Artist = require("../models/Artist");

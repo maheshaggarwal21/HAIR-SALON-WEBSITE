@@ -5,7 +5,7 @@ uses a **template approved by Meta**. This file is the exact text to submit, wit
 numbered in the order the code fills them (`ORDER` in `backend/utils/whatsapp.js`). If you change
 a template's wording, keep the `{{n}}` order. If you add or reorder a variable, change `ORDER` too.
 
-Provider: Meta's own WhatsApp Cloud API (D52). `WHATSAPP_PROVIDER=wati` switches back to Wati.
+Provider: Meta's own WhatsApp Cloud API (D52). Wati was removed (D57). Marketing broadcasts are sent by the owner from AiSensy on the same number; this app never calls AiSensy.
 
 ## Set-up checklist (Meta, one time)
 

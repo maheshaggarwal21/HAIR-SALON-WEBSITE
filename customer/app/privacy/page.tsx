@@ -42,7 +42,7 @@ export default async function PrivacyPage() {
       <h2>Who else handles it</h2>
       <p>
         We use companies that run parts of the service for us: website and server hosting (Vercel), our database (MongoDB Atlas), a spam check on forms (Cloudflare Turnstile),
-        payments (Razorpay), messages to the salon owner (Telegram) and WhatsApp messages to you through a WhatsApp Business provider (Wati, using Meta&apos;s WhatsApp). They only use
+        payments (Razorpay), messages to the salon owner (Telegram) and WhatsApp messages to you through Meta&apos;s WhatsApp Business platform (and AiSensy, for offers you have opted in to). They only use
         your information to provide that service to us. We don&apos;t sell your information.
       </p>
 

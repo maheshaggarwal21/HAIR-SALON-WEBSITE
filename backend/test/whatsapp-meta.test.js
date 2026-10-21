@@ -3,9 +3,8 @@
  * @description D52: messages go out through Meta's WhatsApp Cloud API by default.
  * A local stub plays Graph API, so nothing leaves the machine. Checks the
  * request shape (template name, language, variables IN ORDER, the OTP copy-code
- * button), failure mapping, the development fallback, that every notification
- * carries the salon's tap-to-chat link, and that WHATSAPP_PROVIDER=wati still
- * routes to Wati.
+ * button), failure mapping, the development fallback and that every notification
+ * carries the salon's tap-to-chat link.
  */
 const { test, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
@@ -33,7 +32,6 @@ before(async () => {
   await new Promise((r) => stub.listen(0, r));
   Object.assign(process.env, {
     NODE_ENV: "development",
-    WHATSAPP_PROVIDER: "meta",
     META_WA_API_BASE: `http://127.0.0.1:${stub.address().port}`,
     META_WA_TOKEN: "test-token",
     META_WA_PHONE_NUMBER_ID: "555000111",
@@ -57,7 +55,6 @@ beforeEach(async () => {
   await clearDb();
   calls = [];
   respond = () => ({ status: 200, body: { messaging_product: "whatsapp", messages: [{ id: "wamid.ABC" }] } });
-  process.env.WHATSAPP_PROVIDER = "meta";
 });
 
 test("meta: a template message is posted to the Graph API with its variables in order", async () => {
@@ -137,20 +134,4 @@ test("notify: every message carries the salon's tap-to-chat link, and is recorde
   assert.equal(row.providerId, "wamid.ABC");
   assert.equal((await notify({ key: "a1:booking_confirmed", type: "booking_confirmed", to: "9876543210", params: {} })).status, "duplicate");
   assert.equal(calls.length, 1);
-});
-
-test("provider switch: WHATSAPP_PROVIDER=wati still goes to Wati", async () => {
-  let watiHit = null;
-  const watiStub = http.createServer((req, res) => {
-    watiHit = req.url;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ result: true, id: "w1" }));
-  });
-  await new Promise((r) => watiStub.listen(0, r));
-  Object.assign(process.env, { WHATSAPP_PROVIDER: "wati", WATI_API_URL: `http://127.0.0.1:${watiStub.address().port}`, WATI_API_TOKEN: "t" });
-  const out = await whatsapp.sendTemplate({ phone: "9876543210", type: "booking_confirmed", params: { name: "A" } });
-  await new Promise((r) => watiStub.close(r));
-  assert.equal(out.status, "sent");
-  assert.match(watiHit, /sendTemplateMessage\?whatsappNumber=919876543210/);
-  assert.equal(calls.length, 0, "nothing went to Meta");
 });

@@ -9,8 +9,8 @@
  * Rate limits (3 per phone per 15 min, 10 per IP per hour) and Turnstile are
  * applied by the route before send() runs.
  *
- * Delivery: Wati only (D7) until MSG91's DLT registration clears. Outside
- * production with no Wati configured the code is printed to the server
+ * Delivery: WhatsApp only (D7, D52) until MSG91's DLT registration clears. Outside
+ * production with no WhatsApp configured the code is printed to the server
  * console (channel "dev"), so the booking flow can be tested end to end. In
  * production an undeliverable code is an error the customer sees ("message us
  * on WhatsApp"), never a silent success.

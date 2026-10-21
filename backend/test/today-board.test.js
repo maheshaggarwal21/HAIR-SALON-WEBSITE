@@ -22,7 +22,7 @@ let refundCalls = [];
 let refundFails = false;
 
 before(async () => {
-  Object.assign(process.env, { TELEGRAM_BOT_TOKEN: "", WATI_API_URL: "", WATI_API_TOKEN: "", PUBLIC_TOKEN_SECRET: "t" });
+  Object.assign(process.env, { TELEGRAM_BOT_TOKEN: "", META_WA_TOKEN: "", META_WA_PHONE_NUMBER_ID: "", PUBLIC_TOKEN_SECRET: "t" });
   await startDb();
   NotificationLog = require("../models/NotificationLog");
   Appointment = require("../models/Appointment");
