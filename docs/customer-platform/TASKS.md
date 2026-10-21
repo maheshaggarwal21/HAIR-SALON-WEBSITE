@@ -31,7 +31,7 @@ Bhai Dooj 11 Nov · wedding season from mid-Nov.
 | T0.6 | [~] Add backend test runner (`node:test` + `mongodb-memory-server` replica set) | `npm test` runs in CI with one passing test |
 | T0.7 | [~] Scaffold `customer/` (Next.js App Router, TS, Tailwind 4, ESLint, `typecheck` script) | Vercel project "experts-customer" deploys a placeholder on a preview URL |
 | T0.8 | [ ] Confirm Vercel plan (cron frequency), create env vars in all three projects | CF §22 vars present (placeholders OK) |
-| T0.9 | [ ] Submit WhatsApp templates in Wati: request received, booking confirmed, reminder 24h, reminder 2h, cancelled, OTP (auth), gift card | All submitted; approval status tracked here |
+| T0.9 | [ ] Submit WhatsApp templates in Meta WhatsApp Manager: request received, booking confirmed, reminder 24h, reminder 2h, cancelled, OTP (auth), gift card | All submitted; approval status tracked here |
 | T0.10 | [ ] Content shoot: 1 day, women's work first (colour, keratin, facial, bridal look), 6–8 before/after pairs, 1 hero loop, artist portraits, ladies' area photos. Consent form signed per client | Assets in shared drive, consent sheet complete |
 | T0.11 | [ ] Cloudflare Turnstile site + secret keys | Keys in env |
 | T0.12 | [ ] Google Places API key restricted to Places (New); find `SALON_PLACE_ID` | Key + place ID in env |
@@ -109,7 +109,7 @@ Engine and data
 | T2.3 | [x] Time utilities (IST grid, opening hours, holidays) with tests around UTC midnight | E20 passes |
 | T2.4 | [x] Availability engine (CF §4) as pure module + tests | E9, E13, E14 pass; 1,000 random scenarios never double-assign |
 | T2.5 | [x] `GET /availability`, `POST /quote` | Server ignores client prices |
-| T2.6 | [~] OTP (`OtpChallenge`, Wati auth template, dev channel) + `bookingToken` | Limits per CF §14 |
+| T2.6 | [~] OTP (`OtpChallenge`, Meta auth template, dev channel) + `bookingToken` | Limits per CF §14 |
 | T2.7 | [x] Create-appointment transaction (CF §5.1) | E1, E11, E12, E17, E19 pass under concurrent test |
 | T2.8 | [x] Deposits + pay-in-full choice (D18): Razorpay order, webhook branch, verify-payment, hold expiry handling, partial refund on late cancel of a full payment | E3, E4, E5 + Example D pass |
 | T2.9 | [~] Move public rate limiting fully to Mongo store; exempt verify-payment | Load test: 50 parallel availability calls OK |

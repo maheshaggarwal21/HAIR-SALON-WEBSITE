@@ -5,7 +5,7 @@ uses a **template approved by Meta**. This file is the exact text to submit, wit
 numbered in the order the code fills them (`ORDER` in `backend/utils/whatsapp.js`). If you change
 a template's wording, keep the `{{n}}` order. If you add or reorder a variable, change `ORDER` too.
 
-Provider: Meta's own WhatsApp Cloud API (D52). `WHATSAPP_PROVIDER=wati` switches back to Wati.
+Provider: Meta's own WhatsApp Cloud API (D52). Wati was removed (D57). Marketing broadcasts are sent by the owner from AiSensy on the same number; this app never calls AiSensy.
 
 ## Set-up checklist (Meta, one time)
 
@@ -108,6 +108,15 @@ To talk to us, click here to message our main salon number: {{8}}
 
 Thank you, The Experts
 ```
+
+### `artist_day_sheet` — name `artist_day_sheet_v1` — Utility
+Sent to the ARTIST (not a customer) at 08:15 when they have bookings that day. No salon link line.
+```
+Good morning {{1}}, here is your day for {{2}}: {{3}} client(s) booked. {{4}}
+
+Have a good day, The Experts
+```
+Sample: `Asha` · `Mon, 19 Oct` · `3` · `10:00am Sita (Haircut) | 12:30pm Kamla (Facial) | 3:00pm Gita (Colour)`
 
 ### `booking_cancelled` — name `booking_cancelled_v1` — Utility
 ```

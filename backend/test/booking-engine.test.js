@@ -10,7 +10,7 @@
  * E6 (price snapshot), E11, E12, E19, plus OTP limits, server-side prices,
  * hold expiry, request approval and salon-side refunds.
  *
- * Nothing leaves the machine: Razorpay is a fake client, Wati and Telegram a
+ * Nothing leaves the machine: Razorpay is a fake client, Meta's WhatsApp API and Telegram a
  * local stub server, and every secret is set here before index.js loads
  * backend/.env (dotenv never overrides a variable that is already set).
  */
@@ -22,7 +22,7 @@ const crypto = require("crypto");
 const { startDb, stopDb, clearDb } = require("./helpers/db");
 
 let stub;
-let watiCalls = [];
+let waCalls = [];
 let server;
 let base;
 let Service, Artist, Appointment, SlotLock, NotificationLog, PaymentEvent, time, booking, payments, bookingToken, Customer;
@@ -44,9 +44,9 @@ before(async () => {
         const token = new URLSearchParams(raw).get("response");
         return res.end(JSON.stringify({ success: token === "good" }));
       }
-      if (req.url.startsWith("/api/v1/sendTemplateMessage")) {
-        watiCalls.push({ url: req.url, body: JSON.parse(raw) });
-        return res.end(JSON.stringify({ result: true, id: `w${watiCalls.length}` }));
+      if (/^\/v[\d.]+\/\d+\/messages$/.test(req.url)) {
+        waCalls.push({ url: req.url, body: JSON.parse(raw) });
+        return res.end(JSON.stringify({ messaging_product: "whatsapp", messages: [{ id: `wamid.${waCalls.length}` }] }));
       }
       return res.end(JSON.stringify({ ok: true, result: { message_id: 1 } }));
     });
@@ -58,15 +58,15 @@ before(async () => {
     TURNSTILE_VERIFY_URL: `${stubBase}/turnstile`,
     TELEGRAM_BOT_TOKEN: "",
     TELEGRAM_API_BASE: stubBase,
-    WHATSAPP_PROVIDER: "wati", // these tests assert Wati's request shape; whatsapp-meta.test.js covers Meta
-    WATI_API_URL: stubBase,
-    WATI_API_TOKEN: "test-wati",
-    WATI_TEMPLATE_OTP: "otp_code",
-    WATI_TEMPLATE_BOOKING_CONFIRMED: "booking_confirmed_v1",
-    WATI_TEMPLATE_REQUEST_RECEIVED: "",
-    WATI_TEMPLATE_BOOKING_REFUND: "",
-    WATI_TEMPLATE_BOOKING_DECLINED: "",
-    WATI_TEMPLATE_BOOKING_CANCELLED: "",
+    META_WA_API_BASE: stubBase,
+    META_WA_TOKEN: "test-meta",
+    META_WA_PHONE_NUMBER_ID: "555000111",
+    WHATSAPP_TEMPLATE_OTP: "otp_code",
+    WHATSAPP_TEMPLATE_BOOKING_CONFIRMED: "booking_confirmed_v1",
+    WHATSAPP_TEMPLATE_REQUEST_RECEIVED: "",
+    WHATSAPP_TEMPLATE_BOOKING_REFUND: "",
+    WHATSAPP_TEMPLATE_BOOKING_DECLINED: "",
+    WHATSAPP_TEMPLATE_BOOKING_CANCELLED: "",
     RAZORPAY_KEY_ID: "rzp_test_fake",
     RAZORPAY_KEY_SECRET: KEY_SECRET,
     RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
@@ -128,7 +128,7 @@ const at = (hhmm, date = DATE) => time.salonInstant(date, hhmm).toISOString();
 
 beforeEach(async () => {
   await clearDb();
-  watiCalls = [];
+  waCalls = [];
   capturedByOrder = new Map();
   refundsSent = [];
   refundFails = false;
@@ -281,9 +281,9 @@ test("OTP: WhatsApp code, wrong guesses counted, right code gives a booking toke
   const sent = await call("POST", "/api/public/otp/send", { phone, turnstileToken: "good" });
   assert.equal(sent.status, 200);
   assert.equal(sent.body.channel, "whatsapp");
-  const code = watiCalls[0].body.parameters.find((p) => p.name === "code").value;
+  const code = waCalls[0].body.template.components[0].parameters[0].text;
   assert.match(code, /^\d{6}$/);
-  assert.match(watiCalls[0].url, /whatsappNumber=919876500001/);
+  assert.equal(waCalls[0].body.to, "919876500001");
 
   const wrong = code === "000000" ? "111111" : "000000";
   const bad = await call("POST", "/api/public/otp/verify", { phone, code: wrong });
@@ -365,8 +365,9 @@ test("create: hold locks + Razorpay order for the server's amount; webhook confi
   const sends = await NotificationLog.find({ appointmentId: appt._id }).lean();
   assert.equal(sends.length, 1, "one confirmation however many times payment is reported");
   assert.equal(sends[0].status, "sent");
-  const msg = watiCalls.find((c) => c.body.template_name === "booking_confirmed_v1");
-  assert.ok(msg.body.parameters.find((p) => p.name === "link").value.startsWith("https://www.example.test/booking/"));
+  const msg = waCalls.find((c) => c.body.template.name === "booking_confirmed_v1");
+  // {{4}} of booking_confirmed is the manage link (utils/whatsapp.js ORDER)
+  assert.ok(msg.body.template.components[0].parameters[3].text.startsWith("https://www.example.test/booking/"));
 });
 
 test("verify-payment confirms when the browser is first, and refuses a forged signature", async () => {
