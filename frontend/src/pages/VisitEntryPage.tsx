@@ -360,6 +360,20 @@ export default function VisitEntryPage() {
                   </div>
                 </Field>
                 )}
+
+                {!booking && discountPct > 0 && (
+                  <Field label="Why this discount? (optional)" className="sm:col-span-2">
+                    <Input
+                      id="discountReason"
+                      name="discountReason"
+                      type="text"
+                      placeholder="e.g. regular customer, staff friend, complaint"
+                      value={formData.discountReason}
+                      onChange={handleChange}
+                      maxLength={200}
+                    />
+                  </Field>
+                )}
               </div>
 
               {/*
@@ -412,9 +426,9 @@ export default function VisitEntryPage() {
                         )}
                       >
                         <CreditCard className="w-5 h-5" />
-                        <span className="text-xs font-semibold tracking-wide uppercase">Full Online</span>
+                        <span className="text-xs font-semibold tracking-wide uppercase">UPI (QR)</span>
                         <span className={cn("text-[10px]", formData.paymentMode === "online" ? "text-stone-300" : "text-stone-400")}>
-                          Pay via Razorpay
+                          Customer pays by UPI
                         </span>
                       </button>
 
@@ -465,7 +479,7 @@ export default function VisitEntryPage() {
                         <SplitSquareHorizontal className="w-5 h-5" />
                         <span className="text-xs font-semibold tracking-wide uppercase">Split Payment</span>
                         <span className={cn("text-[10px]", formData.paymentMode === "partial" ? "text-amber-200" : "text-stone-400")}>
-                          Cash plus Online
+                          Cash plus UPI
                         </span>
                       </button>
                     </div>
@@ -560,7 +574,7 @@ export default function VisitEntryPage() {
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <span className="flex items-center gap-1.5 text-blue-600">
-                              <CreditCard className="w-3.5 h-3.5" /> Online (Razorpay)
+                              <CreditCard className="w-3.5 h-3.5" /> UPI (QR)
                             </span>
                             <span className="font-semibold text-blue-600">
                               INR {onlinePayable.toLocaleString("en-IN", { minimumFractionDigits: onlinePayable % 1 ? 2 : 0, maximumFractionDigits: 2 })}
@@ -692,14 +706,14 @@ export default function VisitEntryPage() {
                     <>
                       <SplitSquareHorizontal className="w-4 h-4" />
                       {onlinePayable > 0
-                        ? `Pay INR ${onlinePayable.toLocaleString("en-IN")} Online, Then Assign`
-                        : "Pay with Razorpay"}
+                        ? `Pay INR ${onlinePayable.toLocaleString("en-IN")} by UPI, Then Assign`
+                        : "Pay by UPI"}
                     </>
                   ) : (
                     <>
                       {payable > 0
-                        ? `Pay INR ${payable.toLocaleString("en-IN")} Online, Then Assign`
-                        : "Pay with Razorpay"}
+                        ? `Pay INR ${payable.toLocaleString("en-IN")} by UPI, Then Assign`
+                        : "Pay by UPI"}
                     </>
                   )}
                 </span>

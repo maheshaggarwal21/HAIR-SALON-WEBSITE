@@ -87,6 +87,8 @@ export interface VisitFormData {
   searchService: string[];
   serviceQuantities: Record<string, number>;
   discount: string;
+  /** Optional note on why a discount was given; logged for the owner (D60). */
+  discountReason: string;
   date: string;
   paymentMode: PaymentMode;
   cashAmount: string;

@@ -8,6 +8,7 @@ import type {
   CustomerSuggestion,
 } from "@/types/visit";
 import { loadRazorpayScript } from "@/services/razorpay";
+import { checkPaymentSum } from "@/lib/paymentSum";
 import { toLocalDateKey } from "@/lib/utils";
 import {
   fetchFormData,
@@ -72,6 +73,7 @@ const EMPTY_FORM: VisitFormData = {
   searchService: [],
   serviceQuantities: {},
   discount: "50",
+  discountReason: "",
   date: today,
   paymentMode: "online",
   cashAmount: "",
@@ -368,6 +370,12 @@ export function useVisitForm() {
         e.cashAmount = `Online portion must be at least ₹1 (max cash: ₹${(payable - 1).toLocaleString("en-IN")})`;
     }
 
+    // Sum check (D60): the parts must add up to the total, in whole rupees.
+    if (!recovery && payable > 0) {
+      const sumProblem = checkPaymentSum(formData.paymentMode, payable, cashAmountNum);
+      if (sumProblem) e[sumProblem.field] = e[sumProblem.field] ?? sumProblem.message;
+    }
+
     if (formData.paymentMode === "card" && payable <= 0 && !booking) {
       e.amount = "Payable amount must be greater than ₹0";
     }
@@ -490,6 +498,7 @@ export function useVisitForm() {
         serviceType: serviceTypeStr,
         serviceIds: selectedServiceIds,
         discountPercent: discountPct,
+        discountReason: discountPct > 0 ? formData.discountReason.trim() || undefined : undefined,
         paymentMethod: opts.paymentMethod,
         razorpayPaymentId: opts.razorpayPaymentId,
         recoveredPaymentId: opts.recoveredPaymentId,
