@@ -4,7 +4,9 @@
  * Reels wall (DS §5 ReelTile, §6.1 §8, T1.20).
  *
  *   - 9:16 tiles; a tile's video plays (muted) only while ≥ 60% visible;
- *   - on phones only ONE plays at a time (DS §9) — the most visible wins;
+ *   - ONE plays at a time on every screen (DS §9, D58) — the most visible wins. Synced
+ *     Instagram videos are full-size files from Instagram's CDN, so several at once
+ *     would drag a desktop or a phone;
  *   - videos load nothing until they come near the viewport (preload="none");
  *   - tap → lightbox with sound and "Book this look" when the reel is tagged
  *     with a service; Escape or the close button shuts it;
@@ -16,22 +18,17 @@ import { X } from "lucide-react";
 import type { PublicReel } from "@/lib/types";
 import { useRequest } from "@/components/request/RequestContext";
 
-function usePlaybackPolicy() {
-  const [policy, setPolicy] = useState<{ autoplay: boolean; single: boolean }>({ autoplay: false, single: true });
+function useAutoplay() {
+  const [autoplay, setAutoplay] = useState(false);
   useEffect(() => {
-    const id = requestAnimationFrame(() =>
-      setPolicy({
-        autoplay: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-        single: !window.matchMedia("(min-width: 768px)").matches,
-      })
-    );
+    const id = requestAnimationFrame(() => setAutoplay(!window.matchMedia("(prefers-reduced-motion: reduce)").matches));
     return () => cancelAnimationFrame(id);
   }, []);
-  return policy;
+  return autoplay;
 }
 
 export function ReelsWall({ reels, instagram }: { reels: PublicReel[]; instagram: string | null }) {
-  const { autoplay, single } = usePlaybackPolicy();
+  const autoplay = useAutoplay();
   const videos = useRef(new Map<string, HTMLVideoElement>());
   const ratios = useRef(new Map<string, number>());
   const [open, setOpen] = useState<PublicReel | null>(null);
@@ -42,12 +39,12 @@ export function ReelsWall({ reels, instagram }: { reels: PublicReel[]; instagram
       return;
     }
     const visible = [...ratios.current.entries()].filter(([, r]) => r >= 0.6);
-    const allowed = single ? visible.sort((a, b) => b[1] - a[1]).slice(0, 1).map(([id]) => id) : visible.map(([id]) => id);
+    const allowed = visible.sort((a, b) => b[1] - a[1]).slice(0, 1).map(([id]) => id);
     videos.current.forEach((v, id) => {
       if (allowed.includes(id)) v.play().catch(() => {});
       else v.pause();
     });
-  }, [autoplay, single, open]);
+  }, [autoplay, open]);
 
   useEffect(() => {
     const io = new IntersectionObserver(
