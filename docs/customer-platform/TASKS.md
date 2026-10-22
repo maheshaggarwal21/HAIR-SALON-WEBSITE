@@ -156,6 +156,20 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 
 ---
 
+## Counter payments (D60) — branch `feat/counter-payments`
+
+| ID | Task | Acceptance |
+|---|---|---|
+| C1 | [~] UPI QR on the counter tablet (`/display`), flag `COUNTER_DISPLAY_ENABLED` — code and tests done; **not yet tried with a real tablet and a real UPI app** | Manual list in the PR (M1–M12) |
+| C2 | [x] Discount logging, owner Discounts page, 0–100 sanity check | `test/discounts.test.js` |
+| C3 | [~] Daily cash close (blind count, owner adjustments) — code and tests done | `test/cash-close.test.js`; M13–M14 |
+| C4 | [ ] **TOP PRIORITY follow-up:** `/api/visits/v2` still trusts a browser-supplied `razorpayPaymentId` for ordinary online and split payments (only the recovery path and the new counter path are verified). A signed-in user could record a visit against any payment id, or a made-up one. Fix: accept the id only if a `PaymentEvent` (webhook) says `captured` for that amount, with the existing Checkout flow's order-status poll as the second witness | A visit with an unknown or uncaptured id is refused; Checkout and its poll still save normally |
+| C5 | [ ] QR for online-booking visits (deposit already paid, remainder due): this PR keeps Razorpay Checkout there | Remainder paid by QR; deposit not counted twice |
+| C6 | [ ] Visit edit screen (none exists) must call `recordDiscountEdit` when a discount changes | Edit appends an "edited" row |
+| C7 | [ ] Card at the counter: POS reference fields and card reconciliation (removed from this PR by the owner) | Spec first |
+
+---
+
 ## Backlog (not scheduled)
 
 - Colour processing time (artist free while colour develops).
@@ -216,3 +230,4 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 | 15 Oct 2026 | T2.6, T2.13 | WhatsApp moved to Meta's Cloud API (D52): `utils/whatsapp.js` (Meta default, Wati kept as `WHATSAPP_PROVIDER=wati`), OTP in Meta's authentication format with the copy-code button, every other message ends with the "To talk to us" salon link, `WHATSAPP_TEMPLATES.md` has the exact template text and the Meta set-up checklist. 8 new tests. Needs before launch: Meta Business verification, a notification number, a permanent token, templates approved, env vars set |
 | 19 Oct 2026 | T0.3 / D53 | Owner's signed menu (WhatsApp sheet, 91 services) → `data/website-menu.csv` + `config/menuGroups.js` (17 groups) + M7 `npm run migrate:m7` (website fields, creates 13 new services, hides the rest, never touches billing prices). `/services`: one grid, full price lists, search matches options. Live dry run: 91 rows, 78 updated + 13 new, 0 problems, 15 billing prices differ (left). 214 backend tests green. Waiting on go-ahead to apply |
 | 19 Oct 2026 | K1 | Contact changed: WhatsApp + calls 9814830307; map pin https://www.google.com/maps?q=30.366743,76.402412 (SiteSettings defaults, JSON-LD geo). Live values are set in Website Settings. |
+| 22 Oct 2026 | C1–C3 / D60 | Counter payments overhaul built on `feat/counter-payments` (not merged): UPI QR tablet display (server-priced sessions, webhook branch, reference-pending visits with backfill, pairing), discount logging with owner summary, blind daily cash close with owner adjustments. Card-at-counter left exactly as it was. Follow-ups C4–C7 above; C4 is the top priority |
