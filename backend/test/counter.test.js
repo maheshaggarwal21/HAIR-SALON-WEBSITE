@@ -607,14 +607,12 @@ test("the tablet is shown the customer's bill and a QR, never their phone, the s
   assert.equal(r.body.amount, 500);
   assert.deepEqual(r.body.bill, {
     customerName: "Asha Kaur",
-    lines: [{ name: "Haircut Women", quantity: 1, price: 1000 }],
-    subtotal: 1000,
-    discountPercent: 50,
-    discountAmount: 500,
-    cashAmount: 0,
+    lines: [{ name: "Haircut Women", quantity: 1, amount: 500 }],
     total: 500,
+    cashAmount: 0,
     toPay: 500,
   });
+  assert.ok(!/1000|discount/i.test(JSON.stringify(r.body)), "the list price and the discount never reach the tablet");
   assert.deepEqual(r.body.qr, { mode: "decoded", upi: upiFor(500) });
   assert.equal(r.body.nextPollMs, 2500);
   assert.deepEqual(Object.keys(r.body).sort(), ["amount", "bill", "device", "expiresAt", "mode", "nextPollMs", "qr", "sessionId"]);
@@ -768,8 +766,8 @@ test("the bill lists each service once with a count, shows the cash already take
   await call("POST", "/counter/sessions", { serviceIds: [id, String(blow._id), id], discountPercent: 50, paymentMode: "partial", cashAmount: 300, customerName: "Meera" });
   await backdate(token);
   const { bill, amount } = (await state(token)).body;
-  assert.deepEqual(bill.lines, [{ name: "Haircut Women", quantity: 2, price: 1000 }, { name: "Blow Dry", quantity: 1, price: 600 }]);
-  assert.deepEqual([bill.subtotal, bill.discountAmount, bill.total, bill.cashAmount, bill.toPay, amount], [2600, 1300, 1300, 300, 1000, 1000]);
+  assert.deepEqual(bill.lines, [{ name: "Haircut Women", quantity: 2, amount: 1000 }, { name: "Blow Dry", quantity: 1, amount: 300 }]);
+  assert.deepEqual([bill.total, bill.cashAmount, bill.toPay, amount], [1300, 300, 1000, 1000]);
 });
 
 test("the name is display-only: tidied, capped, optional, and it can never change what is charged", async () => {
@@ -786,4 +784,20 @@ test("a session built by the server shows the same lines whatever the browser cl
   const r = await startSale({ lines: [{ name: "Free", quantity: 1, price: 0 }], customerName: "A" });
   const s = await CounterSession.findById(r.body.session.id);
   assert.deepEqual(s.lines.map((l) => l.name), ["Haircut Women"]);
+});
+
+test("the final prices on the bill always add up to the total, whatever the discount", async () => {
+  const id = String(svc._id);
+  const mk = (name, price) => Service.create({ name, price, slug: name.toLowerCase().replace(/ /g, "-"), isActive: true, durationMinutes: 15, durationConfirmed: true, bookingMode: "instant", audience: "her", displayCategory: "Hair" });
+  const [a, b] = [await mk("Thread", 70), await mk("Wax", 130)];
+  const { token } = await pairTablet();
+  await staff("Reena", "receptionist");
+  for (const pct of [0, 33, 50, 61, 99]) {
+    await CounterSession.deleteMany({});
+    await call("POST", "/counter/sessions", { serviceIds: [id, String(a._id), String(b._id), String(a._id)], discountPercent: pct, paymentMode: "online" });
+    await backdate(token);
+    const { bill } = (await state(token)).body;
+    assert.equal(bill.lines.reduce((n, l) => n + l.amount, 0), bill.total, `${pct}%`);
+    assert.ok(bill.lines.every((l) => Number.isInteger(l.amount) && l.amount >= 0));
+  }
 });

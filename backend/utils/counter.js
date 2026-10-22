@@ -570,18 +570,22 @@ function idlePollMs(settings, now = new Date()) {
 }
 
 /**
- * The customer's bill as the tablet shows it, all from the server's own figures. No phone number,
- * no staff name, no payment id, no discount reason.
+ * The customer's bill as the tablet shows it: FINAL prices only. Each service carries its share of
+ * the discount already taken off, and the lines add up to the total exactly (any rounding rupee is
+ * put on the biggest line). The list price and the discount are never sent to the tablet. Also no
+ * phone number, staff name, payment id or discount reason.
  */
 function billFor(s) {
+  const lines = s.lines || [];
+  const gross = lines.reduce((n, l) => n + l.price * l.quantity, 0);
+  const amounts = lines.map((l) => (gross > 0 ? Math.round((l.price * l.quantity * s.finalTotal) / gross) : 0));
+  const drift = s.finalTotal - amounts.reduce((n, a) => n + a, 0);
+  if (lines.length && drift) amounts[amounts.indexOf(Math.max(...amounts))] += drift;
   return {
     customerName: s.customerName || null,
-    lines: (s.lines || []).map((l) => ({ name: l.name, quantity: l.quantity, price: l.price })),
-    subtotal: s.subtotal,
-    discountPercent: s.discountPercent,
-    discountAmount: s.discountAmount,
-    cashAmount: s.cashAmount,
+    lines: lines.map((l, i) => ({ name: l.name, quantity: l.quantity, amount: amounts[i] })),
     total: s.finalTotal,
+    cashAmount: s.cashAmount,
     toPay: s.upiAmount,
   };
 }

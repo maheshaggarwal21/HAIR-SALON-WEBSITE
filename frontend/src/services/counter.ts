@@ -139,16 +139,13 @@ export async function pairThisTablet(code: string): Promise<{ name: string }> {
   return { name: data.name };
 }
 
-/** The customer's bill, as the server built it. */
+/** The customer's bill, as the server built it: FINAL prices only (the discount is already in them). */
 export interface DisplayBill {
   customerName: string | null;
-  lines: { name: string; quantity: number; price: number }[];
-  subtotal: number;
-  discountPercent: number;
-  discountAmount: number;
+  lines: { name: string; quantity: number; amount: number }[];
+  total: number;
   /** Cash already taken for a split payment. */
   cashAmount: number;
-  total: number;
   /** What this QR collects. */
   toPay: number;
 }

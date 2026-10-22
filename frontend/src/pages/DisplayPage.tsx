@@ -3,7 +3,7 @@
  * @description The customer-facing counter tablet at /display (D60, part A).
  *
  * It is a dumb screen. It shows what the server tells it to show: the customer's bill
- * (name, services, discount, what to pay) with the QR while a payment is pending, a "thank you" for a few seconds once paid, and otherwise
+ * (name, services at their final prices, what to pay) with the QR while a payment is pending, a "thank you" for a few seconds once paid, and otherwise
  * the salon's name, turning into a soft slideshow of the salon after 30 quiet seconds. It never receives the customer's phone number,
  * the staff member's name or the payment reference; it has no staff login, and holds one secret: the device token it received when the
  * owner paired it with a one-time code (Management → Counter display).
@@ -253,30 +253,22 @@ export default function DisplayPage() {
                     {l.name}
                     {l.quantity > 1 && <span className="ml-2 text-stone-400">× {l.quantity}</span>}
                   </span>
-                  <span className="tabular-nums text-stone-300">{rupees(l.price * l.quantity)}</span>
+                  <span className="tabular-nums text-stone-300">{rupees(l.amount)}</span>
                 </li>
               ))}
             </ul>
-            <dl className="mt-4 space-y-2 text-lg text-stone-300 sm:text-xl">
-              {b.discountAmount > 0 && (
+            {b.cashAmount > 0 && (
+              <dl className="mt-4 space-y-2 text-lg text-stone-300 sm:text-xl">
                 <div className="flex justify-between gap-6">
-                  <dt>Discount ({Number.isInteger(b.discountPercent) ? b.discountPercent : b.discountPercent.toFixed(1)}%)</dt>
-                  <dd className="tabular-nums text-emerald-400">− {rupees(b.discountAmount)}</dd>
+                  <dt>Total</dt>
+                  <dd className="tabular-nums">{rupees(b.total)}</dd>
                 </div>
-              )}
-              {b.cashAmount > 0 && (
-                <>
-                  <div className="flex justify-between gap-6">
-                    <dt>Total</dt>
-                    <dd className="tabular-nums">{rupees(b.total)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-6">
-                    <dt>Paid in cash</dt>
-                    <dd className="tabular-nums text-emerald-400">− {rupees(b.cashAmount)}</dd>
-                  </div>
-                </>
-              )}
-            </dl>
+                <div className="flex justify-between gap-6">
+                  <dt>Paid in cash</dt>
+                  <dd className="tabular-nums text-emerald-400">− {rupees(b.cashAmount)}</dd>
+                </div>
+              </dl>
+            )}
             <div className="mt-5 flex items-baseline justify-between gap-6 border-t border-stone-700 pt-4">
               <span className="text-xl uppercase tracking-[0.25em] text-stone-400">To pay</span>
               <span className="text-6xl font-semibold tabular-nums sm:text-7xl">{rupees(state.amount)}</span>
