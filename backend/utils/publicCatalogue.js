@@ -58,6 +58,9 @@ function publicOption(s, label = s.variantLabel ?? null) {
     slug: s.slug ?? null,
     label,
     price: s.publicPrice,
+    // Only while an offer runs (D59): the normal price, shown crossed out, and the last day.
+    regularPrice: s.regularPrice ?? null,
+    offerEndsOn: s.offerEndsOn ?? null,
     durationMinutes: s.durationConfirmed === true ? s.durationMinutes ?? null : null,
     bookingMode: effectiveMode(s),
   };
@@ -110,6 +113,9 @@ function serviceCards(services, { detail = false } = {}) {
       requiresConsultation: members.some((m) => m.requiresConsultation),
       requiresPatchTest: members.some((m) => m.requiresPatchTest),
       fromPrice: Math.min(...options.map((o) => o.price)),
+      // The cheapest option's normal price while it is on offer, so the card can cross it out.
+      fromRegularPrice: options.reduce((best, o) => (o.price < best.price ? o : best), options[0]).regularPrice ?? null,
+      offerEndsOn: options.reduce((best, o) => (o.price < best.price ? o : best), options[0]).offerEndsOn ?? null,
       // "many": options can be combined (threading areas); "one": alternatives (D34).
       pick: cfg && !single && cfg.pick === "many" ? "many" : "one",
       options,
@@ -147,6 +153,10 @@ function serviceCards(services, { detail = false } = {}) {
     const [a, b] = first.audience === "him" ? [c, first] : [first, c];
     first.options = [...a.options.map(tag(a)), ...b.options.map(tag(b))];
     first.audience = "unisex";
+    if (c.fromPrice < first.fromPrice) {
+      first.fromRegularPrice = c.fromRegularPrice;
+      first.offerEndsOn = c.offerEndsOn;
+    }
     first.fromPrice = Math.min(first.fromPrice, c.fromPrice);
     first.featured = first.featured || c.featured;
     first.requiresConsultation = first.requiresConsultation || c.requiresConsultation;

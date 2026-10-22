@@ -35,6 +35,7 @@ const audit = require("../utils/audit");
 const { isValidDate, TIME_RE, salonDate } = require("../utils/time");
 const Reel = require("../models/Reel");
 const Campaign = require("../models/Campaign");
+const offers = require("../utils/offers");
 const { revalidateSite } = require("../utils/revalidate");
 
 const HTTPS_URL = { protocols: ["https"], require_protocol: true };
@@ -92,6 +93,7 @@ function applyPaths(doc, src, paths) {
 }
 
 function saveError(res, err) {
+  if (err instanceof offers.OfferError) return res.status(400).json({ error: err.message });
   if (err?.code === 11000) return res.status(409).json({ error: "That URL name (slug) is already used" });
   if (err?.name === "ValidationError") {
     const first = Object.values(err.errors)[0];
@@ -587,6 +589,19 @@ const campaignValidators = (partial) => {
     body("popup.delaySeconds").optional().isInt({ min: 5, max: 60 }).withMessage("Pop-up delay is 5–60 seconds"),
     body("popup.frequency").optional().isIn(Campaign.FREQUENCIES),
     body("sortOrder").optional().isInt({ min: 0, max: 999 }),
+    // Cheaper prices that run on the offer's dates (D59). The amounts are checked
+    // against the real menu prices in prepareOfferLines before anything is saved.
+    body("servicePrices").optional().isArray({ max: 60 }).withMessage("Too many service prices"),
+    body("servicePrices.*.serviceId").matches(/^[a-f0-9]{24}$/i).withMessage("Pick a service"),
+    body("servicePrices.*.price").isInt({ min: 1, max: 100000 }).withMessage("Offer prices are whole rupees").toInt(),
+    body("bundles").optional().isArray({ max: 10 }).withMessage("At most 10 bundles per offer"),
+    body("bundles.*.name").isString().trim().isLength({ min: 1, max: 60 }).withMessage("Give each bundle a name"),
+    body("bundles.*.description").optional({ nullable: true }).isString().trim().isLength({ max: 160 }),
+    body("bundles.*.audience").optional().isIn(Campaign.AUDIENCES),
+    body("bundles.*.slug").optional({ nullable: true }).matches(/^[a-z0-9-]{1,80}$/),
+    body("bundles.*.serviceIds").isArray({ min: 2, max: 12 }).withMessage("A bundle needs 2 to 12 services"),
+    body("bundles.*.serviceIds.*").matches(/^[a-f0-9]{24}$/i).withMessage("Pick a service"),
+    body("bundles.*.price").isInt({ min: 1, max: 100000 }).withMessage("Bundle prices are whole rupees").toInt(),
   ];
 };
 const CAMPAIGN_PATHS = [
@@ -606,7 +621,11 @@ const CAMPAIGN_PATHS = [
   "popup.delaySeconds",
   "popup.frequency",
   "sortOrder",
+  "servicePrices",
+  "bundles",
 ];
+/** Offer prices change what the site sells, so these tags go with the usual "campaigns". */
+const OFFER_TAGS = ["campaigns", "services", "packages"];
 const withStatus = (c, today) => ({ ...c.toObject(), status: c.statusOn(today) });
 
 router.get("/campaigns", async (_req, res) => {
@@ -624,10 +643,12 @@ router.post("/campaigns", campaignValidators(false), async (req, res) => {
   if (firstError(req, res)) return;
   try {
     const c = new Campaign({});
-    applyPaths(c, req.body, CAMPAIGN_PATHS);
+    const lines = await offers.prepareOfferLines(req.body);
+    applyPaths(c, { ...req.body, servicePrices: lines.servicePrices, bundles: lines.bundles }, CAMPAIGN_PATHS);
     await c.save();
+    offers.clearOffersCache();
     await audit.record({ action: "website.campaign_changed", req, meta: { campaignId: String(c._id), op: "created", name: c.name } });
-    await revalidateSite(["campaigns"]);
+    await revalidateSite(OFFER_TAGS);
     return res.status(201).json(withStatus(c, salonDate()));
   } catch (err) {
     return saveError(res, err);
@@ -640,12 +661,14 @@ router.patch("/campaigns/:id", validateId, campaignValidators(true), async (req,
     const c = await Campaign.findById(req.params.id);
     if (!c) return res.status(404).json({ error: "Offer not found" });
     const before = c.toObject();
-    applyPaths(c, req.body, CAMPAIGN_PATHS);
+    const lines = await offers.prepareOfferLines(req.body, before.bundles);
+    applyPaths(c, { ...req.body, servicePrices: lines.servicePrices, bundles: lines.bundles }, CAMPAIGN_PATHS);
     await c.save();
+    offers.clearOffersCache();
     const changes = diffPaths(before, c.toObject(), CAMPAIGN_PATHS);
     if (Object.keys(changes).length) {
       await audit.record({ action: "website.campaign_changed", req, meta: { campaignId: String(c._id), op: "updated", changes } });
-      await revalidateSite(["campaigns"]);
+      await revalidateSite(OFFER_TAGS);
     }
     return res.json(withStatus(c, salonDate()));
   } catch (err) {
@@ -657,8 +680,9 @@ router.delete("/campaigns/:id", validateId, async (req, res) => {
   try {
     const c = await Campaign.findByIdAndDelete(req.params.id);
     if (!c) return res.status(404).json({ error: "Offer not found" });
+    offers.clearOffersCache();
     await audit.record({ action: "website.campaign_changed", req, meta: { campaignId: String(c._id), op: "deleted", name: c.name } });
-    await revalidateSite(["campaigns"]);
+    await revalidateSite(OFFER_TAGS);
     return res.json({ ok: true });
   } catch (err) {
     console.error("[website] campaign delete error:", err);

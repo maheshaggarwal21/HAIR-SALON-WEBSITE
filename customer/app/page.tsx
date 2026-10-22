@@ -14,7 +14,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getPackages, getReels, getReviews, getServices, getSite } from "@/lib/api";
-import { hoursSummary, phoneLabel, rupees, whatsappHref } from "@/lib/format";
+import { hoursSummary, offerTill, percentOff, phoneLabel, rupees, whatsappHref } from "@/lib/format";
 import type { ServiceCard as Card } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { ServiceCard } from "@/components/ui/ServiceCard";
@@ -337,8 +337,23 @@ export default async function Home() {
                     <div className="flex items-start justify-between gap-4">
                       <h3 className="font-serif text-[28px] leading-tight md:text-[32px]">{p.name}</h3>
                       <div className="text-right">
-                        <span className="tabular text-[20px] font-semibold">{rupees(p.price)}</span>
-                        {separately > p.price && <div className="tabular text-[13px] text-ink-muted">{rupees(separately)} if booked separately</div>}
+                        {separately > p.price && p.validTo ? (
+                          // A crossed-out price only inside real offer dates (CLAUDE.md, D59).
+                          <>
+                            <div>
+                              <s className="tabular mr-2 text-[14px] text-ink-muted" aria-label={`${rupees(separately)} if booked separately`}>{rupees(separately)}</s>
+                              <span className="tabular text-[20px] font-semibold">{rupees(p.price)}</span>
+                            </div>
+                            <div className="tabular text-[12px] font-semibold text-gold-deep">
+                              {percentOff(separately, p.price)}% off · till {offerTill(p.validTo)}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span className="tabular text-[20px] font-semibold">{rupees(p.price)}</span>
+                            {separately > p.price && <div className="tabular text-[13px] text-ink-muted">{rupees(separately)} if booked separately</div>}
+                          </>
+                        )}
                       </div>
                     </div>
                     <p className="mt-3 text-[15px] text-ink-muted">{p.items.map((i) => i.name).join(" · ")}</p>

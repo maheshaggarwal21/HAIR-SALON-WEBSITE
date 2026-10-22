@@ -145,7 +145,7 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 |---|---|---|
 | T3.1 | [~] Campaign CMS: banners, popups (trigger, frequency), schedule — bar + pop-up + schedule done early (D29); promo codes, scroll/exit triggers pending | Owner creates a campaign without developer help |
 | T3.2 | [ ] Promo codes with caps (server-validated) | E17 passes |
-| T3.3 | [ ] Packages with total/day caps, bookable via engine | E18 passes |
+| T3.3 | [~] Packages with total/day caps, bookable via engine (bundles inside an offer done, D59; daily caps still open) | E18 passes |
 | T3.4 | [ ] Funnel events + Funnel report by `utm_campaign` with revenue | Report reconciles with Visits revenue |
 | T3.5 | [ ] Rebook nudges (opt-in only) per service interval | Sends only to opted-in customers |
 | T3.6 | [~] Instagram API sync (if Q7 = yes) + token refresh + owner tagging "Book this look" | Token refresh alert tested |

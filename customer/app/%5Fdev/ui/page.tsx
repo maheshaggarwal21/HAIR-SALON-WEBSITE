@@ -29,7 +29,9 @@ const SAMPLE_SINGLE: Card = {
   requiresConsultation: false,
   requiresPatchTest: false,
   fromPrice: 1500,
-  options: [{ id: "a", slug: "sample-facial", label: null, price: 1500, durationMinutes: 60, bookingMode: "request" }],
+  fromRegularPrice: null,
+  offerEndsOn: null,
+  options: [{ id: "a", slug: "sample-facial", label: null, price: 1500, regularPrice: null, offerEndsOn: null, durationMinutes: 60, bookingMode: "request" }],
 };
 
 const SAMPLE_VARIANTS: Card = {
@@ -40,11 +42,24 @@ const SAMPLE_VARIANTS: Card = {
   requiresConsultation: true,
   requiresPatchTest: true,
   fromPrice: 3000,
+  fromRegularPrice: null,
+  offerEndsOn: null,
   options: [
-    { id: "s", slug: "s", label: "Short", price: 3000, durationMinutes: null, bookingMode: "request" },
-    { id: "m", slug: "m", label: "Medium", price: 4000, durationMinutes: null, bookingMode: "request" },
-    { id: "l", slug: "l", label: "Long", price: 5000, durationMinutes: null, bookingMode: "request" },
+    { id: "s", slug: "s", label: "Short", price: 3000, regularPrice: null, offerEndsOn: null, durationMinutes: null, bookingMode: "request" },
+    { id: "m", slug: "m", label: "Medium", price: 4000, regularPrice: null, offerEndsOn: null, durationMinutes: null, bookingMode: "request" },
+    { id: "l", slug: "l", label: "Long", price: 5000, regularPrice: null, offerEndsOn: null, durationMinutes: null, bookingMode: "request" },
   ],
+};
+
+/** An offer is running: the normal price crossed out, the price paid, "% off · till" below (D59). */
+const SAMPLE_OFFER: Card = {
+  ...SAMPLE_SINGLE,
+  slug: "sample-offer",
+  name: "Sample on offer",
+  fromPrice: 400,
+  fromRegularPrice: 500,
+  offerEndsOn: "2026-10-31",
+  options: [{ id: "o", slug: "sample-offer", label: null, price: 400, regularPrice: 500, offerEndsOn: "2026-10-31", durationMinutes: 45, bookingMode: "request" }],
 };
 
 export default function DevUiPage() {
@@ -78,6 +93,7 @@ export default function DevUiPage() {
         </div>
         <div className="mt-8 grid max-w-[900px] gap-4 md:grid-cols-2">
           <ServiceCard service={SAMPLE_SINGLE} />
+          <ServiceCard service={SAMPLE_OFFER} />
           <ServiceCard service={SAMPLE_VARIANTS} />
         </div>
       </section>

@@ -6,13 +6,19 @@
  * a pop-up with a small poster. Nothing shows before the start date or after
  * the end date, and an offer can be paused without deleting it.
  *
+ * An offer can also carry cheaper prices (D59): either single services at a lower
+ * price, or bundles of services at one price. While the offer runs the website
+ * shows the cheaper price with the normal price crossed out and the % off; the
+ * booking engine charges the same cheaper price. Every amount is checked on the
+ * server against the real menu price, so a price at or above normal is refused.
+ *
  * Honesty (CLAUDE.md): the site shows the real end date. No fake countdowns or
- * "only N left".
+ * "only N left", and a crossed-out price exists only inside the offer's dates.
  */
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Megaphone, Pause, Pencil, Play, Plus, Save, Trash2, X } from "lucide-react";
+import { Loader2, Megaphone, Pause, Pencil, Play, Plus, Save, Search, Trash2, X } from "lucide-react";
 import MediaInput from "@/components/website/MediaInput";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
@@ -31,7 +37,30 @@ interface Offer {
   showPopup: boolean;
   content: { eyebrow: string | null; headline: string; body: string | null; image: string | null; ctaLabel: string; ctaHref: string };
   popup: { delaySeconds: number; frequency: "session" | "day" };
+  servicePrices: ServicePrice[];
+  bundles: Bundle[];
   status?: Status;
+}
+
+interface ServicePrice {
+  serviceId: string;
+  price: number;
+}
+interface Bundle {
+  /** Set by the server on first save; sent back so an edit keeps the bundle's web address. */
+  slug?: string;
+  name: string;
+  description: string | null;
+  audience: "her" | "him" | "unisex";
+  serviceIds: string[];
+  price: number;
+}
+interface MenuService {
+  _id: string;
+  name: string;
+  publicName?: string | null;
+  publicPrice?: number | null;
+  audience?: string | null;
 }
 
 /** Preview colours. Mirror customer/app/globals.css `.offer-theme-*`. */
@@ -61,8 +90,10 @@ const blank = (): Offer => ({
   theme: "festive",
   showBar: true,
   showPopup: true,
-  content: { eyebrow: "Festive offer", headline: "", body: null, image: null, ctaLabel: "See the offer", ctaHref: "/offers/karva-chauth" },
+  content: { eyebrow: "Festive offer", headline: "", body: null, image: null, ctaLabel: "See the offer", ctaHref: "/services" },
   popup: { delaySeconds: 6, frequency: "day" },
+  servicePrices: [],
+  bundles: [],
 });
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -80,9 +111,204 @@ const inputClass =
   "w-full h-11 px-4 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 placeholder:text-stone-400";
 const labelClass = "block text-xs font-semibold text-stone-600 mb-1.5 uppercase tracking-wider";
 
+const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+const pctOff = (regular: number, price: number) => (regular > 0 && price < regular ? Math.round((1 - price / regular) * 100) : 0);
+const nameOf = (s: MenuService) => s.publicName || s.name;
+
+/** Type a few letters, tap a service. Hides the ones already chosen. */
+function ServicePicker({ menu, taken, onPick, label }: { menu: MenuService[]; taken: Set<string>; onPick: (id: string) => void; label: string }) {
+  const [q, setQ] = useState("");
+  const hits = q.trim()
+    ? menu.filter((s) => !taken.has(s._id) && `${s.name} ${s.publicName ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
+    : [];
+  return (
+    <div className="relative">
+      <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-stone-400" />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={label} className={`${inputClass} pl-10`} />
+      {hits.length > 0 && (
+        <ul className="absolute z-10 mt-1 w-full rounded-xl border border-stone-200 bg-white shadow-lg overflow-hidden">
+          {hits.map((s) => (
+            <li key={s._id}>
+              <button
+                type="button"
+                onClick={() => {
+                  onPick(s._id);
+                  setQ("");
+                }}
+                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-left hover:bg-amber-50"
+              >
+                <span className="text-stone-900">{nameOf(s)}</span>
+                <span className="text-stone-500 tabular-nums">{rupees(s.publicPrice ?? 0)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** What the customer will see for one price, so the owner can judge it. */
+function PricePreview({ regular, price }: { regular: number; price: number }) {
+  const pct = pctOff(regular, price);
+  if (!price) return <span className="text-xs text-stone-400">Enter the offer price</span>;
+  if (!pct) return <span className="text-xs font-medium text-red-600">Must be below {rupees(regular)}</span>;
+  return (
+    <span className="text-sm">
+      <s className="text-stone-400">{rupees(regular)}</s> <b className="text-stone-900">{rupees(price)}</b> <span className="text-xs text-emerald-700 font-semibold">{pct}% off</span>
+    </span>
+  );
+}
+
+function PricesEditor({ offer, menu, onChange }: { offer: Offer; menu: MenuService[]; onChange: (patch: Partial<Offer>) => void }) {
+  const byId = new Map(menu.map((s) => [s._id, s]));
+  const priced = new Set(offer.servicePrices.map((p) => p.serviceId));
+
+  const setPrice = (i: number, price: number) => onChange({ servicePrices: offer.servicePrices.map((p, j) => (j === i ? { ...p, price } : p)) });
+  const setBundle = (i: number, patch: Partial<Bundle>) => onChange({ bundles: offer.bundles.map((b, j) => (j === i ? { ...b, ...patch } : b)) });
+
+  return (
+    <div className="space-y-6 border-t border-stone-100 pt-5">
+      <div>
+        <h4 className="font-semibold text-stone-900">Cheaper prices for single services</h4>
+        <p className="text-sm text-stone-500 mt-1">
+          Pick a service and set its offer price. While the offer runs, the website shows the offer price with the normal price crossed out and the % off, and online bookings are charged the offer price.
+        </p>
+        <div className="mt-3 space-y-2">
+          {offer.servicePrices.map((p, i) => {
+            const svc = byId.get(p.serviceId);
+            const regular = svc?.publicPrice ?? 0;
+            return (
+              <div key={p.serviceId} className="rounded-xl border border-stone-200 bg-stone-50 p-3 flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1 basis-48">
+                  <div className="font-medium text-stone-900 truncate">{svc ? nameOf(svc) : "Service not on the menu any more"}</div>
+                  <div className="text-xs text-stone-500">Normal price {rupees(regular)}</div>
+                </div>
+                <label className="flex items-center gap-1.5 text-sm text-stone-600">
+                  Offer ₹
+                  <input type="number" min={1} max={Math.max(regular - 1, 1)} value={p.price || ""} onChange={(e) => setPrice(i, Math.floor(Number(e.target.value) || 0))} className={`${inputClass} w-24`} />
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-stone-600">
+                  or
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={pctOff(regular, p.price) || ""}
+                    onChange={(e) => {
+                      const pct = Math.min(99, Math.max(0, Number(e.target.value) || 0));
+                      setPrice(i, pct ? Math.max(1, Math.round(regular * (1 - pct / 100))) : 0);
+                    }}
+                    className={`${inputClass} w-20`}
+                  />
+                  % off
+                </label>
+                <div className="basis-full sm:basis-auto sm:min-w-44 text-right">
+                  <PricePreview regular={regular} price={p.price} />
+                </div>
+                <button type="button" onClick={() => onChange({ servicePrices: offer.servicePrices.filter((_, j) => j !== i) })} aria-label="Remove price" className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-red-600">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 max-w-md">
+          <ServicePicker menu={menu} taken={priced} label="Add a service: type its name" onPick={(id) => onChange({ servicePrices: [...offer.servicePrices, { serviceId: id, price: 0 }] })} />
+        </div>
+      </div>
+
+      <div>
+        <h4 className="font-semibold text-stone-900">Bundles</h4>
+        <p className="text-sm text-stone-500 mt-1">
+          Several services sold together at one lower price. The website lists the bundle with what is in it and the total if booked separately, and the customer books and pays for it in one go.
+        </p>
+        <div className="mt-3 space-y-3">
+          {offer.bundles.map((b, i) => {
+            const items = b.serviceIds.map((id) => byId.get(id));
+            const total = items.reduce((sum, s) => sum + (s?.publicPrice ?? 0), 0);
+            return (
+              <div key={b.slug ?? i} className="rounded-xl border border-stone-200 bg-stone-50 p-4 space-y-3">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="flex-1 basis-56">
+                    <label className={labelClass}>Bundle name</label>
+                    <input value={b.name} onChange={(e) => setBundle(i, { name: e.target.value })} maxLength={60} placeholder="e.g. Cut + wash + blow dry" className={inputClass} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>For</label>
+                    <select value={b.audience} onChange={(e) => setBundle(i, { audience: e.target.value as Bundle["audience"] })} className={`${inputClass} w-32`}>
+                      <option value="unisex">Everyone</option>
+                      <option value="her">Women</option>
+                      <option value="him">Men</option>
+                    </select>
+                  </div>
+                  <button type="button" onClick={() => onChange({ bundles: offer.bundles.filter((_, j) => j !== i) })} aria-label="Remove bundle" className="mt-6 h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-red-600">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <input value={b.description ?? ""} onChange={(e) => setBundle(i, { description: e.target.value || null })} maxLength={160} placeholder="One line about it (optional)" className={inputClass} />
+                <div className="flex flex-wrap gap-2">
+                  {b.serviceIds.map((id) => {
+                    const s = byId.get(id);
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1.5 rounded-full bg-white border border-stone-200 pl-3 pr-1.5 py-1 text-sm">
+                        {s ? `${nameOf(s)} · ${rupees(s.publicPrice ?? 0)}` : "Removed service"}
+                        <button type="button" onClick={() => setBundle(i, { serviceIds: b.serviceIds.filter((x) => x !== id) })} aria-label="Remove from bundle" className="h-6 w-6 inline-flex items-center justify-center rounded-full text-stone-400 hover:bg-stone-100">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="max-w-md">
+                  <ServicePicker menu={menu} taken={new Set(b.serviceIds)} label="Add a service to this bundle" onPick={(id) => setBundle(i, { serviceIds: [...b.serviceIds, id] })} />
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-1.5 text-sm text-stone-600">
+                    Bundle price ₹
+                    <input type="number" min={1} value={b.price || ""} onChange={(e) => setBundle(i, { price: Math.floor(Number(e.target.value) || 0) })} className={`${inputClass} w-28`} />
+                  </label>
+                  <span className="text-sm text-stone-500">Separately {rupees(total)}</span>
+                  <PricePreview regular={total} price={b.price} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange({ bundles: [...offer.bundles, { name: "", description: null, audience: "unisex", serviceIds: [], price: 0 }] })}
+          className="mt-3 inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border border-stone-200 bg-white text-sm font-semibold text-stone-800 hover:bg-stone-50"
+        >
+          <Plus className="w-4 h-4" /> New bundle
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** What stops the offer being saved, in plain words (the server checks again). */
+function priceProblem(o: Offer, menu: MenuService[]): string | null {
+  const byId = new Map(menu.map((s) => [s._id, s]));
+  for (const p of o.servicePrices) {
+    const s = byId.get(p.serviceId);
+    if (!s) return "One priced service is not on the website menu any more. Remove it.";
+    if (!(p.price >= 1 && p.price < (s.publicPrice ?? 0))) return `${nameOf(s)}: set an offer price below ${rupees(s.publicPrice ?? 0)}.`;
+  }
+  for (const b of o.bundles) {
+    if (!b.name.trim()) return "Give each bundle a name.";
+    if (b.serviceIds.length < 2) return `${b.name}: add at least two services.`;
+    const total = b.serviceIds.reduce((sum, id) => sum + (byId.get(id)?.publicPrice ?? 0), 0);
+    if (b.serviceIds.some((id) => !byId.has(id))) return `${b.name}: a service is not on the menu any more.`;
+    if (!(b.price >= 1 && b.price < total)) return `${b.name}: set a price below ${rupees(total)}.`;
+  }
+  return null;
+}
+
 export default function WebsiteOffers() {
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [editing, setEditing] = useState<Offer | null>(null);
+  const [menu, setMenu] = useState<MenuService[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   /** Deleting is permanent, so the bin asks once more. */
@@ -94,6 +320,9 @@ export default function WebsiteOffers() {
       .catch((e) => setError(e.message));
   useEffect(() => {
     load();
+    api<MenuService[]>("/services")
+      .then((all) => setMenu(all.filter((s) => s.publicPrice != null).sort((a, b) => nameOf(a).localeCompare(nameOf(b)))))
+      .catch((e) => setError(e.message));
   }, []);
 
   async function save() {
@@ -101,8 +330,8 @@ export default function WebsiteOffers() {
     setSaving(true);
     setError("");
     try {
-      const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup } = editing;
-      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup };
+      const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles } = editing;
+      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles };
       await api(_id ? `/campaigns/${_id}` : "/campaigns", { method: _id ? "PATCH" : "POST", body: JSON.stringify(body) });
       setEditing(null);
       await load();
@@ -135,6 +364,7 @@ export default function WebsiteOffers() {
   const set = (patch: Partial<Offer>) => editing && setEditing({ ...editing, ...patch });
   const setContent = (patch: Partial<Offer["content"]>) => editing && setEditing({ ...editing, content: { ...editing.content, ...patch } });
   const theme = THEMES.find((t) => t.key === editing?.theme) ?? THEMES[0];
+  const problem = editing ? priceProblem(editing, menu) : null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="max-w-3xl">
@@ -144,8 +374,9 @@ export default function WebsiteOffers() {
             <Megaphone className="w-6 h-6 text-amber-500" /> Website Offers
           </h2>
           <p className="text-sm text-stone-500 mt-1">
-            While an offer runs, the website shows a colourful bar on every page and, if you want, a pop-up with your poster. It
-            switches on and off by itself on the dates you choose (Patiala time).
+            While an offer runs, the website shows a colourful bar on every page and, if you want, a pop-up with your poster. An offer can
+            also give single services a cheaper price, or sell several services together as a bundle. It all switches on and off by itself on
+            the dates you choose (Patiala time).
           </p>
         </div>
         {!editing && (
@@ -300,13 +531,17 @@ export default function WebsiteOffers() {
             </div>
           )}
 
+          <PricesEditor offer={editing} menu={menu} onChange={set} />
+
+          {problem && <p className="text-sm text-red-600">{problem}</p>}
+
           <div className="flex justify-end gap-2">
             <button onClick={() => setEditing(null)} className="h-10 px-4 rounded-lg border border-stone-200 text-sm text-stone-700 hover:bg-stone-50">
               Cancel
             </button>
             <button
               onClick={save}
-              disabled={saving || !editing.name.trim() || !editing.content.headline.trim() || !editing.content.ctaHref.trim()}
+              disabled={saving || Boolean(problem) || !editing.name.trim() || !editing.content.headline.trim() || !editing.content.ctaHref.trim()}
               className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 disabled:opacity-40"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save offer
@@ -336,11 +571,11 @@ export default function WebsiteOffers() {
                     {o.status && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[o.status]}`}>{STATUS_LABEL[o.status]}</span>}
                   </div>
                   <p className="text-sm text-stone-500 truncate">
-                    {nice(o.startDate)} – {nice(o.endDate)} · {[o.showBar && "bar", o.showPopup && "pop-up"].filter(Boolean).join(" + ") || "hidden"} · {o.content.headline}
+                    {nice(o.startDate)} – {nice(o.endDate)} · {[o.showBar && "bar", o.showPopup && "pop-up", o.servicePrices?.length > 0 && `${o.servicePrices.length} cheaper price${o.servicePrices.length > 1 ? "s" : ""}`, o.bundles?.length > 0 && `${o.bundles.length} bundle${o.bundles.length > 1 ? "s" : ""}`].filter(Boolean).join(" + ") || "hidden"} · {o.content.headline}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setEditing(o)} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
+                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [] })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button

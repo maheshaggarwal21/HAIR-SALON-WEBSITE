@@ -13,6 +13,13 @@
  * Honesty (CLAUDE.md): a campaign always has real start and end dates. The
  * site shows the real end date and never invents a countdown or "only N left".
  *
+ * Prices (D59): an offer may also carry cheaper prices for single services
+ * (`servicePrices`) and bundles (`bundles`) that run on the same dates. While
+ * it is live the website shows the cheaper price with the usual price crossed
+ * out and the % off; the same cheaper price is what the booking engine charges,
+ * so a quote, a deposit and a refund can never disagree with the page. Outside
+ * the dates nothing changes. See utils/offers.js.
+ *
  * Status is derived, never stored: scheduled / live / ended / paused.
  */
 
@@ -21,6 +28,34 @@ const mongoose = require("mongoose");
 const THEMES = ["festive", "rose", "emerald", "midnight"];
 const FREQUENCIES = ["session", "day"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const AUDIENCES = ["her", "him", "unisex"];
+const wholeRupees = { validator: Number.isInteger, message: "Prices are whole rupees" };
+
+/** A cheaper price for one service while the offer runs (must be below its website price). */
+const servicePriceSchema = new mongoose.Schema(
+  {
+    serviceId: { type: mongoose.Schema.Types.ObjectId, ref: "Service", required: true },
+    price: { type: Number, required: true, min: 1, validate: wholeRupees },
+  },
+  { _id: false }
+);
+
+/** Several services sold together at one price while the offer runs. */
+const bundleSchema = new mongoose.Schema(
+  {
+    /** URL-safe, unique across offers; generated on save, never sent by a browser. */
+    slug: { type: String, required: true, match: /^[a-z0-9-]{1,80}$/ },
+    name: { type: String, required: true, trim: true, maxlength: 60 },
+    description: { type: String, trim: true, maxlength: 160, default: null },
+    audience: { type: String, enum: AUDIENCES, default: "unisex" },
+    serviceIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }],
+      validate: { validator: (v) => v.length >= 2 && v.length <= 12, message: "A bundle needs 2 to 12 services" },
+    },
+    price: { type: Number, required: true, min: 1, validate: wholeRupees },
+  },
+  { _id: false }
+);
 
 const campaignSchema = new mongoose.Schema(
   {
@@ -50,6 +85,8 @@ const campaignSchema = new mongoose.Schema(
       /** At most once per visit ("session") or once per day. */
       frequency: { type: String, enum: FREQUENCIES, default: "day" },
     },
+    servicePrices: { type: [servicePriceSchema], default: [] },
+    bundles: { type: [bundleSchema], default: [] },
     /** Lower shows first when two offers overlap. */
     sortOrder: { type: Number, default: 0 },
   },
@@ -96,3 +133,4 @@ campaignSchema.methods.toPublic = function () {
 module.exports = mongoose.model("Campaign", campaignSchema);
 module.exports.THEMES = THEMES;
 module.exports.FREQUENCIES = FREQUENCIES;
+module.exports.AUDIENCES = AUDIENCES;

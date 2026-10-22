@@ -86,11 +86,11 @@ export function ServiceCard({
           <>
             {/* A one-option group card ("Hair colour" for him) says what the option is. */}
             {single.label && single.label !== service.name && <p className={`mb-1 text-[14px] ${muted}`}>{single.label}</p>}
-            <PriceTag price={single.price} durationMinutes={single.durationMinutes} />
+            <PriceTag price={single.price} durationMinutes={single.durationMinutes} regularPrice={single.regularPrice} endsOn={single.offerEndsOn} />
           </>
         ) : (
           <>
-            <PriceTag price={service.fromPrice} from />
+            <PriceTag price={service.fromPrice} from regularPrice={service.fromRegularPrice} endsOn={service.offerEndsOn} />
             <div className="mt-3" aria-label={`${service.name} options`}>
               {/* Request sheet: an ordered dropdown; tick several where they combine (D34). */}
               {selectable && (
@@ -113,7 +113,9 @@ export function ServiceCard({
                   {service.options.slice(0, optionLimit).map((o) => (
                     <li key={o.id} className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0">{o.label ?? "Option"}</span>
-                      <span className={`tabular shrink-0 font-medium ${tone === "dark" ? "text-ivory" : "text-ink"}`}>₹{o.price.toLocaleString("en-IN")}</span>
+                      <span className={`tabular shrink-0 font-medium ${tone === "dark" ? "text-ivory" : "text-ink"}`}>
+                        {o.regularPrice && o.regularPrice > o.price && <s className="mr-1.5 text-[12px] opacity-60">₹{o.regularPrice.toLocaleString("en-IN")}</s>}₹{o.price.toLocaleString("en-IN")}
+                      </span>
                     </li>
                   ))}
                   {service.options.length > optionLimit && (

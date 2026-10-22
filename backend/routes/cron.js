@@ -180,7 +180,15 @@ async function bookingsTick(now = new Date()) {
   const reminders = await sendReminders(now);
   const retried = await retryFailed();
   const refundsSent = await require("../utils/booking").retryAutoRefunds(now);
-  return { ...expired, ...reminders, messagesRetried: retried, autoRefundsRetried: refundsSent };
+  // Offers switch on and off at midnight Patiala time (D59). The site caches its menu, so
+  // drop it in the first half hour of the new day; the 15-minute timer hits this twice, harmlessly.
+  const ist = new Date(now.getTime() + 330 * 60_000);
+  const newDay = ist.getUTCHours() === 0 && ist.getUTCMinutes() < 30;
+  if (newDay) {
+    require("../utils/offers").clearOffersCache();
+    await revalidateSite(["services", "packages", "campaigns"]);
+  }
+  return { ...expired, ...reminders, messagesRetried: retried, autoRefundsRetried: refundsSent, offersRefreshed: newDay };
 }
 
 for (const method of ["get", "post"]) {

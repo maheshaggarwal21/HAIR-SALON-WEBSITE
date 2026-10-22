@@ -27,7 +27,7 @@ export function OptionPicker({ service }: { service: Card }) {
         </>
       )}
       <div className="mt-5 text-[28px]">
-        <PriceTag price={opt.price} durationMinutes={opt.durationMinutes} />
+        <PriceTag price={opt.price} durationMinutes={opt.durationMinutes} regularPrice={opt.regularPrice} endsOn={opt.offerEndsOn} />
       </div>
       <div className="mt-6">
         <RequestCta preset={{ audience, optionIds: [opt.id] }} label={`Request ${service.name}${opt.label ? ` (${opt.label})` : ""}`} />
