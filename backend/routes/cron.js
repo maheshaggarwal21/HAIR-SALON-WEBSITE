@@ -10,6 +10,7 @@
  *   GET https://api.thexpertshair.com/api/cron/requests-tick    every 15 min
  *   GET https://api.thexpertshair.com/api/cron/bookings-tick    every 15 min (Phase 2)
  *   GET https://api.thexpertshair.com/api/cron/daily-morning    daily 08:15 IST (= 02:45 UTC)
+ *   GET https://api.thexpertshair.com/api/cron/instagram-sync   daily 02:30 IST (= 21:00 UTC)
  *   GET https://api.thexpertshair.com/api/cron/reviews-refresh  daily (Vercel Cron
  *       can run this one even on Hobby — it is in vercel.json)
  *   Header  Authorization: Bearer <CRON_SECRET>
@@ -128,6 +129,19 @@ for (const method of ["get", "post"]) {
       return res.json(await runJob("daily-morning", () => morningRun()));
     } catch (err) {
       console.error("[cron] daily-morning failed:", err);
+      return res.status(500).json({ error: "Job failed" });
+    }
+  });
+}
+
+/** Instagram reels into the wall + token renewal, once a day (CF §13, D58, T3.6). */
+for (const method of ["get", "post"]) {
+  router[method]("/instagram-sync", async (_req, res) => {
+    try {
+      const { instagramSync } = require("../utils/instagram");
+      return res.json(await runJob("instagram-sync", () => instagramSync()));
+    } catch (err) {
+      console.error("[cron] instagram-sync failed:", err);
       return res.status(500).json({ error: "Job failed" });
     }
   });
