@@ -590,7 +590,7 @@ test("pairing: only the owner (counter.manage) can make codes or see and revoke 
   assert.ok(!ROLE_DEFAULTS.receptionist.includes("counter.manage") && !ROLE_DEFAULTS.manager.includes("counter.manage"));
 });
 
-test("the tablet is shown an amount and a QR, nothing about the customer, and only its own token works", async () => {
+test("the tablet is shown the customer's bill and a QR, never their phone, the staff name or the discount reason, and only its own token works", async () => {
   const { token } = await pairTablet();
   assert.equal((await call("GET", "/display/state")).status, 401);
   assert.equal((await state("x".repeat(43))).status, 401);
@@ -600,14 +600,25 @@ test("the tablet is shown an amount and a QR, nothing about the customer, and on
   assert.equal(r.body.mode, "idle");
 
   await staff("Reena", "receptionist");
-  const a = await startSale();
+  const a = await startSale({ customerName: "  Asha   Kaur " });
   await backdate(token);
   r = await state(token);
   assert.equal(r.body.mode, "payment");
   assert.equal(r.body.amount, 500);
+  assert.deepEqual(r.body.bill, {
+    customerName: "Asha Kaur",
+    lines: [{ name: "Haircut Women", quantity: 1, price: 1000 }],
+    subtotal: 1000,
+    discountPercent: 50,
+    discountAmount: 500,
+    cashAmount: 0,
+    total: 500,
+    toPay: 500,
+  });
   assert.deepEqual(r.body.qr, { mode: "decoded", upi: upiFor(500) });
   assert.equal(r.body.nextPollMs, 2500);
-  assert.deepEqual(Object.keys(r.body).sort(), ["amount", "device", "expiresAt", "mode", "nextPollMs", "qr", "sessionId"]);
+  assert.deepEqual(Object.keys(r.body).sort(), ["amount", "bill", "device", "expiresAt", "mode", "nextPollMs", "qr", "sessionId"]);
+  assert.ok(!JSON.stringify(r.body).includes("9876543210"));
   assert.ok(!JSON.stringify(r.body).includes("Reena"));
 
   const s = await CounterSession.findById(a.body.session.id);
@@ -615,6 +626,7 @@ test("the tablet is shown an amount and a QR, nothing about the customer, and on
   await backdate(token);
   r = await state(token);
   assert.equal(r.body.mode, "paid");
+  assert.equal(r.body.customerName, "Asha Kaur");
   await CounterSession.updateOne({ _id: s._id }, { $set: { paidAt: new Date(Date.now() - 20_000) } });
   await backdate(token);
   assert.equal((await state(token)).body.mode, "idle");
@@ -744,4 +756,34 @@ test("Fix Numbers heals a stuck reference from Razorpay's payments list before l
   fake.list = [{ id: "pay_7", amountPaise: 50000, status: "captured" }];
   assert.equal((await call("GET", "/data-fixes?kind=reference")).body.issues.length, 0);
   assert.equal((await Visit.findById(r.body.visitId)).razorpayPaymentId, "pay_7");
+});
+
+// ─── the bill on the tablet ─────────────────────────────────────────────────
+
+test("the bill lists each service once with a count, shows the cash already taken, and the amount to pay by UPI", async () => {
+  const id = String(svc._id);
+  const blow = await Service.create({ name: "Blow Dry", price: 600, slug: "blow-dry", isActive: true, durationMinutes: 30, durationConfirmed: true, bookingMode: "instant", audience: "her", displayCategory: "Hair" });
+  const { token } = await pairTablet();
+  await staff("Reena", "receptionist");
+  await call("POST", "/counter/sessions", { serviceIds: [id, String(blow._id), id], discountPercent: 50, paymentMode: "partial", cashAmount: 300, customerName: "Meera" });
+  await backdate(token);
+  const { bill, amount } = (await state(token)).body;
+  assert.deepEqual(bill.lines, [{ name: "Haircut Women", quantity: 2, price: 1000 }, { name: "Blow Dry", quantity: 1, price: 600 }]);
+  assert.deepEqual([bill.subtotal, bill.discountAmount, bill.total, bill.cashAmount, bill.toPay, amount], [2600, 1300, 1300, 300, 1000, 1000]);
+});
+
+test("the name is display-only: tidied, capped, optional, and it can never change what is charged", async () => {
+  const noName = await startSale();
+  assert.equal((await CounterSession.findById(noName.body.session.id)).customerName, null);
+  const odd = await startSale({ customerName: "<b>Asha</b>\n\tKaur " + "x".repeat(200) });
+  const stored = (await CounterSession.findById(odd.body.session.id)).customerName;
+  assert.ok(stored.length <= 60 && !/[<>\n\t]/.test(stored));
+  const lie = await startSale({ customerName: "Free haircut ₹1", amount: 1, toPay: 1 });
+  assert.equal((await CounterSession.findById(lie.body.session.id)).upiAmount, 500);
+});
+
+test("a session built by the server shows the same lines whatever the browser claims", async () => {
+  const r = await startSale({ lines: [{ name: "Free", quantity: 1, price: 0 }], customerName: "A" });
+  const s = await CounterSession.findById(r.body.session.id);
+  assert.deepEqual(s.lines.map((l) => l.name), ["Haircut Women"]);
 });

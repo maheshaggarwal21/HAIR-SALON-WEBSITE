@@ -74,11 +74,19 @@ async function computeAmounts({ serviceIds, discountPercent, paymentMode = "onli
   if (!serviceIds.every(isId)) return { ok: false, error: "Invalid service ID" };
 
   const wanted = serviceIds.map(String);
-  const docs = await Service.find({ _id: { $in: [...new Set(wanted)] }, isActive: true }, { price: 1 }).lean();
+  const docs = await Service.find({ _id: { $in: [...new Set(wanted)] }, isActive: true }, { price: 1, name: 1 }).lean();
   const priceById = new Map(docs.map((d) => [String(d._id), d.price]));
+  const nameById = new Map(docs.map((d) => [String(d._id), d.name]));
   if (wanted.some((id) => !priceById.has(id))) return { ok: false, error: "One or more selected services are invalid or inactive" };
 
   const subtotal = wanted.reduce((sum, id) => sum + priceById.get(id), 0);
+  // The bill the customer sees: one line per service, in the order entered, with a count for repeats.
+  const lines = [];
+  for (const id of wanted) {
+    const line = lines.find((l) => l.id === id);
+    if (line) line.quantity += 1;
+    else lines.push({ id, name: nameById.get(id), quantity: 1, price: priceById.get(id) });
+  }
   // Same clamp as POST /visits/v2, so the session and the visit always agree.
   const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
   const discountAmount = Math.round(subtotal * (pct / 100));
@@ -97,6 +105,7 @@ async function computeAmounts({ serviceIds, discountPercent, paymentMode = "onli
   return {
     ok: true,
     serviceIds: wanted,
+    lines: lines.map(({ name, quantity, price }) => ({ name, quantity, price })),
     subtotal,
     discountPercent: pct,
     discountAmount,
@@ -135,6 +144,12 @@ function decodeUpiFromPoster(png, expectedRupees) {
 }
 
 // ─── Views ──────────────────────────────────────────────────────────────────
+
+/** A name for the tablet: plain text, one line, 60 characters at most, or null. Display only. */
+function cleanCustomerName(raw) {
+  const s = String(raw ?? "").replace(/[\u0000-\u001f\u007f<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  return s || null;
+}
 
 /** What a browser may see of a session. The QR itself goes only to the screen meant to show it. */
 function view(s, { withQr = false } = {}) {
@@ -246,6 +261,8 @@ async function createSession({ user, body }) {
     createdByName: user.name || "Unknown",
     target,
     serviceIds: calc.serviceIds,
+    customerName: cleanCustomerName(body?.customerName),
+    lines: calc.lines,
     discountPercent: calc.discountPercent,
     paymentMode: calc.paymentMode,
     cashAmount: calc.cashAmount,
@@ -552,6 +569,23 @@ function idlePollMs(settings, now = new Date()) {
   return Math.max(IDLE_FAST_MS, Math.min(IDLE_SLOW_MS, nextStart - t));
 }
 
+/**
+ * The customer's bill as the tablet shows it, all from the server's own figures. No phone number,
+ * no staff name, no payment id, no discount reason.
+ */
+function billFor(s) {
+  return {
+    customerName: s.customerName || null,
+    lines: (s.lines || []).map((l) => ({ name: l.name, quantity: l.quantity, price: l.price })),
+    subtotal: s.subtotal,
+    discountPercent: s.discountPercent,
+    discountAmount: s.discountAmount,
+    cashAmount: s.cashAmount,
+    total: s.finalTotal,
+    toPay: s.upiAmount,
+  };
+}
+
 /** The tablet's screen: a live QR, a brief "paid", or idle. */
 async function displayState(now = new Date()) {
   const s = await CounterSession.findOne({
@@ -562,10 +596,10 @@ async function displayState(now = new Date()) {
     .lean();
 
   if (s?.status === "pending") {
-    return { mode: "payment", amount: s.upiAmount, expiresAt: s.expiresAt, sessionId: String(s._id), qr: qrPayload(s), nextPollMs: ACTIVE_POLL_MS };
+    return { mode: "payment", amount: s.upiAmount, bill: billFor(s), expiresAt: s.expiresAt, sessionId: String(s._id), qr: qrPayload(s), nextPollMs: ACTIVE_POLL_MS };
   }
   if (s?.status === "paid") {
-    return { mode: "paid", amount: s.upiAmount, sessionId: String(s._id), nextPollMs: ACTIVE_POLL_MS };
+    return { mode: "paid", amount: s.upiAmount, customerName: s.customerName || null, sessionId: String(s._id), nextPollMs: ACTIVE_POLL_MS };
   }
   return { mode: "idle", nextPollMs: idlePollMs(await siteSettings(now), now) };
 }

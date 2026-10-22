@@ -2,10 +2,10 @@
  * @file DisplayPage.tsx
  * @description The customer-facing counter tablet at /display (D60, part A).
  *
- * It is a dumb screen. It shows what the server tells it to show: the amount and a
- * QR while a payment is pending, a "thank you" for a few seconds once paid, and otherwise
- * the salon's name, turning into a soft slideshow of the salon after 30 quiet seconds. It never learns who the customer is or what they bought,
- * has no staff login, and holds one secret: the device token it received when the
+ * It is a dumb screen. It shows what the server tells it to show: the customer's bill
+ * (name, services, discount, what to pay) with the QR while a payment is pending, a "thank you" for a few seconds once paid, and otherwise
+ * the salon's name, turning into a soft slideshow of the salon after 30 quiet seconds. It never receives the customer's phone number,
+ * the staff member's name or the payment reference; it has no staff login, and holds one secret: the device token it received when the
  * owner paired it with a one-time code (Management → Counter display).
  *
  * Polling is told to it by the server: ~2.5 s while a payment is active, every 20 s
@@ -238,16 +238,62 @@ export default function DisplayPage() {
   if (!paired) return <PairScreen onPaired={() => setPaired(true)} />;
 
   if (state?.mode === "payment") {
+    const b = state.bill;
     return (
-      <Shell offline={offline}>
-        <p className="text-xl uppercase tracking-[0.3em] text-stone-400">Amount to pay</p>
-        <p className="mt-2 text-7xl font-semibold tabular-nums sm:text-8xl">{rupees(state.amount)}</p>
-        <div className="mt-6 w-[min(52vh,80vw)]">
-          {state.qr ? <UpiQr qr={state.qr} /> : <p className="text-stone-400">Please ask the desk for another way to pay.</p>}
+      <div className="fixed inset-0 overflow-y-auto bg-stone-950 text-stone-50 select-none">
+        <div className="mx-auto flex min-h-full max-w-6xl flex-col items-stretch justify-center gap-8 px-6 py-6 lg:flex-row lg:items-center lg:gap-14 lg:px-12">
+          {/* The bill: the server's own figures */}
+          <div className="flex-1">
+            <p className="text-sm uppercase tracking-[0.3em] text-stone-400">{b.customerName ? "Bill for" : "Your bill"}</p>
+            {b.customerName && <p className="mt-1 break-words font-serif text-4xl leading-tight sm:text-5xl">{b.customerName}</p>}
+            <ul className="mt-6 divide-y divide-stone-800 text-xl sm:text-2xl">
+              {b.lines.map((l) => (
+                <li key={l.name} className="flex items-baseline justify-between gap-6 py-3">
+                  <span className="break-words">
+                    {l.name}
+                    {l.quantity > 1 && <span className="ml-2 text-stone-400">× {l.quantity}</span>}
+                  </span>
+                  <span className="tabular-nums text-stone-300">{rupees(l.price * l.quantity)}</span>
+                </li>
+              ))}
+            </ul>
+            <dl className="mt-4 space-y-2 text-lg text-stone-300 sm:text-xl">
+              {b.discountAmount > 0 && (
+                <div className="flex justify-between gap-6">
+                  <dt>Discount ({Number.isInteger(b.discountPercent) ? b.discountPercent : b.discountPercent.toFixed(1)}%)</dt>
+                  <dd className="tabular-nums text-emerald-400">− {rupees(b.discountAmount)}</dd>
+                </div>
+              )}
+              {b.cashAmount > 0 && (
+                <>
+                  <div className="flex justify-between gap-6">
+                    <dt>Total</dt>
+                    <dd className="tabular-nums">{rupees(b.total)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-6">
+                    <dt>Paid in cash</dt>
+                    <dd className="tabular-nums text-emerald-400">− {rupees(b.cashAmount)}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+            <div className="mt-5 flex items-baseline justify-between gap-6 border-t border-stone-700 pt-4">
+              <span className="text-xl uppercase tracking-[0.25em] text-stone-400">To pay</span>
+              <span className="text-6xl font-semibold tabular-nums sm:text-7xl">{rupees(state.amount)}</span>
+            </div>
+          </div>
+
+          {/* The QR */}
+          <div className="flex flex-col items-center lg:w-[min(46vh,38vw)] lg:shrink-0">
+            <div className="w-[min(60vw,46vh)] lg:w-full">
+              {state.qr ? <UpiQr qr={state.qr} /> : <p className="text-stone-400">Please ask the desk for another way to pay.</p>}
+            </div>
+            <p className="mt-5 text-2xl">Scan with any UPI app</p>
+            <Countdown until={state.expiresAt} />
+          </div>
         </div>
-        <p className="mt-5 text-2xl">Scan with any UPI app</p>
-        <Countdown until={state.expiresAt} />
-      </Shell>
+        {offline && <p className="fixed bottom-3 left-0 right-0 text-center text-sm text-stone-500">Reconnecting…</p>}
+      </div>
     );
   }
 
@@ -257,7 +303,7 @@ export default function DisplayPage() {
         <div className="flex h-28 w-28 items-center justify-center rounded-full bg-emerald-500 text-6xl text-white">✓</div>
         <p className="mt-8 text-5xl font-semibold">Payment received</p>
         <p className="mt-3 text-3xl tabular-nums text-stone-300">{rupees(state.amount)}</p>
-        <p className="mt-6 text-xl text-stone-400">Thank you!</p>
+        <p className="mt-6 text-xl text-stone-400">{state.customerName ? `Thank you, ${state.customerName}!` : "Thank you!"}</p>
       </Shell>
     );
   }
