@@ -78,6 +78,7 @@ const ACTIONS = [
   "datafix.resolved",
   // Counter payments (D60)
   "discount.threshold_changed",
+  "cash_close.closed",
   "cash_close.adjusted",
   "counter.device_paired",
   "counter.device_revoked",

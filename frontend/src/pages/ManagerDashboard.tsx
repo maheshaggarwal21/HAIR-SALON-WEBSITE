@@ -16,7 +16,7 @@
 
 import { lazy } from "react";
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Globe, UserCog, CalendarCheck, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Palette, CalendarPlus, Receipt, Users, Database, Globe, UserCog, CalendarCheck, AlertTriangle, Banknote } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import PageBoundary from "@/components/PageBoundary";
 const DashboardOverview = lazy(() => import("@/pages/dashboard/shared/DashboardOverview"));
@@ -38,6 +38,7 @@ const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 const WebsiteHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.WebsiteHub })));
 const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
 const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
+const CashClose = lazy(() => import("@/pages/dashboard/CashClose"));
 import RequirePermission from "@/components/RequirePermission";
 
 import type { SidebarLink } from "@/layouts/DashboardLayout";
@@ -49,6 +50,7 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager/fix-numbers", label: "Fix Numbers", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
+  { to: "/dashboard/manager/cash-close", label: "Close the Day", icon: Banknote, requiredPermission: "cashclose.manage" },
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
@@ -146,6 +148,14 @@ export default function ManagerDashboard() {
           element={
             <RequirePermission permission="datafixes.manage" backTo={HOME}>
               <NumberFixes />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="cash-close"
+          element={
+            <RequirePermission permission="cashclose.manage" backTo={HOME}>
+              <CashClose />
             </RequirePermission>
           }
         />

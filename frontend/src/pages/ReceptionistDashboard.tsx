@@ -13,6 +13,7 @@
  *   /dashboard/receptionist/requests → Website requests (if granted bookings.view)
  *   /dashboard/receptionist/online-booking → Artists online, leave (bookings.view; edits need schedules.manage)
  *   /dashboard/receptionist/refunds  → Refunds (if granted bookings.refund)
+ *   /dashboard/receptionist/cash-close → Close the Day: count the drawer (if granted cashclose.manage)
  *   /dashboard/receptionist/website  → Website hub: settings, menu, reels, offers (if granted website.manage)
  *
  * Receptionists can view payment records and navigate to New Visit Entry.
@@ -21,7 +22,7 @@
 
 import { lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, CalendarCheck, AlertTriangle, Globe } from "lucide-react";
+import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, CalendarCheck, AlertTriangle, Globe, Banknote } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import PageBoundary from "@/components/PageBoundary";
 import { useAuth } from "@/context/AuthContext";
@@ -38,6 +39,7 @@ const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
 const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
 const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
+const CashClose = lazy(() => import("@/pages/dashboard/CashClose"));
 const WebsiteHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.WebsiteHub })));
 import RequirePermission from "@/components/RequirePermission";
 
@@ -48,6 +50,7 @@ const receptionistLinks: SidebarLink[] = [
   { to: "/dashboard/receptionist/fix-numbers", label: "Fix Numbers", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
   { to: "/dashboard/receptionist/website", label: "Website", icon: Globe, requiredPermission: "website.manage" },
   { to: "/dashboard/receptionist/payments", label: "Payment History", icon: Receipt, requiredPermission: "payments.view" },
+  { to: "/dashboard/receptionist/cash-close", label: "Close the Day", icon: Banknote, requiredPermission: "cashclose.manage" },
   { to: "/dashboard/receptionist/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/receptionist/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/receptionist/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
@@ -164,6 +167,14 @@ export default function ReceptionistDashboard() {
           element={
             <RequirePermission permission="datafixes.manage" backTo={HOME}>
               <NumberFixes />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="cash-close"
+          element={
+            <RequirePermission permission="cashclose.manage" backTo={HOME}>
+              <CashClose />
             </RequirePermission>
           }
         />

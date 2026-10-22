@@ -122,6 +122,7 @@ before(async () => {
   });
   app.use("/api/visits", require("../routes/visits"));
   app.use("/api/counter", require("../routes/counter"));
+  app.use("/api/data-fixes", require("../routes/dataFixes"));
   await new Promise((r) => (server = app.listen(0, r)));
   base = `http://127.0.0.1:${server.address().port}/api`;
 });
@@ -710,4 +711,41 @@ test("the polling endpoints are exempt from the IP limiter; pairing, creating an
   assert.match(block, /counter\\\/sessions/);
   assert.doesNotMatch(block, /pair|cancel/);
   assert.ok(!/"\/api\/counter"|"\/api\/display"/.test(src.match(/const PAYMENT_CRITICAL = \[([\s\S]*?)\];/)[1]), "no blanket exemption");
+});
+
+// ─── Fix Numbers: references that never arrived ─────────────────────────────
+
+test("Fix Numbers lists a counter visit whose payment reference is still missing after 10 minutes, and drops it once it arrives", async () => {
+  const a = await startSale();
+  const s = await CounterSession.findById(a.body.session.id);
+  fake.pay(s.qrId);
+  await call("GET", `/counter/sessions/${s.id}`);
+  const r = await saveVisit(s);
+  await staff("Owner", "owner");
+
+  const list = async () => (await call("GET", "/data-fixes?kind=reference")).body.issues;
+  assert.equal((await list()).length, 0, "too new to worry about");
+
+  await Visit.collection.updateOne({ _id: new mongoose.Types.ObjectId(r.body.visitId) }, { $set: { createdAt: new Date(Date.now() - 11 * 60_000) } });
+  const open = await list();
+  assert.equal(open.length, 1);
+  assert.equal(open[0].key, `rf:${r.body.visitId}`);
+  assert.equal(open[0].amount, 500);
+
+  await webhook(s); // the reference finally arrives
+  assert.equal((await list()).length, 0);
+});
+
+test("Fix Numbers heals a stuck reference from Razorpay's payments list before listing it", async () => {
+  const a = await startSale();
+  const s = await CounterSession.findById(a.body.session.id);
+  fake.pay(s.qrId);
+  await call("GET", `/counter/sessions/${s.id}`);
+  const r = await saveVisit(s);
+  await staff("Owner", "owner");
+  await Visit.collection.updateOne({ _id: new mongoose.Types.ObjectId(r.body.visitId) }, { $set: { createdAt: new Date(Date.now() - 11 * 60_000) } });
+  await CounterSession.updateOne({ _id: s._id }, { $set: { paidAt: new Date(Date.now() - 11 * 60_000), lastSyncAt: null } });
+  fake.list = [{ id: "pay_7", amountPaise: 50000, status: "captured" }];
+  assert.equal((await call("GET", "/data-fixes?kind=reference")).body.issues.length, 0);
+  assert.equal((await Visit.findById(r.body.visitId)).razorpayPaymentId, "pay_7");
 });
