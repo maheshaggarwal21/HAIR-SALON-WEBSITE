@@ -148,6 +148,21 @@ app.post(
       return res.status(400).json({ error: "Malformed payload" });
     }
 
+    // SPIKE (qr-spike), TEMPORARY, logging only: what does Razorpay send for UPI QR
+    // payments? Logs the raw body of qr_code.* events and of payment.captured events
+    // that carry no order_id (a QR payment is not tied to one of our orders). Runs
+    // after the signature check, changes nothing below. REMOVE when the spike ends:
+    // the body holds the payer's UPI id and phone number.
+    try {
+      const spikeType = event?.event;
+      const spikeOrderId = event?.payload?.payment?.entity?.order_id;
+      if (typeof spikeType === "string" && (spikeType.startsWith("qr_code.") || (spikeType === "payment.captured" && !spikeOrderId))) {
+        console.log(`[qr-spike] ${spikeType} raw body: ${rawBody.toString("utf8")}`);
+      }
+    } catch {
+      /* logging must never affect the webhook */
+    }
+
     // The database write MUST finish before responding.
     //
     // This function runs on Vercel, where the instance is frozen as soon as the
