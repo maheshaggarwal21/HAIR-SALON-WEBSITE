@@ -26,6 +26,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { cn } from "@/lib/utils";
 import AppLayout from "@/layouts/AppLayout";
 import { useVisitForm } from "@/hooks/useVisitForm";
+import { CounterPayPanel, TabletChip } from "@/components/CounterPayPanel";
 import type { CustomerSuggestion } from "@/types/visit";
 
 export default function VisitEntryPage() {
@@ -59,6 +60,7 @@ export default function VisitEntryPage() {
     handleServiceQuantityChange,
     applyCustomerSuggestion,
     handleSubmit,
+    counter,
     handleReset,
   } = useVisitForm();
 
@@ -176,6 +178,8 @@ export default function VisitEntryPage() {
               </div>
             )}
 
+            {/* Locked while a QR payment is waiting: the server has already priced the sale. */}
+            <fieldset disabled={counter.busy} className="contents">
             <div className="mb-8 rounded-2xl border border-stone-200/80 bg-white shadow-sm overflow-hidden">
               <Section title="Client Details" icon="01">
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -484,6 +488,8 @@ export default function VisitEntryPage() {
                       </button>
                     </div>
 
+                    {(formData.paymentMode === "online" || formData.paymentMode === "partial") && <TabletChip counter={counter} />}
+
                     <AnimatePresence>
                       {formData.paymentMode === "partial" && (
                         <motion.div
@@ -605,6 +611,9 @@ export default function VisitEntryPage() {
               </AnimatePresence>
               </Section>
             </div>
+            </fieldset>
+
+            <CounterPayPanel counter={counter} />
 
             <AnimatePresence>
               {paymentError && (
@@ -642,8 +651,8 @@ export default function VisitEntryPage() {
 
               <motion.button
                 type="submit"
-                disabled={isLoading}
-                whileHover={{ scale: isLoading ? 1 : 1.015 }}
+                disabled={isLoading || counter.busy}
+                whileHover={{ scale: isLoading || counter.busy ? 1 : 1.015 }}
                 whileTap={{ scale: isLoading ? 1 : 0.985 }}
                 className="relative w-full sm:w-80 h-12 rounded-xl overflow-hidden font-semibold text-white disabled:cursor-not-allowed"
               >

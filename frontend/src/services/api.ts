@@ -161,6 +161,11 @@ export interface CreateVisitPayload {
    * accepting it, so it cannot be used to invent revenue.
    */
   recoveredPaymentId?: string;
+  /**
+   * UPI paid at the counter by QR (D60). When set the server builds the sale from its own
+   * paid session; the service, discount and payment fields above are ignored.
+   */
+  counterSessionId?: string;
   lockUntilAssigned?: boolean;
   /** Closes this online booking; the server prices it from the booking and deducts the deposit (CF §8). */
   appointmentId?: string;
