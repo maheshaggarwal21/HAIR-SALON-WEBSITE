@@ -7,6 +7,12 @@ import type { SiteInfo, WindowKey } from "./types";
 
 export const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
+/** Whole-number "20% off" from a normal price and an offer price; 0 when it is not cheaper. */
+export const percentOff = (regular: number, price: number) => (regular > 0 && price < regular ? Math.round((1 - price / regular) * 100) : 0);
+
+/** "27 Oct" for an offer's last day, an IST calendar day handled as UTC midnight. */
+export const offerTill = (endsOn: string) => new Date(`${endsOn}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
+
 /** 45 → "45 min", 90 → "1 hr 30 min", 120 → "2 hr". */
 export function minutes(total: number) {
   if (total < 60) return `${total} min`;

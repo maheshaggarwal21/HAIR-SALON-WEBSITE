@@ -46,6 +46,7 @@ const ReviewCache = require("../models/ReviewCache");
 const Campaign = require("../models/Campaign");
 const { clientsServed } = require("../utils/publicStats");
 const packages = require("../config/packages");
+const { liveOffers, applyOffers } = require("../utils/offers");
 const { groupBySlug } = require("../config/menuGroups");
 const { PUBLIC_SERVICE_FILTER, PUBLIC_ARTIST_FILTER, audienceFilter, serviceCards, cardSlugFor, publicArtist, assignPublicSlugs } =
   require("../utils/publicCatalogue");
@@ -146,7 +147,7 @@ router.get(
     try {
       const services = await Service.find({ ...PUBLIC_SERVICE_FILTER, ...audienceFilter(req.query.for) }).lean();
       cacheFor(res, 60);
-      return res.json({ services: serviceCards(services) });
+      return res.json({ services: serviceCards(applyOffers(services, await liveOffers())) });
     } catch (err) {
       console.error("[public] services error:", err);
       return res.status(500).json({ error: "SERVER_ERROR" });
@@ -183,7 +184,7 @@ router.get(
       }
       if (!members.length) return res.status(404).json({ error: "NOT_FOUND" });
       cacheFor(res, 60);
-      return res.json({ service: serviceCards(members, { detail: true })[0] });
+      return res.json({ service: serviceCards(applyOffers(members, await liveOffers()), { detail: true })[0] });
     } catch (err) {
       console.error("[public] service detail error:", err);
       return res.status(500).json({ error: "SERVER_ERROR" });
@@ -259,25 +260,33 @@ function isLive(p, today) {
 
 async function livePackages(today = salonDate()) {
   const live = packages.filter((p) => isLive(p, today));
-  if (!live.length) return [];
-  const ids = [...new Set(live.flatMap((p) => p.serviceIds))];
+  // Bundles the owner built inside a live offer (D59) book through the same path.
+  const offers = await liveOffers(today);
+  const ids = [...new Set([...live.flatMap((p) => p.serviceIds), ...offers.bundles.flatMap((b) => b.serviceIds)].map(String))];
+  if (!ids.length) return [];
   const services = await Service.find({ ...PACKAGE_ITEM_FILTER, _id: { $in: ids } }).lean();
   const byId = new Map(services.map((s) => [String(s._id), s]));
 
   const out = [];
-  for (const p of live) {
+  const entries = [
+    ...live.map((p) => ({ ...p, price: p.packagePrice })),
+    ...offers.bundles.map((b) => ({ slug: b.slug, name: b.name, description: b.description, audience: b.audience, image: null, price: b.price, serviceIds: b.serviceIds, validFrom: b.validFrom, validTo: b.validTo, fromOffer: true })),
+  ];
+  for (const p of entries) {
     const items = p.serviceIds.map((id) => byId.get(String(id)));
     if (items.some((s) => !s)) {
       console.warn(`[public] package ${p.slug} names a service that is inactive or has no website price — hidden`);
       continue;
     }
+    // A bundle that no longer costs less than its parts is not an offer: leave it out.
+    if (p.fromOffer && !(p.price < items.reduce((sum, s) => sum + s.publicPrice, 0))) continue;
     out.push({
       slug: p.slug,
       name: p.name,
       description: p.description ?? null,
       audience: p.audience ?? null,
       image: p.image ?? null,
-      price: p.packagePrice,
+      price: p.price,
       validFrom: p.validFrom ?? null,
       validTo: p.validTo ?? null,
       items: items.map((s) => ({ id: String(s._id), name: s.publicName || s.name, price: s.publicPrice })),
@@ -533,7 +542,8 @@ router.post("/requests", rejectUnknownFields, requestIpLimit, requestValidators,
       Service.find({ ...PUBLIC_SERVICE_FILTER, _id: { $in: extraIds } }).lean(),
       pkgIds.length ? Service.find({ ...PACKAGE_ITEM_FILTER, _id: { $in: pkgIds } }).lean() : [],
     ]);
-    const byId = new Map([...menuServices, ...packageServices].map((s) => [String(s._id), s]));
+    // Single-service offer prices apply to what the customer added; a package's own items keep theirs (D59).
+    const byId = new Map([...applyOffers(menuServices, await liveOffers()), ...packageServices].map((s) => [String(s._id), s]));
     if (wantedIds.some((id) => !byId.has(id))) {
       return res.status(400).json({ error: "SERVICE_UNAVAILABLE", message: "One of those services isn't available online. Refresh and try again." });
     }

@@ -263,7 +263,7 @@ test("offers (D29): owner creates, edits and pauses; the site sees only live or 
   const live = await call("POST", "/website/campaigns", base);
   assert.equal(live.status, 201, JSON.stringify(live.body));
   assert.equal(live.body.status, "live");
-  assert.deepEqual(revalidations().at(-1), ["campaigns"]);
+  assert.deepEqual(revalidations().at(-1), ["campaigns", "services", "packages"]); // offer prices change the menu too (D59)
   await call("POST", "/website/campaigns", { ...base, name: "Diwali", startDate: addDays(today, 5), endDate: addDays(today, 9) });
   await call("POST", "/website/campaigns", { ...base, name: "Next month", startDate: addDays(today, 30), endDate: addDays(today, 35) });
   await call("POST", "/website/campaigns", { ...base, name: "Old", startDate: addDays(today, -20), endDate: addDays(today, -10) });

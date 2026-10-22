@@ -191,7 +191,10 @@ export function OptionSelect({
                   {on && <Check className={`h-4 w-4 ${multiple ? "" : "text-gold-deep"}`} strokeWidth={2.25} />}
                 </span>
                 <span className={`min-w-0 flex-1 ${on ? "font-semibold" : ""}`}>{o.label ?? "Option"}</span>
-                <span className={`tabular shrink-0 ${on ? "font-semibold" : muted}`}>{rupees(o.price)}</span>
+                <span className={`tabular shrink-0 ${on ? "font-semibold" : muted}`}>
+                  {o.regularPrice && o.regularPrice > o.price && <s className="mr-1.5 text-[12px] opacity-60">{rupees(o.regularPrice)}</s>}
+                  {rupees(o.price)}
+                </span>
               </li>
             );
           })}

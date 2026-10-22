@@ -48,6 +48,8 @@ function buildQuote({ guests, services, settings, pkg = null }) {
         serviceId: String(s._id),
         name: s.publicName || s.name,
         price: s.publicPrice,
+        // Only while an offer runs (D59): the normal price, which the page shows crossed out.
+        regularPrice: s.regularPrice ?? null,
         durationMinutes: s.durationConfirmed ? s.durationMinutes : null,
         inPackage: g.key === guests[0].key && pkgIds.has(String(s._id)),
       });

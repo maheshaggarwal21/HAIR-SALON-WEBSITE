@@ -23,6 +23,7 @@ const SlotLock = require("../models/SlotLock");
 const Appointment = require("../models/Appointment");
 const SiteSettings = require("../models/SiteSettings");
 const { effectiveRule, ruleSets, serviceKeys } = require("./skills");
+const { liveOffers, applyOffer } = require("./offers");
 const { openingIntervals, intersect, subtract, salonInstant, weekdayKey } = require("./time");
 
 const ONLINE_MODES = ["instant", "request"];
@@ -72,7 +73,10 @@ function artistIntervals(artist, opening, date, timeOffs) {
 async function loadServices(ids, { allowPackageOnly = new Set() } = {}) {
   const unique = [...new Set(ids.map(String))];
   const docs = await Service.find({ _id: { $in: unique }, isActive: true, publicPrice: { $ne: null } }).lean();
-  const byId = new Map(docs.map((d) => [String(d._id), d]));
+  // Live offer prices (D59). A package's own items keep their normal price: the
+  // package price already replaces them, and stacking both would discount twice.
+  const offers = await liveOffers();
+  const byId = new Map(docs.map((d) => [String(d._id), applyOffer(d, offers, allowPackageOnly)]));
   for (const id of unique) {
     const s = byId.get(id);
     if (!s) throw new BookingError("SERVICE_UNAVAILABLE", "One of those services isn't available online. Refresh and try again.");

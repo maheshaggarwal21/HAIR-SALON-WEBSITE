@@ -13,6 +13,9 @@ export interface ServiceOption {
   slug: string | null;
   label: string | null;
   price: number;
+  /** While an offer runs (D59): the normal price, shown crossed out, and the offer's last day (IST). */
+  regularPrice: number | null;
+  offerEndsOn: string | null;
   /** Only set when the owner has confirmed the time (D14). */
   durationMinutes: number | null;
   bookingMode: BookingMode;
@@ -30,6 +33,9 @@ export interface ServiceCard {
   requiresConsultation: boolean;
   requiresPatchTest: boolean;
   fromPrice: number;
+  /** The cheapest option's normal price and the offer's last day, only while it is on offer (D59). */
+  fromRegularPrice: number | null;
+  offerEndsOn: string | null;
   /** "many": options can be combined in a request (threading areas); "one": alternatives (D34). */
   pick?: "one" | "many";
   options: ServiceOption[];
@@ -152,7 +158,7 @@ export interface Slot {
 }
 
 export interface Quote {
-  lines: { guestKey: string; serviceId: string; name: string; price: number; durationMinutes: number | null; inPackage: boolean }[];
+  lines: { guestKey: string; serviceId: string; name: string; price: number; regularPrice: number | null; durationMinutes: number | null; inPackage: boolean }[];
   subtotal: number;
   discount: number;
   total: number;
