@@ -3,8 +3,8 @@
  * @description The customer-facing counter tablet at /display (D60, part A).
  *
  * It is a dumb screen. It shows what the server tells it to show: the amount and a
- * QR while a payment is pending, a "thank you" for a few seconds once paid, and a
- * quiet welcome otherwise. It never learns who the customer is or what they bought,
+ * QR while a payment is pending, a "thank you" for a few seconds once paid, and otherwise
+ * the salon's name, turning into a soft slideshow of the salon after 30 quiet seconds. It never learns who the customer is or what they bought,
  * has no staff login, and holds one secret: the device token it received when the
  * owner paired it with a one-time code (Management → Counter display).
  *
@@ -99,6 +99,83 @@ function Countdown({ until }: { until: string }) {
   );
 }
 
+/** The salon's own photos, bundled with the app (public/display, ~250 KB in all): no network call, no API. */
+const SLIDES = [
+  { src: "/display/1-sign.webp", alt: "The Experts: Skin, Hair, Makeup" },
+  { src: "/display/2-salon-floor.webp", alt: "Inside The Experts salon" },
+  { src: "/display/3-haircut-beard.webp", alt: "A haircut and beard by The Experts" },
+  { src: "/display/4-hair-colour.webp", alt: "Hair colour at The Experts" },
+  { src: "/display/5-styling-station.webp", alt: "A styling station at The Experts", portrait: true },
+];
+/** Idle for this long (no payment shown) before the welcome screen turns into the slideshow. */
+const SLIDESHOW_AFTER_MS = 30_000;
+const SLIDE_MS = 7000;
+
+/**
+ * Idle screen: the salon's name for the first 30 seconds (it is also the "thank you" tail after a
+ * payment), then a slow, soft slideshow of the salon. Mounted only while the tablet is idle, so
+ * it starts counting from the moment the last payment screen goes away, and a new payment
+ * replaces it instantly.
+ */
+function IdleScreen({ offline }: { offline: boolean }) {
+  const [slideshow, setSlideshow] = useState(false);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setSlideshow(true);
+    }, SLIDESHOW_AFTER_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!slideshow) return;
+    const t = window.setInterval(() => setIndex((i) => (i + 1) % SLIDES.length), SLIDE_MS);
+    return () => window.clearInterval(t);
+  }, [slideshow]);
+
+  if (!slideshow) {
+    return (
+      <Shell offline={offline}>
+        <p className="font-serif text-5xl tracking-wide">The Experts</p>
+        <p className="mt-3 text-lg uppercase tracking-[0.4em] text-stone-500">Hair Salon</p>
+      </Shell>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 overflow-hidden bg-stone-950 select-none">
+      <style>{`
+        @keyframes expertsDrift { from { transform: scale(1.02); } to { transform: scale(1.12); } }
+        @media (prefers-reduced-motion: reduce) { .experts-drift { animation: none !important; } }
+      `}</style>
+      {SLIDES.map((slide, i) => {
+        const active = i === index;
+        return (
+          <div key={slide.src} className="absolute inset-0 transition-opacity duration-[1400ms] ease-in-out" style={{ opacity: active ? 1 : 0 }} aria-hidden={!active}>
+            {slide.portrait && (
+              // A tall photo on a wide screen: a blurred copy fills the sides so nothing is cropped.
+              <img src={slide.src} alt="" draggable={false} className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />
+            )}
+            <img
+              src={slide.src}
+              alt={slide.alt}
+              draggable={false}
+              className={`experts-drift absolute inset-0 h-full w-full ${slide.portrait ? "object-contain" : "object-cover"}`}
+              style={active ? { animation: `expertsDrift ${SLIDE_MS + 1600}ms ease-out forwards` } : undefined}
+            />
+          </div>
+        );
+      })}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-10 pb-8 pt-24">
+        <p className="font-serif text-3xl tracking-wide text-white">The Experts</p>
+        <p className="text-sm uppercase tracking-[0.35em] text-stone-300">Skin · Hair · Makeup</p>
+      </div>
+      {offline && <p className="absolute right-4 top-4 text-xs text-white/50">Reconnecting…</p>}
+    </div>
+  );
+}
+
 export default function DisplayPage() {
   const [paired, setPaired] = useState<boolean>(() => !!getDeviceToken());
   const [state, setState] = useState<DisplayState | null>(null);
@@ -185,10 +262,5 @@ export default function DisplayPage() {
     );
   }
 
-  return (
-    <Shell offline={offline}>
-      <p className="font-serif text-5xl tracking-wide">The Experts</p>
-      <p className="mt-3 text-lg uppercase tracking-[0.4em] text-stone-500">Hair Salon</p>
-    </Shell>
-  );
+  return <IdleScreen offline={offline} />;
 }
