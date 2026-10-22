@@ -43,6 +43,16 @@ const counterSessionSchema = new mongoose.Schema(
     paymentMode: { type: String, enum: ["online", "partial"], default: "online" },
     cashAmount: { type: Number, default: 0, min: 0 },
 
+    /**
+     * What the tablet shows the customer: their name (typed at the desk, DISPLAY ONLY: it never
+     * touches money) and the bill lines, built by the server from its own service list.
+     */
+    customerName: { type: String, default: null, maxlength: 60 },
+    lines: {
+      type: [new mongoose.Schema({ name: String, quantity: Number, price: Number }, { _id: false })],
+      default: [],
+    },
+
     // Server-computed money, whole rupees.
     subtotal: { type: Number, required: true, min: 0 },
     discountAmount: { type: Number, default: 0, min: 0 },

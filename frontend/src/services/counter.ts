@@ -43,6 +43,8 @@ export interface CounterStatus {
 }
 
 export interface CounterSaleInput {
+  /** Shown to the customer on the tablet. Display only: the server prices the sale from serviceIds. */
+  customerName?: string;
   serviceIds: string[];
   discountPercent: number;
   paymentMode: "online" | "partial";
@@ -137,10 +139,21 @@ export async function pairThisTablet(code: string): Promise<{ name: string }> {
   return { name: data.name };
 }
 
+/** The customer's bill, as the server built it: FINAL prices only (the discount is already in them). */
+export interface DisplayBill {
+  customerName: string | null;
+  lines: { name: string; quantity: number; amount: number }[];
+  total: number;
+  /** Cash already taken for a split payment. */
+  cashAmount: number;
+  /** What this QR collects. */
+  toPay: number;
+}
+
 export type DisplayState =
   | { mode: "idle"; nextPollMs: number; device: string }
-  | { mode: "payment"; amount: number; expiresAt: string; sessionId: string; qr: QrPayload | null; nextPollMs: number; device: string }
-  | { mode: "paid"; amount: number; sessionId: string; nextPollMs: number; device: string };
+  | { mode: "payment"; amount: number; bill: DisplayBill; expiresAt: string; sessionId: string; qr: QrPayload | null; nextPollMs: number; device: string }
+  | { mode: "paid"; amount: number; customerName: string | null; sessionId: string; nextPollMs: number; device: string };
 
 export type DisplayResult =
   | { kind: "state"; state: DisplayState }

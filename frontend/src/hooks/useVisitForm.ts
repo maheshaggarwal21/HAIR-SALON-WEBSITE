@@ -582,6 +582,7 @@ export function useVisitForm() {
       // shows it. Falls through to Razorpay Checkout when the feature is off.
       if (counter.enabled) {
         await counter.start({
+          customerName: formData.name.trim(),
           serviceIds: selectedServiceIds,
           discountPercent: discountPct,
           paymentMode: formData.paymentMode === "partial" ? "partial" : "online",

@@ -27,6 +27,7 @@ let replSet = null;
 async function startDb() {
   replSet = await MongoMemoryReplSet.create({
     replSet: { count: 1, storageEngine: "wiredTiger" },
+    instanceOpts: [{ args: ["--setParameter", "indexBuildMinAvailableDiskSpaceMB=10"] }], // LOCAL-ONLY: tiny disk
   });
   process.env.MONGODB_URI = replSet.getUri("salon-test");
 
