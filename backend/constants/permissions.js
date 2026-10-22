@@ -28,6 +28,10 @@ const PERMISSIONS = Object.freeze({
   WEBSITE_MANAGE:        'website.manage',
   // Daily review of mistyped / duplicate numbers, refunded payments and unassigned visits (D54)
   DATAFIXES_MANAGE:      'datafixes.manage',
+  // Counter payments (D60): tablet pairing / QR sessions admin, discount summary, daily cash close
+  COUNTER_MANAGE:        'counter.manage',
+  DISCOUNTS_VIEW:        'discounts.view',
+  CASHCLOSE_MANAGE:      'cashclose.manage',
 });
 
 // Default permission sets assigned when a new account is created.
@@ -48,6 +52,7 @@ const ROLE_DEFAULTS = {
     'bookings.manage',
     'schedules.manage',
     'datafixes.manage',
+    'cashclose.manage',
   ],
   receptionist: [
     'payments.view',
@@ -55,6 +60,7 @@ const ROLE_DEFAULTS = {
     'bookings.view',
     'bookings.manage',
     'datafixes.manage',
+    'cashclose.manage',
   ],
   artist:       [], // starts empty — owner grants permissions individually via Artist directory
   owner:        [], // bypasses PBAC — this array is intentionally unused
@@ -88,19 +94,22 @@ const PERMISSION_LABELS = {
   'schedules.manage':      'Online booking: artists on/off, leave and blocked time',
   'website.manage':        'Manage Website (Settings, Public Menu, Artist Profiles)',
   'datafixes.manage':      'Fix wrong numbers: review duplicates, refunds and unassigned visits',
+  'counter.manage':        'Counter display: pair tablets and manage the payment QR screen (owner)',
+  'discounts.view':        'View the discount summary: who gave how much (owner)',
+  'cashclose.manage':      'Close the day: count the cash drawer and record the day-end figure',
 };
 
 // UI groupings for the permission editor checklist — purely cosmetic.
 const PERMISSION_GROUPS = [
   {
     label: 'Visit Operations',
-    keys:  ['visit.create', 'datafixes.manage'],
+    keys:  ['visit.create', 'datafixes.manage', 'cashclose.manage'],
   },
   {
     label: 'Financials',
     // today_only sits directly under payments.view so the indented label reads
     // as a modifier of the line above it.
-    keys:  ['payments.view', 'payments.today_only', 'datapipeline.view'],
+    keys:  ['payments.view', 'payments.today_only', 'datapipeline.view', 'discounts.view'],
   },
   {
     label: 'Analytics',
@@ -124,7 +133,7 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Administration',
-    keys:  ['team.view', 'team.manage'],
+    keys:  ['team.view', 'team.manage', 'counter.manage'],
   },
 ];
 
