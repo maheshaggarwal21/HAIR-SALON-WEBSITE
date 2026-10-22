@@ -121,6 +121,18 @@ const visitSchema = new mongoose.Schema(
     },
     razorpayPaymentId: { type: String, default: null },
 
+    /**
+     * Paid at the counter by UPI QR (D60): the CounterSession this visit was built from.
+     * The session, not the browser, supplied the services, discount and payment id.
+     */
+    counterSessionId: { type: mongoose.Schema.Types.ObjectId, ref: "CounterSession", default: null },
+    /**
+     * True while a counter QR payment is known to be paid but its Razorpay payment
+     * id has not arrived yet. Cleared by the webhook (or a backfill). Listed in
+     * Fix Numbers if still true after 10 minutes.
+     */
+    referencePending: { type: Boolean, default: false },
+
     // ── V2 assignment control fields ──
     assignmentStatus: {
       type: String,
@@ -158,5 +170,8 @@ visitSchema.index({ contact: 1 });
 visitSchema.index({ assignmentStatus: 1, date: -1 });
 visitSchema.index({ lockUntilAssigned: 1, createdAt: -1 });
 visitSchema.index({ appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $type: "objectId" } } });
+// One visit per counter session, enforced by the database (a retry or double click must not bill twice).
+visitSchema.index({ counterSessionId: 1 }, { unique: true, partialFilterExpression: { counterSessionId: { $type: "objectId" } } });
+visitSchema.index({ referencePending: 1, createdAt: 1 }, { partialFilterExpression: { referencePending: true } });
 
 module.exports = mongoose.model("Visit", visitSchema);

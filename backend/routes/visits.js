@@ -19,6 +19,7 @@ const { authorizePermission, getUserPermissions } = require("../middleware/authM
 const { PERMISSIONS } = require('../constants/permissions');
 const { salonDate, isValidDate, addDays } = require("../utils/time");
 const { parseDiscountPercent, cleanReason, recordDiscount } = require("../utils/discounts");
+const counter = require("../utils/counter");
 
 const router = express.Router();
 
@@ -76,6 +77,24 @@ const SETTLED_VISIT = {
     { assignmentStatus: "completed" },
   ],
 };
+
+/** The reply for a visit that already exists (same shape as the duplicate-payment answer). */
+function visitReplay(existing) {
+  return {
+    success: true,
+    duplicate: true,
+    visitId: existing._id,
+    finalTotal: existing.finalTotal,
+    assignmentStatus: existing.assignmentStatus,
+    lockUntilAssigned: existing.lockUntilAssigned,
+    services: (existing.services || []).map((s) => ({
+      serviceEntryId: s._id,
+      serviceId: s.serviceId,
+      serviceName: s.name,
+      servicePrice: s.price,
+    })),
+  };
+}
 
 function derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount = 0 }) {
   const total = Math.round(Number(finalTotal) || 0);
@@ -490,7 +509,8 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     await connectDB();
     if (req.body?.appointmentId) return await createAppointmentVisit(req, res);
 
-    const {
+    // `let`: for a counter QR sale (D60) the money fields are replaced from the server's own session below.
+    let {
       name,
       contact,
       gender,
@@ -517,6 +537,27 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     if (!date) {
       return res.status(400).json({ error: "Date is required" });
     }
+    /**
+     * Paid at the counter by UPI QR (D60). The browser sends only the session id: the
+     * services, discount, cash part and payment id come from the server's own session,
+     * which Razorpay's webhook (or QR status) marked paid. A browser-supplied
+     * razorpayPaymentId is ignored here, so it cannot be used to claim someone else's payment.
+     * The payment id may still be missing (the QR flips to paid ~3 s before the webhook
+     * carries the id): the visit is then saved "reference pending" and filled in later.
+     */
+    let counterSale = null;
+    if (req.body.counterSessionId) {
+      if (recoveredPaymentId) return res.status(400).json({ error: "A counter payment cannot be combined with a recovered payment" });
+      const loaded = await counter.loadSaleForVisit({
+        sessionId: req.body.counterSessionId,
+        user: { id: req.session.userId, role: req.session.role },
+      });
+      if (!loaded.ok) return res.status(loaded.status).json({ error: loaded.error });
+      if (loaded.existingVisit) return res.status(200).json(visitReplay(loaded.existingVisit));
+      counterSale = loaded;
+      ({ serviceIds, discountPercent, paymentMethod, cashAmount, razorpayPaymentId } = loaded.sale);
+    }
+
     if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
       return res.status(400).json({ error: "At least one service is required" });
     }
@@ -616,16 +657,26 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     const discountAmount = Math.round(subtotal * (pct / 100));
     const finalTotal = Math.max(0, subtotal - discountAmount);
 
-    if (paymentMethod === "online" && !effectivePaymentId) {
+    // The customer paid the session's price. If the menu changed in the last few minutes the
+    // visit would not match the money, so stop and send the desk to the recovery list instead.
+    if (counterSale && Math.round(finalTotal) !== counterSale.sale.finalTotal) {
+      return res.status(409).json({
+        error: "A price changed while the customer was paying, so this sale cannot be saved automatically. The payment is safe: record it from Payments → Unreconciled.",
+      });
+    }
+
+    if (paymentMethod === "online" && !effectivePaymentId && !counterSale) {
       return res.status(400).json({ error: "Razorpay Payment ID is required for online payment" });
     }
-    if (paymentMethod === "partial" && !effectivePaymentId) {
+    if (paymentMethod === "partial" && !effectivePaymentId && !counterSale) {
       return res.status(400).json({ error: "Razorpay Payment ID is required for partial payment" });
     }
 
     const amounts = derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount });
 
-    const visit = await Visit.create({
+    let visit;
+    try {
+    visit = await Visit.create({
       schemaVersion: 2,
       name: String(name).trim(),
       contact: String(contact).trim(),
@@ -656,6 +707,8 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       assignmentStatus: "pending",
       lockUntilAssigned: !!lockUntilAssigned,
       paymentConfirmedAt: new Date(),
+      counterSessionId: counterSale ? counterSale.session._id : null,
+      referencePending: !!counterSale && !effectivePaymentId,
       paymentSnapshot: {
         subtotal,
         discountPercent: pct,
@@ -668,6 +721,16 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         razorpayPaymentId: effectivePaymentId || null,
       },
     });
+    } catch (err) {
+      // A double click or a retry on a counter sale: the database refuses a second visit for
+      // one session, and the answer is the first visit.
+      if (counterSale && err?.code === 11000) {
+        const first = await Visit.findOne({ counterSessionId: counterSale.session._id }).lean();
+        if (first) return res.status(200).json(visitReplay(first));
+      }
+      throw err;
+    }
+    if (counterSale) await counter.attachVisit(counterSale.session._id, visit._id);
 
     /**
      * Close the loop on the webhook's record of this payment.
