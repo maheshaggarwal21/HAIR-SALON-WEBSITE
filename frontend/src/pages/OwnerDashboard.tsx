@@ -17,13 +17,11 @@
  *   /dashboard/owner/today          → Today board: timeline, walk-ins, desk actions (T2.14)
  *   /dashboard/owner/online-booking → Artists on/off online, hours, leave (T2.1, T2.22)
  *   /dashboard/owner/refunds        → Refunds owed to online customers (T2.17)
- *   /dashboard/owner/discounts      → Who gave how much discount (D60)
- *   /dashboard/owner/cash-close     → Close the day: count the drawer (D60)
  */
 
 import { lazy } from "react";
 import { Routes, Route } from "react-router-dom";
-import { LayoutDashboard, BarChart3, Scissors, Users, Palette, CalendarPlus, Receipt, Database, Network, Globe, UserCog, CalendarCheck, AlertTriangle, Percent, Banknote } from "lucide-react";
+import { LayoutDashboard, BarChart3, Scissors, Users, Palette, CalendarPlus, Receipt, Database, Network, Globe, UserCog, CalendarCheck, AlertTriangle } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import PageBoundary from "@/components/PageBoundary";
 const Management = lazy(() => import("@/pages/dashboard/Management"));
@@ -46,8 +44,6 @@ const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 const WebsiteHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.WebsiteHub })));
 const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
 const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
-const DiscountSummary = lazy(() => import("@/pages/dashboard/DiscountSummary"));
-const CashClose = lazy(() => import("@/pages/dashboard/CashClose"));
 
 const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
@@ -56,8 +52,6 @@ const ownerLinks = [
   { to: "/dashboard/owner/fix-numbers", label: "Fix Numbers", icon: AlertTriangle },
   { to: "/dashboard/owner/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/owner/payments", label: "Payments", icon: Receipt },
-  { to: "/dashboard/owner/cash-close", label: "Close the Day", icon: Banknote },
-  { to: "/dashboard/owner/discounts", label: "Discounts", icon: Percent },
   { to: "/dashboard/owner/data-pipeline", label: "Data Pipeline", icon: Database },
   { to: "/dashboard/owner/services", label: "Services", icon: Scissors },
   { to: "/dashboard/owner/artists", label: "Artists", icon: Palette },
@@ -95,8 +89,6 @@ export default function OwnerDashboard() {
         <Route path="website" element={<WebsiteHub />} />
         <Route path="bookings" element={<BookingsHub />} />
         <Route path="fix-numbers" element={<NumberFixes />} />
-        <Route path="discounts" element={<DiscountSummary />} />
-        <Route path="cash-close" element={<CashClose />} />
         <Route path="website-menu" element={<WebsiteMenu />} />
         <Route path="website-reels" element={<WebsiteReels />} />
         <Route path="website-offers" element={<WebsiteOffers />} />

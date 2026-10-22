@@ -74,7 +74,6 @@ const EMPTY_FORM: VisitFormData = {
   searchService: [],
   serviceQuantities: {},
   discount: "50",
-  discountReason: "",
   date: today,
   paymentMode: "online",
   cashAmount: "",
@@ -488,7 +487,6 @@ export function useVisitForm() {
           serviceType: formData.serviceType.length > 0 ? formData.serviceType.join(", ") : undefined,
           serviceIds: selectedServiceIds, // ignored by the server for a counter sale
           discountPercent: discountPct, // ignored by the server for a counter sale
-          discountReason: discountPct > 0 ? formData.discountReason.trim() || undefined : undefined,
           paymentMethod: paid.cashAmount > 0 ? "partial" : "online",
           counterSessionId: paid.id,
           lockUntilAssigned: true,
@@ -526,7 +524,6 @@ export function useVisitForm() {
         serviceType: serviceTypeStr,
         serviceIds: selectedServiceIds,
         discountPercent: discountPct,
-        discountReason: discountPct > 0 ? formData.discountReason.trim() || undefined : undefined,
         paymentMethod: opts.paymentMethod,
         razorpayPaymentId: opts.razorpayPaymentId,
         recoveredPaymentId: opts.recoveredPaymentId,

@@ -32,7 +32,6 @@ const SiteSettings = require("../models/SiteSettings");
 const CounterSession = require("../models/CounterSession");
 const telegram = require("./telegram");
 const { gateway } = require("./razorpayQr");
-const { parseDiscountPercent } = require("./discounts");
 const { salonDate, salonInstant, weekdayKey } = require("./time");
 
 const QR_DESCRIPTION = "The Experts - counter payment";
@@ -80,9 +79,9 @@ async function computeAmounts({ serviceIds, discountPercent, paymentMode = "onli
   if (wanted.some((id) => !priceById.has(id))) return { ok: false, error: "One or more selected services are invalid or inactive" };
 
   const subtotal = wanted.reduce((sum, id) => sum + priceById.get(id), 0);
-  const pct = parseDiscountPercent(discountPercent);
-  if (!pct.ok) return { ok: false, error: pct.error };
-  const discountAmount = Math.round(subtotal * (pct.percent / 100));
+  // Same clamp as POST /visits/v2, so the session and the visit always agree.
+  const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
+  const discountAmount = Math.round(subtotal * (pct / 100));
   const finalTotal = Math.max(0, Math.round(subtotal - discountAmount));
 
   if (!["online", "partial"].includes(paymentMode)) return { ok: false, error: "Payment mode must be online or partial" };
@@ -99,7 +98,7 @@ async function computeAmounts({ serviceIds, discountPercent, paymentMode = "onli
     ok: true,
     serviceIds: wanted,
     subtotal,
-    discountPercent: pct.percent,
+    discountPercent: pct,
     discountAmount,
     finalTotal,
     paymentMode,

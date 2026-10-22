@@ -270,12 +270,6 @@ const siteSettingsSchema = new mongoose.Schema(
 
     /** Website price = round(list × ratio). Mirrors Service.PUBLIC_PRICE_RATIO (D12). */
     publicPriceRatio: { type: Number, default: 0.5, min: 0, max: 1 },
-
-    /**
-     * A desk discount ABOVE this percentage is highlighted in the owner's discount
-     * summary (D60). It never blocks a sale — there is no cap on discounts.
-     */
-    discountReviewPercent: { type: Number, default: 30, min: 0, max: 100 },
   },
   { timestamps: true, minimize: false }
 );

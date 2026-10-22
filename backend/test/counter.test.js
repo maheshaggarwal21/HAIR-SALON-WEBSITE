@@ -17,7 +17,7 @@ const { startDb, stopDb, clearDb } = require("./helpers/db");
 
 process.env.COUNTER_DISPLAY_ENABLED = "true";
 
-let Visit, User, Service, SiteSettings, CounterSession, CounterDevice, CounterPairing, PaymentEvent, DiscountLog, AuditLog;
+let Visit, User, Service, SiteSettings, CounterSession, CounterDevice, CounterPairing, PaymentEvent, AuditLog;
 let counter, razorpayQr, evictPermissionCache;
 let server;
 let base;
@@ -106,12 +106,11 @@ before(async () => {
   CounterDevice = require("../models/CounterDevice");
   CounterPairing = require("../models/CounterPairing");
   PaymentEvent = require("../models/PaymentEvent");
-  DiscountLog = require("../models/DiscountLog");
   AuditLog = require("../models/AuditLog");
   counter = require("../utils/counter");
   razorpayQr = require("../utils/razorpayQr");
   ({ evictPermissionCache } = require("../middleware/authMiddleware"));
-  await Promise.all([Visit, CounterSession, CounterDevice, CounterPairing, PaymentEvent, DiscountLog].map((m) => m.init()));
+  await Promise.all([Visit, CounterSession, CounterDevice, CounterPairing, PaymentEvent].map((m) => m.init()));
 
   const app = express();
   app.use(express.json());
@@ -206,7 +205,6 @@ test("bad sales are refused: cash with paise, cash >= total, 100% off, unknown o
   await bad({ paymentMode: "partial", cashAmount: 500 }, /Cash must be between/);
   await bad({ paymentMode: "partial", cashAmount: 0 }, /Cash must be between/);
   await bad({ discountPercent: 100 }, /at least ₹1/);
-  await bad({ discountPercent: 150 }, /between 0 and 100/);
   await bad({ paymentMode: "card" }, /online or partial/);
   await bad({ serviceIds: [] }, /At least one service/);
   await bad({ serviceIds: [String(new mongoose.Types.ObjectId())] }, /invalid or inactive/);
@@ -409,7 +407,7 @@ const saveVisit = (s, over = {}) => call("POST", "/visits/v2", { ...customer, co
 test("visit: built from the session; the browser's services, discount and payment id are ignored", async () => {
   const s = await paidSession();
   const cheap = await Service.create({ name: "Threading", price: 10, slug: "threading", isActive: true, durationMinutes: 15, durationConfirmed: true, bookingMode: "instant", audience: "her", displayCategory: "Hair" });
-  const r = await saveVisit(s, { serviceIds: [String(cheap._id)], discountPercent: 0, paymentMethod: "cash", razorpayPaymentId: "pay_FAKE", discountReason: "regular" });
+  const r = await saveVisit(s, { serviceIds: [String(cheap._id)], discountPercent: 0, paymentMethod: "cash", razorpayPaymentId: "pay_FAKE" });
   assert.equal(r.status, 201);
   const v = await Visit.findById(r.body.visitId).lean();
   assert.equal(v.finalTotal, 500);
@@ -420,7 +418,6 @@ test("visit: built from the session; the browser's services, discount and paymen
   assert.equal(v.referencePending, false);
   assert.equal(String(v.counterSessionId), String(s._id));
   assert.equal((await PaymentEvent.findOne({ razorpayPaymentId: "pay_1" })).reconcileStatus, "matched");
-  assert.equal((await DiscountLog.findOne({ visitId: v._id })).percent, 50);
   assert.equal(String((await CounterSession.findById(s._id)).visitId), String(v._id));
 });
 
@@ -446,7 +443,6 @@ test("visit: a double click or retry returns the same visit, never a second", as
   assert.equal(second.body.duplicate, true);
   assert.equal(String(second.body.visitId), String(first.body.visitId));
   assert.equal(await Visit.countDocuments(), 1);
-  assert.equal(await DiscountLog.countDocuments(), 1);
 });
 
 test("visit: two simultaneous saves still make one visit", async () => {
@@ -604,7 +600,7 @@ test("the tablet is shown an amount and a QR, nothing about the customer, and on
   assert.equal(r.body.mode, "idle");
 
   await staff("Reena", "receptionist");
-  const a = await startSale({ discountReason: "regular" });
+  const a = await startSale();
   await backdate(token);
   r = await state(token);
   assert.equal(r.body.mode, "payment");
@@ -612,7 +608,7 @@ test("the tablet is shown an amount and a QR, nothing about the customer, and on
   assert.deepEqual(r.body.qr, { mode: "decoded", upi: upiFor(500) });
   assert.equal(r.body.nextPollMs, 2500);
   assert.deepEqual(Object.keys(r.body).sort(), ["amount", "device", "expiresAt", "mode", "nextPollMs", "qr", "sessionId"]);
-  assert.ok(!JSON.stringify(r.body).includes("Reena") && !JSON.stringify(r.body).includes("regular"));
+  assert.ok(!JSON.stringify(r.body).includes("Reena"));
 
   const s = await CounterSession.findById(a.body.session.id);
   await webhook(s);

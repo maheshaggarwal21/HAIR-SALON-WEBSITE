@@ -18,7 +18,6 @@ const PaymentEvent = require("../models/PaymentEvent");
 const { authorizePermission, getUserPermissions } = require("../middleware/authMiddleware");
 const { PERMISSIONS } = require('../constants/permissions');
 const { salonDate, isValidDate, addDays } = require("../utils/time");
-const { parseDiscountPercent, cleanReason, recordDiscount } = require("../utils/discounts");
 const counter = require("../utils/counter");
 
 const router = express.Router();
@@ -269,7 +268,6 @@ router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, asy
       subtotal,
       discountPercent: pct,
       discountAmount,
-      discountReason: pct > 0 ? cleanReason(req.body.discountReason) : null,
       finalTotal,
       paymentMethod,
       cashAmount: amounts.cashAmount,
@@ -292,8 +290,6 @@ router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, asy
         razorpayPaymentId: razorpayPaymentId || null,
       },
     });
-
-    await recordDiscount({ visit, req, reason: req.body.discountReason });
 
     return res.status(201).json({
       success: true,
@@ -650,10 +646,7 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     }));
 
     const subtotal = services.reduce((sum, s) => sum + s.price, 0);
-    // No cap (D60) — but nonsense is rejected rather than silently clamped.
-    const parsedDiscount = parseDiscountPercent(discountPercent);
-    if (!parsedDiscount.ok) return res.status(400).json({ error: parsedDiscount.error });
-    const pct = parsedDiscount.percent;
+    const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
     const discountAmount = Math.round(subtotal * (pct / 100));
     const finalTotal = Math.max(0, subtotal - discountAmount);
 
@@ -696,7 +689,6 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       subtotal,
       discountPercent: pct,
       discountAmount,
-      discountReason: pct > 0 ? cleanReason(req.body.discountReason) : null,
       finalTotal,
       paymentMethod,
       cashAmount: amounts.cashAmount,
@@ -764,9 +756,6 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         console.error("[visits] payment event reconcile failed:", effectivePaymentId, err.message);
       }
     }
-
-    // After the visit is saved and before we answer (serverless: no work after res.send).
-    await recordDiscount({ visit, req, reason: req.body.discountReason });
 
     return res.status(201).json({
       success: true,

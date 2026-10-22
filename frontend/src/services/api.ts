@@ -148,8 +148,6 @@ export interface CreateVisitPayload {
   serviceType?: string;
   serviceIds: string[];
   discountPercent: number;
-  /** Optional; stored with the discount log row. Ignored when there is no discount. */
-  discountReason?: string;
   paymentMethod: "online" | "cash" | "card" | "partial";
   cashAmount?: number;
   cardAmount?: number;

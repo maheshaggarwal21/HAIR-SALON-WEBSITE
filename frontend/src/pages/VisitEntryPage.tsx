@@ -364,20 +364,6 @@ export default function VisitEntryPage() {
                   </div>
                 </Field>
                 )}
-
-                {!booking && discountPct > 0 && (
-                  <Field label="Why this discount? (optional)" className="sm:col-span-2">
-                    <Input
-                      id="discountReason"
-                      name="discountReason"
-                      type="text"
-                      placeholder="e.g. regular customer, staff friend, complaint"
-                      value={formData.discountReason}
-                      onChange={handleChange}
-                      maxLength={200}
-                    />
-                  </Field>
-                )}
               </div>
 
               {/*
