@@ -19,6 +19,7 @@ import {
   UsersRound,
   ShieldCheck,
   LifeBuoy,
+  MonitorSmartphone,
   ChevronLeft,
   ArrowRight,
   Network,
@@ -30,8 +31,9 @@ import RoleDefaultsPanel from "./management/RoleDefaultsPanel";
 import PeoplePanel from "./management/PeoplePanel";
 import ApprovalPanel from "./management/ApprovalPanel";
 import BreakGlassPanel from "./management/BreakGlassPanel";
+import CounterDisplayPanel from "./management/CounterDisplayPanel";
 
-type NodeId = "team" | "people" | "approval" | "breakglass";
+type NodeId = "team" | "people" | "approval" | "breakglass" | "counter";
 
 interface FlowNode {
   id: NodeId;
@@ -79,6 +81,15 @@ const NODES: FlowNode[] = [
       "The bypass code for when your phone is dead and the salon still has to open. Plus the security log.",
     icon: LifeBuoy,
     accent: "from-rose-500/10 to-rose-500/0 border-rose-200 text-rose-600",
+    ownerOnly: true,
+  },
+  {
+    id: "counter",
+    label: "Counter display",
+    sub: "Payment tablet",
+    blurb: "Pair the customer-facing tablet that shows the UPI payment QR, see if it is online, or remove it.",
+    icon: MonitorSmartphone,
+    accent: "from-violet-500/10 to-violet-500/0 border-violet-200 text-violet-600",
     ownerOnly: true,
   },
 ];
@@ -147,6 +158,7 @@ export default function Management() {
             {activeNode.id === "people" && <PeoplePanel canManage={canManage} />}
             {activeNode.id === "approval" && <ApprovalPanel canManage={canManage} />}
             {activeNode.id === "breakglass" && <BreakGlassPanel isOwner={isOwner} />}
+            {activeNode.id === "counter" && <CounterDisplayPanel />}
           </motion.div>
         )}
       </AnimatePresence>

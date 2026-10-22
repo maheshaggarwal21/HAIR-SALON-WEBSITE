@@ -10,7 +10,7 @@
  * "After one full day": nothing from today is listed. Today's visits are still
  * being entered, and the desk would be "fixing" a number mid-conversation.
  *
- *   GET  /?kind=duplicate|invalid|payment|unassigned&status=open|resolved|all&days=30&q=
+ *   GET  /?kind=duplicate|invalid|payment|unassigned|reference&status=open|resolved|all&days=30&q=
  *   POST /correct-contact   { from, to, key?, note? }  re-file every visit under a wrong number
  *   POST /resolve           { key, kind, status: fixed|dismissed|open, note?, identified? }
  *
@@ -48,7 +48,7 @@ const SETTLED = {
   paymentStatus: "success",
   $or: [{ assignmentStatus: { $exists: false } }, { assignmentStatus: "not_required" }, { assignmentStatus: "completed" }],
 };
-const KINDS = ["duplicate", "invalid", "payment", "unassigned"];
+const KINDS = ["duplicate", "invalid", "payment", "unassigned", "reference"];
 const KEY_RE = /^[a-z]{2,4}:[A-Za-z0-9_:.-]{1,90}$/;
 const LIMIT = 200;
 
@@ -191,6 +191,34 @@ async function payments({ from, until }) {
     .slice(0, LIMIT);
 }
 
+/**
+ * Counter QR visits (D60) saved as "paid, reference pending" whose Razorpay payment id still
+ * has not arrived after 10 minutes. The webhook normally fills it within a second, the
+ * payments-list backfill within a minute or two; one left over means a human should look
+ * at Payments → Unreconciled. Not day-windowed: a stuck payment is stuck whenever it started.
+ */
+async function missingReference() {
+  const { backfillReferences, STALE_REFERENCE_MS } = require("../utils/counter");
+  // Heal what can be healed first, so the list only holds what really is stuck.
+  await backfillReferences({ limit: 10 }).catch((err) => console.error("[data-fixes] backfill failed:", err.message));
+  const rows = await Visit.find({ referencePending: true, createdAt: { $lt: new Date(Date.now() - STALE_REFERENCE_MS) } })
+    .sort({ createdAt: -1 })
+    .limit(LIMIT)
+    .select("name contact date createdAt finalTotal onlineAmount")
+    .lean();
+  return rows.map((v) => ({
+    key: `rf:${v._id}`,
+    kind: "reference",
+    visitId: String(v._id),
+    name: v.name,
+    contact: v.contact,
+    date: v.date,
+    at: v.createdAt,
+    amount: v.onlineAmount || v.finalTotal,
+    what: "Paid by UPI QR, but Razorpay's payment reference never arrived",
+  }));
+}
+
 router.get("/", async (req, res) => {
   const kind = String(req.query.kind || "");
   if (!KINDS.includes(kind)) return res.status(400).json({ error: "kind must be one of " + KINDS.join(", ") });
@@ -204,6 +232,7 @@ router.get("/", async (req, res) => {
     if (kind === "duplicate") issues = duplicates(await contactGroups(win));
     else if (kind === "invalid") issues = invalid(await contactGroups(win));
     else if (kind === "unassigned") issues = await unassigned(win);
+    else if (kind === "reference") issues = await missingReference();
     else {
       try {
         issues = await payments(win);

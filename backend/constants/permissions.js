@@ -28,6 +28,8 @@ const PERMISSIONS = Object.freeze({
   WEBSITE_MANAGE:        'website.manage',
   // Daily review of mistyped / duplicate numbers, refunded payments and unassigned visits (D54)
   DATAFIXES_MANAGE:      'datafixes.manage',
+  // Counter payments (D60): pair and manage the customer-facing QR tablet
+  COUNTER_MANAGE:        'counter.manage',
 });
 
 // Default permission sets assigned when a new account is created.
@@ -88,6 +90,7 @@ const PERMISSION_LABELS = {
   'schedules.manage':      'Online booking: artists on/off, leave and blocked time',
   'website.manage':        'Manage Website (Settings, Public Menu, Artist Profiles)',
   'datafixes.manage':      'Fix wrong numbers: review duplicates, refunds and unassigned visits',
+  'counter.manage':        'Counter display: pair tablets and manage the payment QR screen (owner)',
 };
 
 // UI groupings for the permission editor checklist — purely cosmetic.
@@ -124,7 +127,7 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Administration',
-    keys:  ['team.view', 'team.manage'],
+    keys:  ['team.view', 'team.manage', 'counter.manage'],
   },
 ];
 

@@ -19,11 +19,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Copy, Loader2, PhoneOff, RotateCcw, Search, Undo2, UserX, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Hash, Loader2, PhoneOff, RotateCcw, Search, Undo2, UserX, Wallet } from "lucide-react";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
-type Kind = "duplicate" | "invalid" | "payment" | "unassigned";
+type Kind = "duplicate" | "invalid" | "payment" | "unassigned" | "reference";
 type Status = "open" | "resolved" | "all";
 
 interface Side {
@@ -86,6 +86,7 @@ const KINDS: { id: Kind; label: string; icon: React.ElementType; hint: string }[
   { id: "invalid", label: "Invalid numbers", icon: PhoneOff, hint: "Not a real 10-digit mobile" },
   { id: "payment", label: "Refunded & failed", icon: Wallet, hint: "Online payments that went back or never completed" },
   { id: "unassigned", label: "Artists not assigned", icon: UserX, hint: "Paid, but the artist step was never finished" },
+  { id: "reference", label: "Missing payment reference", icon: Hash, hint: "Paid by QR at the counter, but Razorpay's reference never arrived" },
 ];
 
 const day = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "—");
@@ -229,6 +230,7 @@ function Card({ issue: i, onChanged }: { issue: Issue; onChanged: () => void }) 
       {i.kind === "invalid" && <Invalid i={i} busy={busy} run={run} resolve={resolve} />}
       {i.kind === "payment" && <Payment i={i} busy={busy} resolve={resolve} />}
       {i.kind === "unassigned" && <Unassigned i={i} busy={busy} resolve={resolve} />}
+      {i.kind === "reference" && <Reference i={i} busy={busy} resolve={resolve} />}
 
       {i.status !== "open" && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-emerald-100 pt-3 text-xs text-emerald-800">
@@ -415,6 +417,31 @@ function Unassigned({ i, busy, resolve }: { i: Issue; busy: boolean; resolve: Re
           </button>
           <button disabled={busy} onClick={() => resolve("dismissed", { note: "Left as is" })} className="rounded-lg px-3.5 py-2 text-sm text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50">
             Leave as is
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A counter QR visit still waiting for Razorpay's payment id after 10 minutes (D60). */
+function Reference({ i, busy, resolve }: { i: Issue; busy: boolean; resolve: Resolve }) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <p className="text-lg font-semibold text-stone-900">
+        {i.name} <span className="font-mono text-base font-normal text-stone-500">{i.contact}</span>
+      </p>
+      <p className="mt-1 text-sm text-stone-600">
+        Paid {rupees(i.amount)} by UPI QR on {day(i.date)}. The sale is saved and counted, but Razorpay's payment reference never reached us, so it cannot be matched to the money yet.
+      </p>
+      {i.status === "open" && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button onClick={() => navigate("/dashboard/receptionist/payments")} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white">
+            Look in Payments
+          </button>
+          <button disabled={busy} onClick={() => resolve("fixed", { note: "Checked in Razorpay" })} className="rounded-lg px-3.5 py-2 text-sm text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50">
+            I checked it
           </button>
         </div>
       )}

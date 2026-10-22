@@ -76,6 +76,9 @@ const ACTIONS = [
   "migration.applied",
   "visit.contact_corrected",
   "datafix.resolved",
+  // Counter payments (D60)
+  "counter.device_paired",
+  "counter.device_revoked",
 ];
 
 const auditLogSchema = new mongoose.Schema(

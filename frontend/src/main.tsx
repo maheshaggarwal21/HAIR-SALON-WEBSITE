@@ -7,6 +7,7 @@
  *                      the public website is the customer site, T1.23)
  *   /signin          — Sign-in page
  *   /payment-status  — Payment confirmation
+ *   /display         — counter tablet: customer-facing payment QR (D60); mounted without AuthProvider
  *   /unauthorized    — 403 page
  *   /about, /contact, /privacy-policy, /terms-of-service
  *                    — forwarded to the same pages on the customer site
@@ -48,6 +49,7 @@ const VisitAssignmentPage   = lazy(() => import('./pages/VisitAssignmentPage'))
 const ChangePasswordPage    = lazy(() => import('./pages/ChangePasswordPage'))
 
 // Rarely-visited public pages.
+const DisplayPage         = lazy(() => import('./pages/DisplayPage'))
 const PaymentStatus       = lazy(() => import('./pages/PaymentStatus'))
 const UnauthorizedPage    = lazy(() => import('./pages/UnauthorizedPage'))
 
@@ -143,7 +145,21 @@ setTimeout(() => {
   }
 }, 15000)
 
-createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root')!
+
+/**
+ * The counter tablet (D60) runs /display with no staff login at all, so it is mounted on its
+ * own: no AuthProvider (which would ask the server "who am I?" and get a 401), no routes.
+ */
+if (window.location.pathname === '/display') {
+  createRoot(rootEl).render(
+    <StrictMode>
+      <Suspense fallback={<RouteFallback />}>
+        <DisplayPage />
+      </Suspense>
+    </StrictMode>,
+  )
+} else createRoot(rootEl).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>

@@ -34,11 +34,14 @@
     "express-session": "^1.19.0",
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
+    "jsqr": "^1.4.0",
     "mongoose": "^9.2.1",
+    "pngjs": "^7.0.0",
     "razorpay": "^2.9.6",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "mongodb-memory-server": "^11.3.0"
+    "mongodb-memory-server": "^11.3.0",
+    "uqr": "^0.1.3"
   }
 }

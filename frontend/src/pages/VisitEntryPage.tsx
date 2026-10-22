@@ -26,6 +26,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { cn } from "@/lib/utils";
 import AppLayout from "@/layouts/AppLayout";
 import { useVisitForm } from "@/hooks/useVisitForm";
+import { CounterPayPanel, TabletChip } from "@/components/CounterPayPanel";
 import type { CustomerSuggestion } from "@/types/visit";
 
 export default function VisitEntryPage() {
@@ -59,6 +60,7 @@ export default function VisitEntryPage() {
     handleServiceQuantityChange,
     applyCustomerSuggestion,
     handleSubmit,
+    counter,
     handleReset,
   } = useVisitForm();
 
@@ -176,6 +178,8 @@ export default function VisitEntryPage() {
               </div>
             )}
 
+            {/* Locked while a QR payment is waiting: the server has already priced the sale. */}
+            <fieldset disabled={counter.busy} className="contents">
             <div className="mb-8 rounded-2xl border border-stone-200/80 bg-white shadow-sm overflow-hidden">
               <Section title="Client Details" icon="01">
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -412,9 +416,9 @@ export default function VisitEntryPage() {
                         )}
                       >
                         <CreditCard className="w-5 h-5" />
-                        <span className="text-xs font-semibold tracking-wide uppercase">Full Online</span>
+                        <span className="text-xs font-semibold tracking-wide uppercase">UPI (QR)</span>
                         <span className={cn("text-[10px]", formData.paymentMode === "online" ? "text-stone-300" : "text-stone-400")}>
-                          Pay via Razorpay
+                          Customer pays by UPI
                         </span>
                       </button>
 
@@ -465,10 +469,12 @@ export default function VisitEntryPage() {
                         <SplitSquareHorizontal className="w-5 h-5" />
                         <span className="text-xs font-semibold tracking-wide uppercase">Split Payment</span>
                         <span className={cn("text-[10px]", formData.paymentMode === "partial" ? "text-amber-200" : "text-stone-400")}>
-                          Cash plus Online
+                          Cash plus UPI
                         </span>
                       </button>
                     </div>
+
+                    {(formData.paymentMode === "online" || formData.paymentMode === "partial") && <TabletChip counter={counter} />}
 
                     <AnimatePresence>
                       {formData.paymentMode === "partial" && (
@@ -560,7 +566,7 @@ export default function VisitEntryPage() {
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <span className="flex items-center gap-1.5 text-blue-600">
-                              <CreditCard className="w-3.5 h-3.5" /> Online (Razorpay)
+                              <CreditCard className="w-3.5 h-3.5" /> UPI (QR)
                             </span>
                             <span className="font-semibold text-blue-600">
                               INR {onlinePayable.toLocaleString("en-IN", { minimumFractionDigits: onlinePayable % 1 ? 2 : 0, maximumFractionDigits: 2 })}
@@ -591,6 +597,9 @@ export default function VisitEntryPage() {
               </AnimatePresence>
               </Section>
             </div>
+            </fieldset>
+
+            <CounterPayPanel counter={counter} />
 
             <AnimatePresence>
               {paymentError && (
@@ -628,8 +637,8 @@ export default function VisitEntryPage() {
 
               <motion.button
                 type="submit"
-                disabled={isLoading}
-                whileHover={{ scale: isLoading ? 1 : 1.015 }}
+                disabled={isLoading || counter.busy}
+                whileHover={{ scale: isLoading || counter.busy ? 1 : 1.015 }}
                 whileTap={{ scale: isLoading ? 1 : 0.985 }}
                 className="relative w-full sm:w-80 h-12 rounded-xl overflow-hidden font-semibold text-white disabled:cursor-not-allowed"
               >
@@ -692,14 +701,14 @@ export default function VisitEntryPage() {
                     <>
                       <SplitSquareHorizontal className="w-4 h-4" />
                       {onlinePayable > 0
-                        ? `Pay INR ${onlinePayable.toLocaleString("en-IN")} Online, Then Assign`
-                        : "Pay with Razorpay"}
+                        ? `Pay INR ${onlinePayable.toLocaleString("en-IN")} by UPI, Then Assign`
+                        : "Pay by UPI"}
                     </>
                   ) : (
                     <>
                       {payable > 0
-                        ? `Pay INR ${payable.toLocaleString("en-IN")} Online, Then Assign`
-                        : "Pay with Razorpay"}
+                        ? `Pay INR ${payable.toLocaleString("en-IN")} by UPI, Then Assign`
+                        : "Pay by UPI"}
                     </>
                   )}
                 </span>

@@ -188,7 +188,15 @@ async function bookingsTick(now = new Date()) {
     require("../utils/offers").clearOffersCache();
     await revalidateSite(["services", "packages", "campaigns"]);
   }
-  return { ...expired, ...reminders, messagesRetried: retried, autoRefundsRetried: refundsSent, offersRefreshed: newDay };
+  // Counter QR payments whose payment id never arrived by webhook (D60): look it up, and
+  // repair any visit whose session already has it. Never allowed to fail the tick.
+  let counterRefs = null;
+  try {
+    counterRefs = await require("../utils/counter").backfillReferences({ now });
+  } catch (err) {
+    console.error("[cron] counter reference backfill failed:", err.message);
+  }
+  return { ...expired, ...reminders, messagesRetried: retried, autoRefundsRetried: refundsSent, offersRefreshed: newDay, counterRefs };
 }
 
 for (const method of ["get", "post"]) {

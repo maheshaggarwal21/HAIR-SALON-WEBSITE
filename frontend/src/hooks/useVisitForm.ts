@@ -8,6 +8,8 @@ import type {
   CustomerSuggestion,
 } from "@/types/visit";
 import { loadRazorpayScript } from "@/services/razorpay";
+import { checkPaymentSum } from "@/lib/paymentSum";
+import { useCounterPayment } from "@/hooks/useCounterPayment";
 import { toLocalDateKey } from "@/lib/utils";
 import {
   fetchFormData,
@@ -368,6 +370,12 @@ export function useVisitForm() {
         e.cashAmount = `Online portion must be at least ₹1 (max cash: ₹${(payable - 1).toLocaleString("en-IN")})`;
     }
 
+    // Sum check (D60): the parts must add up to the total, in whole rupees.
+    if (!recovery && payable > 0) {
+      const sumProblem = checkPaymentSum(formData.paymentMode, payable, cashAmountNum);
+      if (sumProblem) e[sumProblem.field] = e[sumProblem.field] ?? sumProblem.message;
+    }
+
     if (formData.paymentMode === "card" && payable <= 0 && !booking) {
       e.amount = "Payable amount must be greater than ₹0";
     }
@@ -463,6 +471,32 @@ export function useVisitForm() {
     appliedPhone.current = null;
   };
 
+  // ── UPI by QR at the counter (D60) ─────────────────────────────────────────
+  // Ordinary desk sales only: bookings and recoveries keep Razorpay Checkout, unchanged.
+  const counter = useCounterPayment({
+    relevant: !booking && !recovery && (formData.paymentMode === "online" || formData.paymentMode === "partial"),
+    onPaid: async (paid) => {
+      // The server's paid session IS the sale: it supplies services, discount, cash part and
+      // payment id. Only who the customer is comes from this form.
+      const draft = await withRetry(() =>
+        createVisitDraftV2({
+          name: formData.name.trim(),
+          contact: formData.phone.trim(),
+          gender: formData.gender,
+          date: formData.date,
+          serviceType: formData.serviceType.length > 0 ? formData.serviceType.join(", ") : undefined,
+          serviceIds: selectedServiceIds, // ignored by the server for a counter sale
+          discountPercent: discountPct, // ignored by the server for a counter sale
+          paymentMethod: paid.cashAmount > 0 ? "partial" : "online",
+          counterSessionId: paid.id,
+          lockUntilAssigned: true,
+        })
+      );
+      localStorage.setItem("pendingAssignmentVisitId", draft.visitId);
+      navigate(`/visit-assignment/${draft.visitId}`);
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
@@ -541,6 +575,19 @@ export function useVisitForm() {
           cardAmount: payable,
           onlineAmount: 0,
         });
+        return;
+      }
+
+      // UPI by QR: the server prices the sale and makes the QR; the tablet (or this screen)
+      // shows it. Falls through to Razorpay Checkout when the feature is off.
+      if (counter.enabled) {
+        await counter.start({
+          serviceIds: selectedServiceIds,
+          discountPercent: discountPct,
+          paymentMode: formData.paymentMode === "partial" ? "partial" : "online",
+          cashAmount: formData.paymentMode === "partial" ? cashAmountNum : 0,
+        });
+        setIsLoading(false);
         return;
       }
 
@@ -781,5 +828,6 @@ export function useVisitForm() {
     applyCustomerSuggestion,
     handleSubmit,
     handleReset,
+    counter,
   };
 }

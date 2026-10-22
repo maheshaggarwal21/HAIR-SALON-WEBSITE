@@ -223,6 +223,16 @@ app.post(
         return res.status(200).json({ received: true, booking: out.outcome });
       }
 
+      // Counter UPI QR (D60): a payment made against a QR Code has no order, and the
+      // QR's notes (kind, sessionId) were copied onto it by Razorpay. Marks the counter
+      // session paid and fills in the visit's payment reference. Idempotent. Not
+      // gated by COUNTER_DISPLAY_ENABLED: money that arrived must always be recorded.
+      if (!payment.order_id && payment.notes?.kind === "counter_qr") {
+        const { applyCapturedPayment } = require("./utils/counter");
+        const out = await applyCapturedPayment(payment);
+        return res.status(200).json({ received: true, counter: out.outcome });
+      }
+
       if (!visit && payment.status === "captured") {
         console.warn(
           `[webhook] UNRECONCILED PAYMENT ${payment.id} ₹${Math.round((payment.amount || 0) / 100)} ` +
@@ -288,15 +298,36 @@ const PAYMENT_CRITICAL = [
   "/api/telegram/webhook",
 ];
 
+/**
+ * Counter-payment POLLING (D60). The tablet asks for its screen every 2.5-20 s and the
+ * staff screen checks a pending QR every ~2.5 s; from one shared IP that would eat the
+ * budget in minutes. Only these exact GETs are exempt — pairing (/api/display/pair),
+ * creating and cancelling a payment are not. Each is limited per device or per session
+ * instead (middleware/deviceAuth.js, routes/counter.js).
+ */
+const POLLING_ONLY = [
+  /^\/api\/display\/state$/,
+  /^\/api\/counter\/status$/,
+  /^\/api\/counter\/sessions\/[a-f\d]{24}$/i,
+];
+
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => PAYMENT_CRITICAL.some((p) => req.path.startsWith(p)),
+    skip: (req) =>
+      PAYMENT_CRITICAL.some((p) => req.path.startsWith(p)) ||
+      (req.method === "GET" && POLLING_ONLY.some((re) => re.test(req.path))),
   })
 );
+
+/**
+ * The counter tablet (D60). After the global limiter (so /pair stays limited) and
+ * before the session, so a tablet never gets a cookie or a staff session.
+ */
+app.use("/api/display", require("./routes/counterDisplay"));
 
 /**
  * Cookie parsing — required by the login gate.
@@ -819,6 +850,7 @@ app.use("/api/services", authenticate, require("./routes/services"));
 app.use("/api/bookings", authenticate, require("./routes/bookings"));
 app.use("/api/schedules", authenticate, require("./routes/schedules"));
 app.use("/api/data-fixes", authenticate, require("./routes/dataFixes"));
+app.use("/api/counter", authenticate, require("./routes/counter"));
 app.use("/api/website", authenticate, require("./routes/website"));
 app.use("/api/artist-skills", authenticate, require("./routes/artistSkills"));
 app.use("/api/visits", authenticate, require("./routes/visits"));
