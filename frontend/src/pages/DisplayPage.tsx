@@ -165,10 +165,10 @@ export default function DisplayPage() {
       <Shell offline={offline}>
         <p className="text-xl uppercase tracking-[0.3em] text-stone-400">Amount to pay</p>
         <p className="mt-2 text-7xl font-semibold tabular-nums sm:text-8xl">{rupees(state.amount)}</p>
-        <div className="mt-8 w-[min(70vh,80vw)]">
+        <div className="mt-6 w-[min(52vh,80vw)]">
           {state.qr ? <UpiQr qr={state.qr} /> : <p className="text-stone-400">Please ask the desk for another way to pay.</p>}
         </div>
-        <p className="mt-6 text-2xl">Scan with any UPI app</p>
+        <p className="mt-5 text-2xl">Scan with any UPI app</p>
         <Countdown until={state.expiresAt} />
       </Shell>
     );
