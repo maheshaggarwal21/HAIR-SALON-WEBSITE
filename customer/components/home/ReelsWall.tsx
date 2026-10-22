@@ -7,7 +7,10 @@
  *   - ONE plays at a time on every screen (DS §9, D58) — the most visible wins. Synced
  *     Instagram videos are full-size files from Instagram's CDN, so several at once
  *     would drag a desktop or a phone;
- *   - videos load nothing until they come near the viewport (preload="none");
+ *   - a tile is just a lazy-loaded thumbnail until it first scrolls into view; only then
+ *     does it get a <video> (preload="none", so still nothing downloads until it plays).
+ *     Instagram thumbnails and videos live on a different host, so loading all of them
+ *     up front would cost extra connections and bytes before the visitor reaches them;
  *   - tap → lightbox with sound and "Book this look" when the reel is tagged
  *     with a service; Escape or the close button shuts it;
  *   - reduced motion: no autoplay at all, posters only, tap to play.
@@ -30,7 +33,9 @@ function useAutoplay() {
 export function ReelsWall({ reels, instagram }: { reels: PublicReel[]; instagram: string | null }) {
   const autoplay = useAutoplay();
   const videos = useRef(new Map<string, HTMLVideoElement>());
+  const tiles = useRef(new Map<string, HTMLElement>());
   const ratios = useRef(new Map<string, number>());
+  const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
   const [open, setOpen] = useState<PublicReel | null>(null);
 
   const apply = useCallback(() => {
@@ -49,12 +54,18 @@ export function ReelsWall({ reels, instagram }: { reels: PublicReel[]; instagram
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
-        for (const e of entries) ratios.current.set((e.target as HTMLElement).dataset.reel!, e.intersectionRatio);
+        const arrived: string[] = [];
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.reel!;
+          ratios.current.set(id, e.intersectionRatio);
+          if (e.isIntersecting) arrived.push(id);
+        }
+        if (arrived.length) setSeen((prev) => (arrived.every((id) => prev.has(id)) ? prev : new Set([...prev, ...arrived])));
         apply();
       },
-      { threshold: [0, 0.3, 0.6, 0.9] }
+      { threshold: [0, 0.3, 0.6, 0.9], rootMargin: "200px 0px" }
     );
-    videos.current.forEach((v) => io.observe(v));
+    tiles.current.forEach((t) => io.observe(t));
     return () => io.disconnect();
   }, [apply, reels]);
 
@@ -64,29 +75,41 @@ export function ReelsWall({ reels, instagram }: { reels: PublicReel[]; instagram
         {reels.map((r) => (
           <button
             key={r.id}
+            ref={(el) => {
+              if (el) tiles.current.set(r.id, el);
+              else tiles.current.delete(r.id);
+            }}
+            data-reel={r.id}
             type="button"
             onClick={() => setOpen(r)}
             className="group relative aspect-[9/16] overflow-hidden rounded-[var(--radius-media)] bg-sand text-left"
             aria-label={r.caption ? `Play reel: ${r.caption}` : "Play reel"}
           >
             {r.mediaType === "video" ? (
-              <video
-                ref={(el) => {
-                  if (el) videos.current.set(r.id, el);
-                  else videos.current.delete(r.id);
-                }}
-                data-reel={r.id}
-                src={r.mediaUrl}
-                poster={r.thumbnailUrl ?? undefined}
-                muted
-                loop
-                playsInline
-                preload="none"
-                className="h-full w-full object-cover"
-              />
+              <>
+                {r.thumbnailUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.thumbnailUrl} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
+                )}
+                {seen.has(r.id) && (
+                  <video
+                    ref={(el) => {
+                      if (el) videos.current.set(r.id, el);
+                      else videos.current.delete(r.id);
+                    }}
+                    src={r.mediaUrl}
+                    poster={r.thumbnailUrl ?? undefined}
+                    muted
+                    loop
+                    playsInline
+                    preload="none"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                )}
+              </>
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={r.mediaUrl} alt={r.caption ?? ""} loading="lazy" className="h-full w-full object-cover" />
+              <img src={r.mediaUrl} alt={r.caption ?? ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />
             )}
             {r.caption && (
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/80 to-transparent p-4 pt-12 text-[14px] font-medium text-ivory">

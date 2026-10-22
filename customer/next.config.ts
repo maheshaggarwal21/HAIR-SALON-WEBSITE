@@ -32,6 +32,21 @@ const nextConfig: NextConfig = {
     return [{ source: "/api/public/:path*", destination: `${API_BASE}/api/public/:path*` }];
   },
   /**
+   * The salon's own photos and videos (public/images, public/media) change
+   * rarely, but Vercel serves them with max-age=0, so every visit re-checks
+   * every file and the hero video starts late. A week in the browser plus a
+   * month of serve-stale-while-refreshing makes repeat visits instant. A file
+   * replaced under the SAME name can take up to a week to show for people who
+   * visited before; a new name shows at once (D58).
+   */
+  async headers() {
+    const cache = [{ key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=2592000" }];
+    return [
+      { source: "/images/:path*", headers: cache },
+      { source: "/media/:path*", headers: cache },
+    ];
+  },
+  /**
    * Domain switch (T1.23). Once this site serves thexpertshair.com, the staff
    * app moves to app.thexpertshair.com; old bookmarks and Razorpay callbacks to
    * staff URLs are forwarded there. Off until STAFF_APP_URL is set, so nothing
