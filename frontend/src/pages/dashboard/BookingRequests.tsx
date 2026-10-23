@@ -10,6 +10,11 @@
  *     two taps (time → Confirm);
  *   - refreshes itself every 30s so a new request shows up without reloading.
  *
+ * WhatsApp-ad requests (D62) are UNPAID and ask for a specific time. They sit in their own
+ * "Requested (unpaid)" section: Confirm (the time can be changed first) or Decline, and the
+ * customer is told on WhatsApp either way. An offer-page request shows its offer so the desk
+ * can give the matching discount by hand; nothing is discounted automatically.
+ *
  * Phase 1 requests hold no time, so check the artist's day as you would for a
  * phone booking. Phase 2 requests made through the booking engine already
  * HOLD their time and are paid (deposit or full, D18): they show "Holds …"
@@ -60,13 +65,19 @@ interface BookingRequest {
   items: RequestItem[];
   total: number;
   discount: number;
-  requestedWindow: { date: string | null; window: WindowKey | null };
+  requestedWindow: { date: string | null; window: WindowKey | null; time?: string | null };
   preferredArtistName: string | null;
   startAt: string | null;
   endAt: string | null;
   notes: string | null;
   internalNote: string | null;
   utm: { source?: string; medium?: string; campaign?: string } | null;
+  /** "wa_ad" for a request from a WhatsApp ad link or offer page (D62). */
+  channel?: string | null;
+  campaign?: string | null;
+  offer?: { slug: string; headline: string | null; price: number | null; priceNote: string | null } | null;
+  /** A request with no money taken. */
+  unpaid?: boolean;
   createdAt: string;
   lastChange: { to: string; by: string | null; at: string; reason: string | null } | null;
   /** Phase 2: an engine request holds its time until this moment. */
@@ -208,6 +219,10 @@ export default function BookingRequests() {
       .catch(() => setArtists([]));
   }, []);
 
+  // WhatsApp-ad requests get their own section on the New tab (D62).
+  const waRequests = useMemo(() => requests.filter((r) => r.channel === "wa_ad"), [requests]);
+  const otherRequests = useMemo(() => requests.filter((r) => r.channel !== "wa_ad"), [requests]);
+
   /** Replace one row after an action, or drop it if it left this tab. */
   const applyUpdate = (updated: BookingRequest) => {
     setRequests((rows) =>
@@ -275,7 +290,21 @@ export default function BookingRequests() {
         </div>
       ) : (
         <div className="space-y-4">
-          {requests.map((r) => (
+          {tab === "requested" && waRequests.length > 0 && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
+                <h3 className="text-sm font-semibold text-emerald-900">Requested (unpaid) · from WhatsApp ads and offer pages</h3>
+                <span className="text-xs text-emerald-800/80">Nothing is paid or held. Confirm to book it; the customer is told on WhatsApp.</span>
+              </div>
+              {waRequests.map((r) => (
+                <RequestCard key={r._id} request={r} canManage={canManage} windows={windows} artists={artists} onUpdated={applyUpdate} />
+              ))}
+            </div>
+          )}
+          {tab === "requested" && waRequests.length > 0 && otherRequests.length > 0 && (
+            <h3 className="px-1 pt-2 text-sm font-semibold text-stone-700">Website requests and paid bookings</h3>
+          )}
+          {(tab === "requested" ? otherRequests : requests).map((r) => (
             <RequestCard
               key={r._id}
               request={r}
@@ -307,8 +336,10 @@ function RequestCard({
 }) {
   const [mode, setMode] = useState<"none" | "confirm" | "decline" | "cancel">("none");
   const [date, setDate] = useState(r.requestedWindow.date || todayIST());
-  const [time, setTime] = useState("");
+  // A WhatsApp-ad request asked for a specific time: start from it, and the desk can change it.
+  const [time, setTime] = useState(r.requestedWindow.time || "");
   const [artistId, setArtistId] = useState("");
+  const isWa = r.channel === "wa_ad";
   const [reason, setReason] = useState("");
   const [note, setNote] = useState(r.internalNote || "");
   const [busy, setBusy] = useState(false);
@@ -354,6 +385,13 @@ function RequestCard({
               </span>
             )}
             <span className="text-xs font-mono text-stone-400">{r.ref}</span>
+            {isWa && (
+              <>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium">WhatsApp ad</span>
+                {r.campaign && <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">#{r.campaign}</span>}
+                {r.unpaid && r.status === "requested" && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Unpaid</span>}
+              </>
+            )}
           </div>
           <div className="text-sm text-stone-500 mt-0.5">
             {r.contact} · received {timeAgo(r.createdAt)}
@@ -425,7 +463,8 @@ function RequestCard({
           ) : r.requestedWindow.date ? (
             <div className={isPast ? "text-red-600" : "text-stone-900"}>
               <span className="font-medium">{dayLabel(r.requestedWindow.date)}</span>
-              {win && (
+              {r.requestedWindow.time && <span className="font-medium"> · {clockLabel(r.requestedWindow.time)}</span>}
+              {win && !r.requestedWindow.time && (
                 <span className="text-stone-500">
                   {" "}
                   · {win.label} ({clockLabel(win.start)}–{clockLabel(win.end)})
@@ -436,6 +475,18 @@ function RequestCard({
           ) : null}
           {r.preferredArtistName && <div className="text-stone-600">Prefers {r.preferredArtistName}</div>}
           {r.notes && <div className="text-stone-600 italic">“{r.notes}”</div>}
+          {r.offer && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="font-semibold">Offer: {r.offer.headline || r.offer.slug}</div>
+              {r.offer.price != null && (
+                <div>
+                  Offer price {rupees(r.offer.price)}
+                  {r.offer.priceNote ? ` ${r.offer.priceNote}` : ""}
+                </div>
+              )}
+              <div className="mt-0.5 text-amber-800/80">Menu prices above. Give this offer's discount at billing; nothing is applied automatically.</div>
+            </div>
+          )}
           {(r.utm?.source || r.utm?.campaign) && (
             <div className="flex items-center gap-1.5 text-xs text-stone-500">
               <Megaphone className="w-3.5 h-3.5" />
@@ -484,7 +535,7 @@ function RequestCard({
             onClick={() => setMode("confirm")}
             className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-800"
           >
-            <CalendarCheck className="w-4 h-4" /> Confirm with time
+            <CalendarCheck className="w-4 h-4" /> {isWa && r.requestedWindow.time ? `Confirm ${clockLabel(r.requestedWindow.time)}` : "Confirm with time"}
           </button>
           )}
           <button
@@ -523,7 +574,11 @@ function RequestCard({
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-2">
-              Time {win && <span className="normal-case font-normal tracking-normal">— their {win.label.toLowerCase()} window</span>}
+              Time {isWa && r.requestedWindow.time ? (
+                <span className="normal-case font-normal tracking-normal">— they asked for {clockLabel(r.requestedWindow.time)}; change it if needed</span>
+              ) : (
+                win && <span className="normal-case font-normal tracking-normal">— their {win.label.toLowerCase()} window</span>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {slots.map((s) => (
@@ -561,8 +616,8 @@ function RequestCard({
             </button>
           </div>
           <p className="text-xs text-stone-400">
-            This doesn't block the artist's calendar yet — check their day before confirming. Tell the customer the time on
-            WhatsApp; the website doesn't message them in this phase.
+            This doesn't block the artist's calendar yet — check their day before confirming.{" "}
+            {isWa ? "The customer gets a WhatsApp confirmation with this time." : "Tell the customer the time on WhatsApp; the website doesn't message them for this kind of request."}
           </p>
         </div>
       )}
@@ -583,7 +638,7 @@ function RequestCard({
               className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-medium disabled:opacity-40 hover:bg-red-700"
             >
               {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-              {mode === "decline" ? "Decline request" : "Cancel booking"}
+              {mode === "decline" ? (isWa ? "Decline and tell them" : "Decline request") : "Cancel booking"}
             </button>
             <button onClick={() => setMode("none")} className="h-10 px-4 rounded-lg text-sm text-stone-500 hover:bg-stone-100">
               Back
