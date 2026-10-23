@@ -12,6 +12,11 @@
  * booking engine charges the same cheaper price. Every amount is checked on the
  * server against the real menu price, so a price at or above normal is refused.
  *
+ * An offer can also have its own PAGE (D62): /offers/<address>, and /offers/now while the
+ * offer's dates contain today. The page has its own words, picture or reel, price line and the
+ * services its booking form pre-selects. Visitors send a request (no payment, no code); the
+ * price on the page is words, never applied: reception gives the discount by hand.
+ *
  * Honesty (CLAUDE.md): the site shows the real end date. No fake countdowns or
  * "only N left", and a crossed-out price exists only inside the offer's dates.
  */
@@ -39,8 +44,30 @@ interface Offer {
   popup: { delaySeconds: number; frequency: "session" | "day" };
   servicePrices: ServicePrice[];
   bundles: Bundle[];
+  /** The offer's landing page. It exists once it has an address (slug). */
+  page: OfferPage;
   status?: Status;
 }
+
+interface OfferPage {
+  slug: string | null;
+  headline: string | null;
+  offerText: string | null;
+  price: number | null;
+  priceNote: string | null;
+  image: string | null;
+  reelId: string | null;
+  serviceIds: string[];
+}
+interface ReelRow {
+  _id: string;
+  caption?: string | null;
+  mediaType?: string;
+}
+
+const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, reelId: null, serviceIds: [] });
+const slugify = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+const SITE = "https://www.thexpertshair.com";
 
 interface ServicePrice {
   serviceId: string;
@@ -94,6 +121,7 @@ const blank = (): Offer => ({
   popup: { delaySeconds: 6, frequency: "day" },
   servicePrices: [],
   bundles: [],
+  page: blankPage(),
 });
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -288,6 +316,110 @@ function PricesEditor({ offer, menu, onChange }: { offer: Offer; menu: MenuServi
 }
 
 /** What stops the offer being saved, in plain words (the server checks again). */
+/** The offer's own page: address, words, picture or reel, price line and the services to pre-select. */
+function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu: MenuService[]; reels: ReelRow[]; onChange: (patch: Partial<Offer>) => void }) {
+  const page = offer.page ?? blankPage();
+  const on = page.slug !== null;
+  const setPage = (patch: Partial<OfferPage>) => onChange({ page: { ...page, ...patch } });
+  const byId = new Map(menu.map((s) => [s._id, s]));
+  const slug = page.slug ?? "";
+  return (
+    <div className="rounded-xl border border-stone-200 p-4 space-y-4">
+      <label className="flex items-start gap-2 text-sm text-stone-800">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={on}
+          onChange={(e) => onChange({ page: e.target.checked ? { ...page, slug: slugify(offer.name) || "offer", headline: page.headline ?? (offer.content.headline || null) } : { ...page, slug: null } })}
+        />
+        <span>
+          <span className="font-semibold">Give this offer its own page</span>
+          <span className="block text-xs text-stone-500">For ads and WhatsApp links. Visitors pick a day and time and send a request; nothing is paid and no code is needed.</span>
+        </span>
+      </label>
+
+      {on && (
+        <div className="space-y-4">
+          <div>
+            <label className={labelClass}>Page address</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-stone-500 whitespace-nowrap">…/offers/</span>
+              <input value={slug} onChange={(e) => setPage({ slug: slugify(e.target.value) })} maxLength={60} placeholder="karwa" className={inputClass} />
+            </div>
+            {slug.length >= 3 && (
+              <div className="mt-2 space-y-0.5 text-xs text-stone-500">
+                <div>
+                  This offer's page: <span className="select-all font-mono text-stone-700">{SITE}/offers/{slug}</span>
+                </div>
+                <div>
+                  Whatever offer is on today: <span className="select-all font-mono text-stone-700">{SITE}/offers/now</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className={labelClass}>Headline on the page</label>
+            <input value={page.headline ?? ""} onChange={(e) => setPage({ headline: e.target.value || null })} maxLength={90} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>What the offer is</label>
+            <textarea value={page.offerText ?? ""} onChange={(e) => setPage({ offerText: e.target.value || null })} maxLength={500} rows={3} className={`${inputClass} h-auto py-3`} placeholder="e.g. A hair spa and a blow dry, done in an hour." />
+          </div>
+          <div className="grid sm:grid-cols-[10rem_1fr] gap-3">
+            <div>
+              <label className={labelClass}>Price (₹)</label>
+              <input
+                type="number"
+                min={1}
+                value={page.price ?? ""}
+                onChange={(e) => setPage({ price: e.target.value ? Math.round(Number(e.target.value)) : null })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Beside the price</label>
+              <input value={page.priceNote ?? ""} onChange={(e) => setPage({ priceNote: e.target.value || null })} maxLength={60} placeholder="for both, per person…" className={inputClass} />
+            </div>
+          </div>
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            This price is shown on the page and recorded with the request. It is <b>not applied</b> to anything: the receptionist gives the discount by hand when she bills.
+          </p>
+
+          <MediaInput label="Picture for the page (optional)" folder="offers" value={page.image} onChange={(u) => setPage({ image: u })} hint="A wide image works best. If you pick a reel below it plays instead." />
+          <div>
+            <label className={labelClass}>Or play one of your Instagram reels</label>
+            <select value={page.reelId ?? ""} onChange={(e) => setPage({ reelId: e.target.value || null })} className={inputClass}>
+              <option value="">No reel</option>
+              {reels.map((r) => (
+                <option key={r._id} value={r._id}>
+                  {(r.caption || "Untitled reel").slice(0, 70)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>Services the booking form selects</label>
+            {page.serviceIds.length === 0 && <p className="text-xs text-red-600 mb-2">Add at least one service. The form books exactly these.</p>}
+            <ul className="space-y-1.5 mb-2">
+              {page.serviceIds.map((id) => (
+                <li key={id} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-sm">
+                  <span className="text-stone-900">{byId.has(id) ? nameOf(byId.get(id)!) : "A service no longer on the menu"}</span>
+                  <button type="button" onClick={() => setPage({ serviceIds: page.serviceIds.filter((x) => x !== id) })} aria-label="Remove service" className="text-stone-400 hover:text-red-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <ServicePicker menu={menu} taken={new Set(page.serviceIds)} label="Add a service: type its name" onPick={(id) => setPage({ serviceIds: [...page.serviceIds, id] })} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function priceProblem(o: Offer, menu: MenuService[]): string | null {
   const byId = new Map(menu.map((s) => [s._id, s]));
   for (const p of o.servicePrices) {
@@ -302,6 +434,11 @@ function priceProblem(o: Offer, menu: MenuService[]): string | null {
     if (b.serviceIds.some((id) => !byId.has(id))) return `${b.name}: a service is not on the menu any more.`;
     if (!(b.price >= 1 && b.price < total)) return `${b.name}: set a price below ${rupees(total)}.`;
   }
+  if (o.page?.slug !== null && o.page?.slug !== undefined) {
+    if (o.page.slug.length < 3) return "The page address needs at least 3 letters or numbers.";
+    if (o.page.serviceIds.length === 0) return "The offer page needs at least one service to pre-select.";
+    if (o.page.serviceIds.some((id) => !byId.has(id))) return "A service on the offer page is not on the website menu any more. Remove it.";
+  }
   return null;
 }
 
@@ -309,6 +446,7 @@ export default function WebsiteOffers() {
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [editing, setEditing] = useState<Offer | null>(null);
   const [menu, setMenu] = useState<MenuService[]>([]);
+  const [reels, setReels] = useState<ReelRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   /** Deleting is permanent, so the bin asks once more. */
@@ -323,6 +461,9 @@ export default function WebsiteOffers() {
     api<MenuService[]>("/services")
       .then((all) => setMenu(all.filter((s) => s.publicPrice != null).sort((a, b) => nameOf(a).localeCompare(nameOf(b)))))
       .catch((e) => setError(e.message));
+    api<ReelRow[]>("/reels")
+      .then((r) => setReels(Array.isArray(r) ? r : []))
+      .catch(() => setReels([]));
   }, []);
 
   async function save() {
@@ -330,8 +471,8 @@ export default function WebsiteOffers() {
     setSaving(true);
     setError("");
     try {
-      const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles } = editing;
-      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles };
+      const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page } = editing;
+      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page };
       await api(_id ? `/campaigns/${_id}` : "/campaigns", { method: _id ? "PATCH" : "POST", body: JSON.stringify(body) });
       setEditing(null);
       await load();
@@ -533,6 +674,8 @@ export default function WebsiteOffers() {
 
           <PricesEditor offer={editing} menu={menu} onChange={set} />
 
+          <OfferPageEditor offer={editing} menu={menu} reels={reels} onChange={set} />
+
           {problem && <p className="text-sm text-red-600">{problem}</p>}
 
           <div className="flex justify-end gap-2">
@@ -571,11 +714,11 @@ export default function WebsiteOffers() {
                     {o.status && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[o.status]}`}>{STATUS_LABEL[o.status]}</span>}
                   </div>
                   <p className="text-sm text-stone-500 truncate">
-                    {nice(o.startDate)} – {nice(o.endDate)} · {[o.showBar && "bar", o.showPopup && "pop-up", o.servicePrices?.length > 0 && `${o.servicePrices.length} cheaper price${o.servicePrices.length > 1 ? "s" : ""}`, o.bundles?.length > 0 && `${o.bundles.length} bundle${o.bundles.length > 1 ? "s" : ""}`].filter(Boolean).join(" + ") || "hidden"} · {o.content.headline}
+                    {nice(o.startDate)} – {nice(o.endDate)} · {[o.showBar && "bar", o.showPopup && "pop-up", o.servicePrices?.length > 0 && `${o.servicePrices.length} cheaper price${o.servicePrices.length > 1 ? "s" : ""}`, o.bundles?.length > 0 && `${o.bundles.length} bundle${o.bundles.length > 1 ? "s" : ""}`, o.page?.slug && `page /offers/${o.page.slug}`].filter(Boolean).join(" + ") || "hidden"} · {o.content.headline}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [] })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
+                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [], page: { ...blankPage(), ...(o.page ?? {}), serviceIds: (o.page?.serviceIds ?? []).map(String) } })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button

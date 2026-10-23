@@ -193,6 +193,26 @@ export interface ManageView {
   salon: { phone: string | null; whatsapp: string | null; mapUrl: string | null; address: string | null; openingHours: SiteInfo["openingHours"]; holidays: string[] };
 }
 
+/** An offer's own landing page (D62): /offers/now and /offers/<slug>. */
+export interface OfferPageData {
+  slug: string;
+  /** live = inside its dates today; scheduled = not started; ended = past its last day (India time). */
+  state: "live" | "scheduled" | "ended";
+  theme: "festive" | "rose" | "emerald" | "midnight";
+  eyebrow: string | null;
+  headline: string;
+  offerText: string | null;
+  /** Whole rupees, shown only. Never applied to a booking. */
+  price: number | null;
+  priceNote: string | null;
+  image: string | null;
+  reel: { mediaType: "video" | "image"; mediaUrl: string; thumbnailUrl: string | null } | null;
+  startDate: string;
+  endDate: string;
+  /** What the booking form on the page books. */
+  services: { id: string; name: string }[];
+}
+
 export interface PublicReel {
   id: string;
   mediaType: "video" | "image";

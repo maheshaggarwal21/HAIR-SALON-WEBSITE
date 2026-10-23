@@ -39,6 +39,7 @@ const validateId = require("../middleware/validateId");
 const audit = require("../utils/audit");
 const { isValidDate, salonInstant, salonDate, TIME_RE } = require("../utils/time");
 const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
+const waRequest = require("../utils/waRequest");
 const booking = require("../utils/booking");
 const { approveRequest, closeBooking } = booking;
 const { dayBoard } = require("../utils/board");
@@ -92,6 +93,12 @@ function toStaffView(a) {
     internalNote: a.internalNote,
     utm: a.source?.utm ?? null,
     channel: a.source?.channel ?? null,
+    // WhatsApp-ad requests (D62): the ad tag, and the offer so reception can apply the matching discount by hand.
+    campaign: a.source?.campaign ?? null,
+    offer: a.source?.offerSlug
+      ? { slug: a.source.offerSlug, headline: a.source.offerHeadline ?? null, price: a.source.offerPrice ?? null, priceNote: a.source.offerPriceNote ?? null }
+      : null,
+    unpaid: a.mode === "request" && !(a.deposit?.amount > 0),
     createdAt: a.createdAt,
     // Phase 2: engine bookings hold a time and may carry money.
     requestExpiresAt: a.requestExpiresAt ?? null,
@@ -219,6 +226,10 @@ router.post(
         { returnDocument: "after", runValidators: true }
       ).lean();
       if (!updated) return conflict(res, appt._id);
+
+      // WhatsApp-ad requests (D62) are told at once, with the confirmed time. Request-lite
+      // bookings from the website are still handled by phone, as before. Never throws.
+      if (updated.source?.channel === "wa_ad") await waRequest.sendConfirmed(updated);
 
       await audit.record({
         action: "booking.confirmed",

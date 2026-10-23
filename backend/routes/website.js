@@ -36,6 +36,8 @@ const { isValidDate, TIME_RE, salonDate } = require("../utils/time");
 const Reel = require("../models/Reel");
 const Campaign = require("../models/Campaign");
 const offers = require("../utils/offers");
+const offerPages = require("../utils/offerPages");
+const { PUBLIC_SERVICE_FILTER } = require("../utils/publicCatalogue");
 const { revalidateSite } = require("../utils/revalidate");
 
 const HTTPS_URL = { protocols: ["https"], require_protocol: true };
@@ -602,6 +604,24 @@ const campaignValidators = (partial) => {
     body("bundles.*.serviceIds").isArray({ min: 2, max: 12 }).withMessage("A bundle needs 2 to 12 services"),
     body("bundles.*.serviceIds.*").matches(/^[a-f0-9]{24}$/i).withMessage("Pick a service"),
     body("bundles.*.price").isInt({ min: 1, max: 100000 }).withMessage("Bundle prices are whole rupees").toInt(),
+    // The offer's landing page (D62). All optional; a page exists once it has an address (slug).
+    body("page.slug")
+      .optional({ nullable: true })
+      .isString()
+      .trim()
+      .toLowerCase()
+      .matches(/^[a-z0-9][a-z0-9-]{2,59}$/)
+      .withMessage("The page address is 3 to 60 letters, numbers or dashes")
+      .custom((v) => !offerPages.RESERVED_SLUGS.has(v))
+      .withMessage("That page address is already used by the site"),
+    body("page.headline").optional({ nullable: true }).isString().trim().isLength({ max: 90 }),
+    body("page.offerText").optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
+    body("page.price").optional({ nullable: true }).isInt({ min: 1, max: 1000000 }).withMessage("The page price is whole rupees").toInt(),
+    body("page.priceNote").optional({ nullable: true }).isString().trim().isLength({ max: 60 }),
+    nullableUrl("page.image"),
+    body("page.reelId").optional({ nullable: true }).matches(/^[a-f0-9]{24}$/i).withMessage("Unknown reel"),
+    body("page.serviceIds").optional().isArray({ max: 12 }).withMessage("At most 12 services on an offer page"),
+    body("page.serviceIds.*").matches(/^[a-f0-9]{24}$/i).withMessage("Pick a service"),
   ];
 };
 const CAMPAIGN_PATHS = [
@@ -623,10 +643,28 @@ const CAMPAIGN_PATHS = [
   "sortOrder",
   "servicePrices",
   "bundles",
+  "page.slug",
+  "page.headline",
+  "page.offerText",
+  "page.price",
+  "page.priceNote",
+  "page.image",
+  "page.reelId",
+  "page.serviceIds",
 ];
 /** Offer prices change what the site sells, so these tags go with the usual "campaigns". */
 const OFFER_TAGS = ["campaigns", "services", "packages"];
 const withStatus = (c, today) => ({ ...c.toObject(), status: c.statusOn(today) });
+
+/** An offer page needs services to pre-select, and every one of them must be on the public menu. */
+async function offerPageProblem(c) {
+  if (!c.page?.slug) return null;
+  const ids = (c.page.serviceIds || []).map(String);
+  if (!ids.length) return "Pick at least one service for the offer page";
+  const found = await Service.countDocuments({ ...PUBLIC_SERVICE_FILTER, _id: { $in: ids } });
+  if (found !== new Set(ids).size) return "One of the offer page's services is not on the public menu";
+  return null;
+}
 
 router.get("/campaigns", async (_req, res) => {
   try {
@@ -645,6 +683,8 @@ router.post("/campaigns", campaignValidators(false), async (req, res) => {
     const c = new Campaign({});
     const lines = await offers.prepareOfferLines(req.body);
     applyPaths(c, { ...req.body, servicePrices: lines.servicePrices, bundles: lines.bundles }, CAMPAIGN_PATHS);
+    const pageProblem = await offerPageProblem(c);
+    if (pageProblem) return res.status(400).json({ error: pageProblem });
     await c.save();
     offers.clearOffersCache();
     await audit.record({ action: "website.campaign_changed", req, meta: { campaignId: String(c._id), op: "created", name: c.name } });
@@ -663,6 +703,8 @@ router.patch("/campaigns/:id", validateId, campaignValidators(true), async (req,
     const before = c.toObject();
     const lines = await offers.prepareOfferLines(req.body, before.bundles);
     applyPaths(c, { ...req.body, servicePrices: lines.servicePrices, bundles: lines.bundles }, CAMPAIGN_PATHS);
+    const pageProblem = await offerPageProblem(c);
+    if (pageProblem) return res.status(400).json({ error: pageProblem });
     await c.save();
     offers.clearOffersCache();
     const changes = diffPaths(before, c.toObject(), CAMPAIGN_PATHS);

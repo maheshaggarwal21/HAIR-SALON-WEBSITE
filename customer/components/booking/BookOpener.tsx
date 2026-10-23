@@ -25,9 +25,11 @@ export function BookOpener() {
   const pkg = params.get("package");
   if (pkg && SLUG.test(pkg)) preset.packageSlug = pkg;
   const service = params.get("service");
+  // /book?src=wa shows the unpaid WhatsApp request form instead (D62); the paid sheet stays shut.
+  const waMode = params.get("src") === "wa";
 
   useEffect(() => {
-    if (opened.current || !formEnabled) return;
+    if (waMode || opened.current || !formEnabled) return;
     opened.current = true;
     (async () => {
       const p = { ...preset };
@@ -49,6 +51,8 @@ export function BookOpener() {
     // Runs once, on landing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formEnabled]);
+
+  if (waMode) return null;
 
   return (
     <div className="mt-8">
