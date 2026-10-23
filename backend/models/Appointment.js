@@ -123,8 +123,11 @@ const appointmentSchema = new mongoose.Schema(
     requestedWindow: {
       date: { type: String, default: null }, // "YYYY-MM-DD"
       window: { type: String, enum: [...WINDOWS, null], default: null },
-      /** WhatsApp-ad requests (D62) ask for a specific start time, IST "HH:mm". Staff can change it when confirming. */
-      time: { type: String, default: null },
+      /**
+       * WhatsApp-ad requests (D62) ask for a specific start time, IST "HH:mm". Staff can change it when confirming.
+       * No default on purpose: bookings that do not use it must keep exactly the shape they always had.
+       */
+      time: { type: String },
     },
     /** The artist the customer would like, if any. A wish, not an assignment. */
     preferredArtistId: { type: mongoose.Schema.Types.ObjectId, ref: "Artist", default: null },
@@ -182,12 +185,12 @@ const appointmentSchema = new mongoose.Schema(
       channel: { type: String, enum: CHANNELS, required: true },
       utm: { type: utmSchema, default: null },
       /** Short tag from the ad link (?c=karwa), lower case. Shown to staff next to the source. */
-      campaign: { type: String, default: null, maxlength: 40 },
+      campaign: { type: String, maxlength: 40 },
       /** Offer landing page this request came from (D62), with what it said at the time, so the desk can apply the matching discount by hand. */
-      offerSlug: { type: String, default: null, maxlength: 60 },
-      offerHeadline: { type: String, default: null, maxlength: 90 },
-      offerPrice: { type: Number, default: null },
-      offerPriceNote: { type: String, default: null, maxlength: 60 },
+      offerSlug: { type: String, maxlength: 60 },
+      offerHeadline: { type: String, maxlength: 90 },
+      offerPrice: { type: Number },
+      offerPriceNote: { type: String, maxlength: 60 },
       campaignId: { type: mongoose.Schema.Types.ObjectId, default: null },
       promoCode: { type: String, default: null },
     },
