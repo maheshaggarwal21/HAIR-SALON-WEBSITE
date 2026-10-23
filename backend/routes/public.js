@@ -651,6 +651,9 @@ router.post("/requests", rejectUnknownFields, requestIpLimit, requestValidators,
 // ─── Phase 2: slot engine (T2.5–T2.8) ───────────────────────────────────────
 // Shares this router's connectDB middleware and its early mount (D16).
 router.use(require("./publicBooking"));
+// Offer landing pages and WhatsApp-ad requests (D62). Unpaid requests; the paid booking above is unchanged.
+router.use(require("./publicOfferPages"));
+router.use(require("./publicWaRequest"));
 
 module.exports = router;
 module.exports.dateProblem = dateProblem;

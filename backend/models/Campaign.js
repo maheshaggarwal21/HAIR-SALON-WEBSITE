@@ -89,9 +89,32 @@ const campaignSchema = new mongoose.Schema(
     bundles: { type: [bundleSchema], default: [] },
     /** Lower shows first when two offers overlap. */
     sortOrder: { type: Number, default: 0 },
+    /**
+     * Optional landing page for this offer (D62): /offers/<slug>, and /offers/now while the
+     * offer's own dates contain today (IST). Shares the offer's start and end dates and its
+     * active switch; has its own words, picture and the services the booking form pre-selects.
+     * The price here is shown, never applied: reception gives any discount by hand.
+     */
+    page: {
+      slug: { type: String, default: null, match: /^[a-z0-9][a-z0-9-]{2,59}$/ },
+      headline: { type: String, trim: true, maxlength: 90, default: null },
+      offerText: { type: String, trim: true, maxlength: 500, default: null },
+      /** Whole rupees, display only. */
+      price: { type: Number, default: null, min: 1, max: 1000000, validate: { validator: (v) => v == null || Number.isInteger(v), message: "Prices are whole rupees" } },
+      /** Words beside the price, e.g. "for both" or "per person". */
+      priceNote: { type: String, trim: true, maxlength: 60, default: null },
+      image: { type: String, default: null },
+      /** A synced Instagram reel to play instead of the picture. */
+      reelId: { type: mongoose.Schema.Types.ObjectId, ref: "Reel", default: null },
+      /** What the booking form on the page pre-selects (and books). */
+      serviceIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }], default: [] },
+    },
   },
   { timestamps: true }
 );
+
+// One landing page per address.
+campaignSchema.index({ "page.slug": 1 }, { unique: true, partialFilterExpression: { "page.slug": { $type: "string" } } });
 
 campaignSchema.pre("validate", function () {
   if (this.startDate && this.endDate && this.endDate < this.startDate) {

@@ -43,7 +43,8 @@ const STATUSES = [
   "no_show",
 ];
 const MODES = ["instant", "request"];
-const CHANNELS = ["web", "desk", "phone", "whatsapp", "walkin"];
+/** "wa_ad": a request made from a WhatsApp ad link, unpaid until the salon confirms it (D62). */
+const CHANNELS = ["web", "desk", "phone", "whatsapp", "walkin", "wa_ad"];
 const WINDOWS = ["morning", "afternoon", "evening"];
 const DEPOSIT_STATUSES = ["none", "pending", "paid", "refunded", "partially_refunded", "forfeited", "applied"];
 const REFUND_STATUSES = ["none", "pending", "processing", "processed", "failed"];
@@ -122,6 +123,8 @@ const appointmentSchema = new mongoose.Schema(
     requestedWindow: {
       date: { type: String, default: null }, // "YYYY-MM-DD"
       window: { type: String, enum: [...WINDOWS, null], default: null },
+      /** WhatsApp-ad requests (D62) ask for a specific start time, IST "HH:mm". Staff can change it when confirming. */
+      time: { type: String, default: null },
     },
     /** The artist the customer would like, if any. A wish, not an assignment. */
     preferredArtistId: { type: mongoose.Schema.Types.ObjectId, ref: "Artist", default: null },
@@ -178,6 +181,13 @@ const appointmentSchema = new mongoose.Schema(
     source: {
       channel: { type: String, enum: CHANNELS, required: true },
       utm: { type: utmSchema, default: null },
+      /** Short tag from the ad link (?c=karwa), lower case. Shown to staff next to the source. */
+      campaign: { type: String, default: null, maxlength: 40 },
+      /** Offer landing page this request came from (D62), with what it said at the time, so the desk can apply the matching discount by hand. */
+      offerSlug: { type: String, default: null, maxlength: 60 },
+      offerHeadline: { type: String, default: null, maxlength: 90 },
+      offerPrice: { type: Number, default: null },
+      offerPriceNote: { type: String, default: null, maxlength: 60 },
       campaignId: { type: mongoose.Schema.Types.ObjectId, default: null },
       promoCode: { type: String, default: null },
     },

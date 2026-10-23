@@ -30,9 +30,11 @@ const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 function requestAlertText(appt) {
   const items = appt.guests.flatMap((g) => g.items);
   const lines = [
-    `🆕 Website request ${appt.ref}`,
+    `🆕 ${appt.source?.channel === "wa_ad" ? "WhatsApp ad" : "Website"} request ${appt.ref}`,
     `${appt.name} · ${appt.contact}`,
-    `${formatDate(appt.requestedWindow.date)}, ${WINDOW_LABEL[appt.requestedWindow.window] || appt.requestedWindow.window}`,
+    appt.requestedWindow.time
+      ? `${formatDate(appt.requestedWindow.date)}, ${appt.requestedWindow.time}`
+      : `${formatDate(appt.requestedWindow.date)}, ${WINDOW_LABEL[appt.requestedWindow.window] || appt.requestedWindow.window}`,
     ...items.map((i) => `• ${i.name} — ${rupees(i.publicPrice)}`),
     `Total ${rupees(appt.pricing.total)}`,
   ];
@@ -40,6 +42,8 @@ function requestAlertText(appt) {
   if (appt.notes) lines.push(`Note: ${appt.notes}`);
   const utm = appt.source?.utm;
   if (utm?.campaign || utm?.source) lines.push(`From: ${[utm.source, utm.campaign].filter(Boolean).join(" / ")}`);
+  if (appt.source?.offerSlug) lines.push(`Offer: ${appt.source.offerHeadline || appt.source.offerSlug} (apply it at billing; nothing is discounted yet)`);
+  if (appt.source?.channel === "wa_ad") lines.push("Unpaid request from a WhatsApp ad.");
   lines.push("", "Confirm a time in the staff app → Requests.");
   return lines.join("\n");
 }

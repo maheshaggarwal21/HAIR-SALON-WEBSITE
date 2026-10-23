@@ -836,7 +836,9 @@ async function closeBooking(id, { from, to, side = "salon", reason = null, by = 
 
   // Engine and phone bookings get a WhatsApp; request-lite ones are handled by phone as before.
   const engineBooking = updated.startAt && (updated.deposit?.amount || updated.requestExpiresAt || updated.source?.channel !== "web");
-  if (notifyCustomer && engineBooking && updated.source?.channel !== "walkin" && ["cancelled", "declined", "expired"].includes(to)) {
+  // A WhatsApp-ad request (D62) has no time held yet, but the customer asked on WhatsApp, so a decline is answered there.
+  const waDeclined = updated.source?.channel === "wa_ad" && to === "declined";
+  if (notifyCustomer && (engineBooking || waDeclined) && updated.source?.channel !== "walkin" && ["cancelled", "declined", "expired"].includes(to)) {
     await notify({
       key: `${updated._id}:${to}`,
       type: to === "cancelled" ? "booking_cancelled" : "booking_declined",
