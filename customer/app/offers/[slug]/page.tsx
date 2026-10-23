@@ -12,6 +12,16 @@ import { Suspense } from "react";
 import { getOfferPage, getSite } from "@/lib/api";
 import { OfferPageView } from "@/components/offers/OfferPageView";
 
+/**
+ * Cache Components needs at least one example address to build this page with, because the
+ * site-wide offer pop-up reads the page address. Offers are added by the owner at any time, so
+ * there is no list to build from: "offer" is a stand-in that 404s (the same trick as
+ * /services/[slug]). Every real offer page renders on its first visit and is then cached.
+ */
+export function generateStaticParams() {
+  return [{ slug: "offer" }];
+}
+
 export async function generateMetadata({ params }: PageProps<"/offers/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const o = await getOfferPage(slug);
