@@ -168,6 +168,23 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 
 ---
 
+## WhatsApp request booking and offer pages (D62) — branch `feat/wa-request-booking`
+
+Unpaid booking REQUESTS from WhatsApp ads and offer pages. Does not touch Checkout, deposits or the paid booking sheet.
+
+| ID | Task | Acceptance |
+|---|---|---|
+| W1 | [~] `/book?src=wa&c=<tag>&p=<phone>&service=<slug>`: service, day and time, name and phone (prefilled, editable). No payment, no OTP. `POST /api/public/requests/wa` creates `{mode: request, status: requested, source.channel: wa_ad}` with the campaign tag and sends the existing `request_received` template | `test/wa-request.test.js` (21 tests); browser-checked; **real WhatsApp send not tried** |
+| W2 | [~] Spam controls: hidden honeypot, 10 per IP per hour and 3 per phone per day (Mongo-backed), phone normalising and exact-slot de-duplication, refuse past / too-soon / closed / off-grid / too-late-for-the-services times | Tests above |
+| W3 | [~] Staff Requests page: "Requested (unpaid)" section with source and campaign tag; Confirm (time editable) sends `booking_confirmed`, Decline sends `booking_declined`. Website request-lite bookings are unchanged (still by phone) | Tests above; `tsc` clean |
+| W4 | [~] Confirmed unpaid bookings get the 24 h and 2 h reminders from the existing `bookings-tick` cron (it already covers any `confirmed` booking with a start time) | Test: unpaid confirmed booking gets both |
+| W5 | [~] Owner-editable Offer page (Website → Offers): address, headline, text, price and note, picture or reel, services, dates and active switch come from the offer. `/offers/now` shows the offer whose dates contain today (India time); two overlapping: the one that ends sooner; none: kind "no offer" page with the normal booking link. `/offers/<slug>` works directly | Tests above; browser-checked |
+| W6 | [~] The appointment records `offerSlug`, headline, price and note plus the campaign tag; the list shows the offer so reception applies the matching discount BY HAND. No discount is ever applied automatically | Test: total is the menu price, `discount` 0 |
+| W7 | [ ] Real-device check: Instagram in-app browser and a mid-range Android; the `request_received` / `booking_confirmed` / `booking_declined` WhatsApps arrive; Turnstile is deliberately NOT used on this form (no OTP, friction costs bookings), so watch the first week of requests for spam | Manual |
+| W8 | [ ] Marketing consent on this form is NOT asked (requesting a time is not agreeing to promotions); add the unticked checkbox only if the owner wants offers sent later | Owner decision |
+
+---
+
 ## Backlog (not scheduled)
 
 - Colour processing time (artist free while colour develops).
@@ -229,3 +246,4 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 | 19 Oct 2026 | T0.3 / D53 | Owner's signed menu (WhatsApp sheet, 91 services) → `data/website-menu.csv` + `config/menuGroups.js` (17 groups) + M7 `npm run migrate:m7` (website fields, creates 13 new services, hides the rest, never touches billing prices). `/services`: one grid, full price lists, search matches options. Live dry run: 91 rows, 78 updated + 13 new, 0 problems, 15 billing prices differ (left). 214 backend tests green. Waiting on go-ahead to apply |
 | 19 Oct 2026 | K1 | Contact changed: WhatsApp + calls 9814830307; map pin https://www.google.com/maps?q=30.366743,76.402412 (SiteSettings defaults, JSON-LD geo). Live values are set in Website Settings. |
 | 22 Oct 2026 | C1 / D60 | Counter UPI payments built on `feat/counter-payments` (not merged): QR tablet display (server-priced sessions, webhook branch, reference-pending visits with backfill, pairing), "UPI (QR)" labels, whole-rupee split cash, Fix Numbers "Missing payment reference". Card-at-counter unchanged. Discount logging and cash close were built and removed at the owner's request. Follow-ups C4–C7; C4 is the top priority |
+| 23 Oct 2026 | W1–W6 / D62 | WhatsApp request booking and offer landing pages built on `feat/wa-request-booking` (not merged): unpaid `wa_ad` requests with campaign tag and offer, confirm/decline WhatsApps, reminders via the existing cron, owner-editable offer pages, `/offers/now` and `/offers/<slug>`, `/book?src=wa`. Paid flow untouched. Real WhatsApp and phone testing still to do (W7) |

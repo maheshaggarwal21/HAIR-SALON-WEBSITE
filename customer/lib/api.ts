@@ -20,7 +20,7 @@
  */
 
 import { cacheLife, cacheTag } from "next/cache";
-import type { PublicArtist, PublicCampaign, PublicPackage, PublicReel, PublicReviews, ServiceCard, SiteInfo } from "./types";
+import type { OfferPageData, PublicArtist, PublicCampaign, PublicPackage, PublicReel, PublicReviews, ServiceCard, SiteInfo } from "./types";
 
 /** Retry soon after a failed read, but stay prerenderable (see above). */
 const FAILED = { stale: 30, revalidate: 60, expire: 300 } as const;
@@ -104,6 +104,30 @@ export async function getReels(): Promise<PublicReel[] | null> {
   if (data) cacheLife("hours");
   else cacheLife(FAILED);
   return data?.reels ?? null;
+}
+
+/**
+ * The offer page that is live today (India time), or null. Tagged "campaigns" so an owner's
+ * edit refreshes it at once; the short life is because the answer also changes at midnight IST
+ * by itself, and a page must never show yesterday's offer for hours.
+ */
+export async function getOfferNow(): Promise<{ offer: OfferPageData | null } | null> {
+  "use cache";
+  cacheTag("campaigns");
+  const data = await read<{ offer: OfferPageData | null }>("/offer-pages/now");
+  if (data) cacheLife("minutes");
+  else cacheLife(FAILED);
+  return data;
+}
+
+/** One offer page by address, or null when unknown or paused. */
+export async function getOfferPage(slug: string): Promise<OfferPageData | null> {
+  "use cache";
+  cacheTag("campaigns");
+  const data = await read<{ offer: OfferPageData }>(`/offer-pages/${encodeURIComponent(slug)}`);
+  if (data) cacheLife("minutes");
+  else cacheLife(FAILED);
+  return data?.offer ?? null;
 }
 
 export async function getReviews(): Promise<PublicReviews | null> {
