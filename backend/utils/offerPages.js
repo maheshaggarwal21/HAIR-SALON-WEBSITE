@@ -58,7 +58,9 @@ async function toPublic(c, today = salonDate()) {
     offerText: p.offerText ?? null,
     price: p.price ?? null,
     priceNote: p.priceNote ?? null,
-    image: p.image || c.content?.image || null,
+    // The slideshow (D63): the owner's pictures in order; older offers fall back to their one picture or the pop-up poster.
+    images: (p.images?.length ? p.images : [p.image || c.content?.image].filter(Boolean)).slice(0, 5),
+    image: p.images?.[0] || p.image || c.content?.image || null,
     reel: reel ? { mediaType: reel.mediaType, mediaUrl: reel.mediaUrl, thumbnailUrl: reel.thumbnailUrl ?? null } : null,
     startDate: c.startDate,
     endDate: c.endDate,

@@ -37,6 +37,9 @@ const Reel = require("../models/Reel");
 const Campaign = require("../models/Campaign");
 const offers = require("../utils/offers");
 const offerPages = require("../utils/offerPages");
+const posterReader = require("../utils/posterReader");
+const { matchLine } = require("../utils/posterMatch");
+const { hit } = require("../middleware/mongoRateLimit");
 const { PUBLIC_SERVICE_FILTER } = require("../utils/publicCatalogue");
 const { revalidateSite } = require("../utils/revalidate");
 
@@ -619,6 +622,8 @@ const campaignValidators = (partial) => {
     body("page.price").optional({ nullable: true }).isInt({ min: 1, max: 1000000 }).withMessage("The page price is whole rupees").toInt(),
     body("page.priceNote").optional({ nullable: true }).isString().trim().isLength({ max: 60 }),
     nullableUrl("page.image"),
+    body("page.images").optional().isArray({ max: 5 }).withMessage("At most 5 pictures on an offer page"),
+    body("page.images.*").isString().matches(/^https:\/\/\S+$/).isLength({ max: 1000 }).withMessage("Use an https link"),
     body("page.reelId").optional({ nullable: true }).matches(/^[a-f0-9]{24}$/i).withMessage("Unknown reel"),
     body("page.serviceIds").optional().isArray({ max: 12 }).withMessage("At most 12 services on an offer page"),
     body("page.serviceIds.*").matches(/^[a-f0-9]{24}$/i).withMessage("Pick a service"),
@@ -649,6 +654,7 @@ const CAMPAIGN_PATHS = [
   "page.price",
   "page.priceNote",
   "page.image",
+  "page.images",
   "page.reelId",
   "page.serviceIds",
 ];
@@ -676,6 +682,47 @@ router.get("/campaigns", async (_req, res) => {
     return res.status(500).json({ error: "Failed to load offers" });
   }
 });
+
+// ─── Read a poster (D63) ─────────────────────────────────────────────────────
+/**
+ * POST /campaigns/read-poster  { imageUrl }
+ * Reads a picture of an offer poster and returns a DRAFT: each package with its price and its
+ * lines, each line matched to the salon's own menu where that is clear. Saves nothing. The
+ * owner checks and edits every line in the staff app before any bundle exists.
+ * 20 reads per person per day (each is a paid AI call).
+ */
+router.post(
+  "/campaigns/read-poster",
+  [body("imageUrl").isString().matches(/^https:\/\/\S+$/).isLength({ max: 1000 }).withMessage("Upload the poster first")],
+  async (req, res) => {
+    if (firstError(req, res)) return;
+    if (!posterReader.isConfigured()) {
+      return res.status(503).json({ error: "Reading posters isn't set up yet. Ask your developer to add the OpenAI or Claude key. You can still type the bundles in." });
+    }
+    try {
+      const who = String(req.session?.userId || "owner");
+      const allowed = await hit({ name: "poster-read", id: who, windowMs: 24 * 60 * 60 * 1000, max: 20 });
+      if (!allowed.allowed) return res.status(429).json({ error: "You've read 20 posters today. Try again tomorrow, or type the bundles in." });
+
+      const draft = await posterReader.readPoster({ imageUrl: req.body.imageUrl });
+      if (!draft.packages.length) {
+        return res.status(422).json({ error: draft.notes[0] || "I couldn't find any packages on that picture. Try a clearer picture of the poster." });
+      }
+      const menu = await Service.find({ isActive: true, publicPrice: { $ne: null } }, { name: 1, publicName: 1, publicPrice: 1 }).lean();
+      const packages = draft.packages.map((p) => {
+        const lines = p.services.map((line) => matchLine(line, menu));
+        const matched = lines.filter((l) => l.match);
+        return { ...p, lines, separatelyTotal: matched.reduce((n, l) => n + l.match.price, 0) };
+      });
+      await audit.record({ action: "website.poster_read", req, meta: { packages: packages.length, lines: packages.reduce((n, p) => n + p.lines.length, 0) } });
+      return res.json({ title: draft.title, notes: draft.notes, packages });
+    } catch (err) {
+      if (err instanceof posterReader.PosterReaderError) return res.status(err.status).json({ error: err.message });
+      console.error("[website] read-poster error:", err);
+      return res.status(500).json({ error: "Reading the poster didn't work. Type the bundles in instead." });
+    }
+  }
+);
 
 router.post("/campaigns", campaignValidators(false), async (req, res) => {
   if (firstError(req, res)) return;

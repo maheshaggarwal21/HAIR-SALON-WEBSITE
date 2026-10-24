@@ -50,6 +50,7 @@ const ACTIONS = [
   "website.artist_profile_changed",
   "website.reel_changed",
   "website.campaign_changed",
+  "website.poster_read",
   "artist.skills_changed",
   "artist.skills_default_changed",
   "booking.confirmed",

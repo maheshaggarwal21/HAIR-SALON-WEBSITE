@@ -103,8 +103,15 @@ const campaignSchema = new mongoose.Schema(
       price: { type: Number, default: null, min: 1, max: 1000000, validate: { validator: (v) => v == null || Number.isInteger(v), message: "Prices are whole rupees" } },
       /** Words beside the price, e.g. "for both" or "per person". */
       priceNote: { type: String, trim: true, maxlength: 60, default: null },
+      /** The first picture (kept in step with images[0]; older offers only have this one). */
       image: { type: String, default: null },
-      /** A synced Instagram reel to play instead of the picture. */
+      /** Up to 5 pictures or posters, shown as a slideshow on the page, in this order (D63). */
+      images: {
+        type: [String],
+        default: [],
+        validate: { validator: (v) => v.length <= 5 && v.every((u) => typeof u === "string" && /^https:\/\/\S+$/.test(u) && u.length <= 1000), message: "At most 5 pictures, each an https link" },
+      },
+      /** A synced Instagram reel, shown first in the slideshow. */
       reelId: { type: mongoose.Schema.Types.ObjectId, ref: "Reel", default: null },
       /** What the booking form on the page pre-selects (and books). */
       serviceIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }], default: [] },

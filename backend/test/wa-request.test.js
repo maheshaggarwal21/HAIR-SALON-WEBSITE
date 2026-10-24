@@ -314,7 +314,7 @@ test("/offers/<slug> works directly and says if the offer is scheduled or has en
 test("the page shows only public facts: words, price, services; no internal name, no staff data", async () => {
   await make();
   const o = (await page("karwa")).body.offer;
-  assert.deepEqual(Object.keys(o).sort(), ["endDate", "eyebrow", "headline", "image", "offerText", "price", "priceNote", "reel", "services", "slug", "startDate", "state", "theme"]);
+  assert.deepEqual(Object.keys(o).sort(), ["endDate", "eyebrow", "headline", "image", "images", "offerText", "price", "priceNote", "reel", "services", "slug", "startDate", "state", "theme"]);
   assert.deepEqual(o.services, [{ id: String(svc._id), name: "Hair Spa" }]);
   assert.ok(!JSON.stringify(o).includes("Karva Chauth 2026"));
 });
@@ -365,4 +365,30 @@ test("the paid booking's data and rules are untouched: an unpaid wa request hold
   assert.equal(a.deposit.razorpayOrderId, null);
   assert.equal(a.holdExpiresAt, null);
   assert.equal(a.manageTokenHash, null);
+});
+
+// ─── the picture slideshow (D63) ────────────────────────────────────────────
+
+test("an offer page keeps up to 5 pictures in order; a 6th is refused; older single-picture offers still show one", async () => {
+  const pics = [1, 2, 3, 4, 5].map((n) => `https://blob.example/p${n}.jpg`);
+  const made = await make({ page: { slug: "gallery-one", serviceIds: [String(svc._id)], images: pics } });
+  const o = (await page("gallery-one")).body.offer;
+  assert.deepEqual(o.images, pics);
+  assert.equal(o.image, pics[0]);
+
+  const six = await call("POST", "/website/campaigns", offerBody({ name: "Six", page: { slug: "gallery-six", serviceIds: [String(svc._id)], images: [...pics, "https://blob.example/p6.jpg"] } }));
+  assert.equal(six.status, 400);
+  const bad = await call("POST", "/website/campaigns", offerBody({ name: "Bad", page: { slug: "gallery-bad", serviceIds: [String(svc._id)], images: ["javascript:alert(1)"] } }));
+  assert.equal(bad.status, 400);
+
+  // reorder and remove through the editor's save
+  const re = await call("PATCH", `/website/campaigns/${made._id}`, { page: { images: [pics[4], pics[0]] } });
+  assert.equal(re.status, 200);
+  assert.deepEqual((await page("gallery-one")).body.offer.images, [pics[4], pics[0]]);
+
+  // an older offer with only the single picture fields
+  await make({ name: "Old", page: { slug: "old-one", serviceIds: [String(svc._id)], image: "https://blob.example/old.jpg" } });
+  assert.deepEqual((await page("old-one")).body.offer.images, ["https://blob.example/old.jpg"]);
+  await make({ name: "Bare", page: { slug: "bare-one", serviceIds: [String(svc._id)] } });
+  assert.deepEqual((await page("bare-one")).body.offer.images, []);
 });
