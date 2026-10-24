@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { ServiceCard } from "@/components/ui/ServiceCard";
 import { readFirstTouch } from "@/components/UtmCapture";
-import { trackOnce } from "@/lib/pixel";
+import { pixelHeaders, track, trackOnce } from "@/lib/pixel";
 import { Turnstile } from "./Turnstile";
 import { useRequest } from "./RequestContext";
 
@@ -95,6 +95,15 @@ export function RequestSheet({ site, services, artists, packages }: Props) {
       }
     }
   }
+
+  // ── Meta Pixel: a request STARTED (InitiateCheckout), once per open ────────
+  const startedFor = useRef<Date | null>(null);
+  useEffect(() => {
+    if (!isOpen || !openedAt || startedFor.current === openedAt) return;
+    startedFor.current = openedAt;
+    const pkg = preset.packageSlug ? packages.find((p) => p.slug === preset.packageSlug) : null;
+    track("InitiateCheckout", { content_name: pkg?.name ?? "Request" });
+  }, [isOpen, openedAt, preset.packageSlug, packages]);
 
   // ── Focus and scroll lock while open ─────────────────────────────────────
   useEffect(() => {
@@ -216,7 +225,7 @@ export function RequestSheet({ site, services, artists, packages }: Props) {
       const utm = readFirstTouch();
       const res = await fetch("/api/public/requests", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...pixelHeaders() },
         body: JSON.stringify({
           services: extras,
           ...(pkg ? { packageSlug: pkg.slug } : {}),
@@ -242,7 +251,7 @@ export function RequestSheet({ site, services, artists, packages }: Props) {
       }
       setResult(data as RequestResult);
       const r = data as RequestResult;
-      trackOnce("Lead", r.ref, { content_name: r.packageName ?? r.items[0]?.name ?? "Request" });
+      trackOnce("Lead", r.ref, { content_name: r.packageName ?? r.items[0]?.name ?? "Request", value: r.total, currency: "INR" });
     } catch {
       setError("You seem to be offline. Check your connection and try again.");
     } finally {

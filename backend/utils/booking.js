@@ -60,6 +60,7 @@ const { manageToken, hashManageToken } = require("./bookingToken");
 const payments = require("./payments");
 const { notify } = require("./notify");
 const { alertBooking, formatInstant } = require("./bookingAlerts");
+const metaCapi = require("./metaCapi");
 
 const ACTIVE = ["pending_payment", "requested", "confirmed"];
 const PATCH_TEST_VALID_MS = 183 * 24 * 60 * 60 * 1000; // ~6 months (§4.2)
@@ -422,7 +423,7 @@ async function createBooking(o) {
                 },
                 holdExpiresAt: free ? null : holdExpiresAt,
                 requestExpiresAt: settled?.requestExpiresAt ?? null,
-                source: { channel: o.staff?.channel || "web", utm },
+                source: { channel: o.staff?.channel || "web", utm, pixel: o.staff ? null : o.pixel || null },
                 createdBy: o.staff?.byUserId || null,
                 policyVersion: settings.policyVersion,
                 policyAcceptedAt: o.staff ? null : now,
@@ -480,10 +481,15 @@ function manageUrl(appt) {
   return `${base}/booking/${manageToken(appt._id)}`;
 }
 
-/** Customer WhatsApp + owner Telegram once a booking is confirmed or waiting for approval. */
+/**
+ * Customer WhatsApp + owner Telegram once a booking is confirmed or waiting for approval,
+ * and the same moment to Meta's Conversions API (D65: Lead while waiting, Schedule once
+ * confirmed; desk and phone bookings are skipped inside metaCapi).
+ */
 async function afterSettled(appt, _settings) {
   const type = appt.status === "requested" ? "request_received" : "booking_confirmed";
   await Promise.all([
+    metaCapi.send(appt.status === "requested" ? "Lead" : "Schedule", appt),
     notify({
       key: `${appt._id}:${type}`,
       type,

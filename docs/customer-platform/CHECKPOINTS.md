@@ -128,7 +128,7 @@ Existing confirmed bookings remain valid.
 - [ ] Promo and package caps hold under concurrent bookings.
 - [ ] Funnel report revenue per `utm_campaign` reconciles with Visit revenue (± 0).
 - [ ] Rebook nudges go only to opted-in customers; opt-out works from the message.
-- [ ] Meta CAPI events only for consenting customers.
+- [ ] Meta CAPI events carry no name, phone or email (D65), appear in Events Manager → Test events with `META_CAPI_TEST_CODE`, and are shown there as deduplicated with the browser's Lead / Schedule (same event ID).
 - [ ] Accessibility audit: WCAG 2.1 AA issues fixed or logged with dates.
 - [ ] Performance re-audit after content growth; budgets still met.
 

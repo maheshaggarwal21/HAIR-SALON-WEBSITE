@@ -149,7 +149,7 @@ Rollout: women's artists only for the first 2 weeks (Q4), then review CP4 metric
 | T3.4 | [ ] Funnel events + Funnel report by `utm_campaign` with revenue | Report reconciles with Visits revenue |
 | T3.5 | [ ] Rebook nudges (opt-in only) per service interval | Sends only to opted-in customers |
 | T3.6 | [~] Instagram API sync (if Q7 = yes) + token refresh + owner tagging "Book this look" | Token refresh alert tested |
-| T3.7 | [ ] Meta Conversions API `Schedule` event on confirmed bookings (consent-gated) | Event visible in Meta Events Manager test tool |
+| T3.7 | [~] Meta Conversions API Lead + Schedule, deduplicated with the pixel by booking ref; no contact details sent, so no extra consent (D65). Code + tests done; needs `META_PIXEL_ID` + `META_CAPI_TOKEN` on the backend | Event visible in Meta Events Manager test tool |
 | T3.8 | [ ] Weekday "Happy Hour" off-peak offer as a campaign with time windows | Applies only inside the window |
 | T3.9 | [ ] Membership / prepaid wallet design doc (owner decision first) | Doc approved before any build |
 | T3.10 | [ ] Accessibility audit (WCAG 2.1 AA) and performance re-audit | DS §9 and §10 budgets met |

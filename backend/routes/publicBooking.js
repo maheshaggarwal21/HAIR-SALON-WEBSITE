@@ -46,6 +46,7 @@ const bookingToken = require("../utils/bookingToken");
 const otp = require("../utils/otp");
 const payments = require("../utils/payments");
 const booking = require("../utils/booking");
+const metaCapi = require("../utils/metaCapi");
 const { cleanUtm } = require("../utils/utm");
 
 const router = express.Router();
@@ -328,6 +329,8 @@ router.post(
         utm: cleanUtm(b.utm),
         notes: b.notes,
         whatsappOptIn: b.whatsappOptIn === true,
+        // Kept on the booking for the Conversions API event when it settles (D65).
+        pixel: metaCapi.fromRequest(req),
       });
 
       return res.status(201).json({

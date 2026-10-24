@@ -28,7 +28,7 @@ export default async function PrivacyPage() {
           </>
         )}
       </ul>
-      <p>We don&apos;t collect health information, except the date of a colour patch test so we know when you&apos;re clear to colour. We use the Meta (Facebook and Instagram) advertising pixel on this website. It tells Meta which pages you looked at and when you contacted us, sent a request or booked, so we can measure and improve our ads. We don&apos;t send it your name, mobile number or anything you type into our forms. You can block it with your browser&apos;s tracking settings or an ad blocker; the website works the same without it.</p>
+      <p>We don&apos;t collect health information, except the date of a colour patch test so we know when you&apos;re clear to colour. We use the Meta (Facebook and Instagram) advertising pixel on this website. It tells Meta which pages you looked at and when you contacted us, sent a request or booked, so we can measure and improve our ads. Our server also tells Meta when a request or booking is made or confirmed, using the same pixel cookie ids and browser details, so it is counted even when the browser blocks the pixel. We don&apos;t send Meta your name, mobile number or anything you type into our forms. You can block it with your browser&apos;s tracking settings or an ad blocker; the website works the same without it.</p>
 
       <h2>Why we use it</h2>
       <ul>

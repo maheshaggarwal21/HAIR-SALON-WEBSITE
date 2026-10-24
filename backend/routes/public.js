@@ -54,6 +54,7 @@ const { mongoRateLimit, hit } = require("../middleware/mongoRateLimit");
 const { verifyTurnstile } = require("../utils/turnstile");
 const { alertNewRequest } = require("../utils/bookingAlerts");
 const { clientIp } = require("../utils/audit");
+const metaCapi = require("../utils/metaCapi");
 const { salonDate, isValidDate, daysBetween, salonInstant, weekdayKey, addDays } = require("../utils/time");
 
 const router = express.Router();
@@ -624,14 +625,14 @@ router.post("/requests", rejectUnknownFields, requestIpLimit, requestValidators,
       preferredArtistName: preferred ? preferred.publicProfile?.displayName || preferred.name : null,
       pricing: { subtotal, discount, total, packageId: null },
       deposit: { required: false, amount: 0, status: "none" },
-      source: { channel: "web", utm, promoCode: null },
+      source: { channel: "web", utm, promoCode: null, pixel: metaCapi.fromRequest(req) },
       policyVersion: settings.policyVersion,
       notes: b.notes?.trim() || null,
       statusHistory: [{ from: null, to: "requested", at: now, by: "customer" }],
     });
 
-    // Before responding: on Vercel, work after the response may never run.
-    await alertNewRequest(appt);
+    // Before responding: on Vercel, work after the response may never run. Neither call throws.
+    await Promise.all([alertNewRequest(appt), metaCapi.send("Lead", appt, { ip: clientIp(req) })]);
 
     return res.status(201).json({
       ref: appt.ref,
