@@ -99,6 +99,10 @@ function toStaffView(a) {
       ? { slug: a.source.offerSlug, headline: a.source.offerHeadline ?? null, price: a.source.offerPrice ?? null, priceNote: a.source.offerPriceNote ?? null }
       : null,
     unpaid: a.mode === "request" && !(a.deposit?.amount > 0),
+    // The package the customer chose (D64): its name, ONE price and the services as printed on the poster.
+    package: a.source?.offerPackage?.name
+      ? { name: a.source.offerPackage.name, price: a.source.offerPackage.price, services: a.source.offerPackage.services || [], durationMinutes: a.source.offerPackage.durationMinutes ?? null }
+      : null,
     createdAt: a.createdAt,
     // Phase 2: engine bookings hold a time and may carry money.
     requestExpiresAt: a.requestExpiresAt ?? null,
@@ -214,7 +218,10 @@ router.post(
         });
         return plain;
       });
-      const endAt = new Date(cursor);
+      let endAt = new Date(cursor);
+      // A package (D64) takes as long as the owner said, even when only some of its services are on the service list.
+      const pkgMinutes = appt.source?.offerPackage?.durationMinutes;
+      if (pkgMinutes) endAt = new Date(Math.max(endAt.getTime(), startAt.getTime() + pkgMinutes * 60_000));
       const who = actor(req);
 
       const updated = await Appointment.findOneAndUpdate(

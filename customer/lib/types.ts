@@ -193,6 +193,15 @@ export interface ManageView {
   salon: { phone: string | null; whatsapp: string | null; mapUrl: string | null; address: string | null; openingHours: SiteInfo["openingHours"]; holidays: string[] };
 }
 
+/** One package on an offer page, as printed on the poster (D64). */
+export interface OfferPackage {
+  slug: string;
+  name: string;
+  price: number;
+  services: string[];
+  durationMinutes: number;
+}
+
 /** An offer's own landing page (D62): /offers/now and /offers/<slug>. */
 export interface OfferPageData {
   slug: string;
@@ -211,8 +220,10 @@ export interface OfferPageData {
   reel: { mediaType: "video" | "image"; mediaUrl: string; thumbnailUrl: string | null } | null;
   startDate: string;
   endDate: string;
-  /** What the booking form on the page books. */
+  /** What the booking form on the page books (when the page has no packages). */
   services: { id: string; name: string }[];
+  /** The poster's packages (D64): a name, ONE total price and the services listed under it. */
+  packages: OfferPackage[];
 }
 
 export interface PublicReel {

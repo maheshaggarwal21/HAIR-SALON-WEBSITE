@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Megaphone, Pause, Pencil, Play, Plus, Save, Search, Trash2, X } from "lucide-react";
 import MediaInput from "@/components/website/MediaInput";
-import PosterReader from "@/components/website/PosterReader";
+import PosterReader, { type PosterPackage } from "@/components/website/PosterReader";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -60,8 +60,17 @@ interface OfferPage {
   image: string | null;
   /** Up to 5 pictures or posters, shown as a slideshow on the page, in this order (D63). */
   images: string[];
+  /** The poster's packages (D64): name, ONE price, the services listed. The server finds which are on the service list. */
+  packages: PagePackage[];
   reelId: string | null;
   serviceIds: string[];
+}
+interface PagePackage {
+  slug?: string;
+  name: string;
+  price: number | "";
+  services: string[];
+  durationMinutes: number;
 }
 interface ReelRow {
   _id: string;
@@ -69,7 +78,7 @@ interface ReelRow {
   mediaType?: string;
 }
 
-const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, images: [], reelId: null, serviceIds: [] });
+const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, images: [], packages: [], reelId: null, serviceIds: [] });
 const slugify = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const SITE = "https://www.thexpertshair.com";
 const MAX_PICTURES = 5;
@@ -256,14 +265,6 @@ function PricesEditor({ offer, menu, onChange }: { offer: Offer; menu: MenuServi
         <p className="text-sm text-stone-500 mt-1">
           Several services sold together at one lower price. The website lists the bundle with what is in it and the total if booked separately, and the customer books and pays for it in one go.
         </p>
-        <div className="mt-3">
-          <PosterReader
-            menu={menu}
-            onAddBundles={(more) => onChange({ bundles: [...offer.bundles, ...more] })}
-            canAddPicture={offer.page?.slug != null && (offer.page.images?.length ?? 0) < MAX_PICTURES}
-            onAddPicture={(url) => onChange({ page: { ...(offer.page ?? blankPage()), images: [...(offer.page?.images ?? []), url] } })}
-          />
-        </div>
         <div className="mt-3 space-y-3">
           {offer.bundles.map((b, i) => {
             const items = b.serviceIds.map((id) => byId.get(id));
@@ -354,6 +355,64 @@ function AddPicture({ label, onAdd }: { label: string; onAdd: (url: string) => v
   );
 }
 
+const TIMES: [number, string][] = [[60, "About 1 hour"], [90, "About 1½ hours"], [120, "About 2 hours"], [150, "About 2½ hours"], [180, "About 3 hours"], [240, "About 4 hours"], [300, "About 5 hours"], [360, "About 6 hours"]];
+
+/**
+ * The packages on the offer page (D64): as on the poster, a name, ONE total price, and the services
+ * listed under it, one per line. No prices per service and no rule about the menu. Customers
+ * choose one when they ask for a time, and the receptionist sees exactly that package.
+ */
+function PackagesEditor({ packages, onChange, canAddPicture, onAddPicture }: { packages: PagePackage[]; onChange: (p: PagePackage[]) => void; canAddPicture: boolean; onAddPicture: (url: string) => void }) {
+  const set = (i: number, patch: Partial<PagePackage>) => onChange(packages.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const MAX = 8;
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className={labelClass}>Packages on this page (up to {MAX})</label>
+        <p className="text-xs text-stone-500">Like the packages on your poster: a name, one total price, and the services in it. Visitors choose one when they ask for a time.</p>
+      </div>
+      {packages.length < MAX && <PosterReader canAddPicture={canAddPicture} onAddPicture={onAddPicture} onAddPackages={(more: PosterPackage[]) => onChange([...packages, ...more].slice(0, MAX))} />}
+      {packages.map((p, i) => (
+        <div key={p.slug ?? i} className="rounded-xl border border-stone-200 bg-stone-50 p-4 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 basis-48">
+              <label className={labelClass}>Package name</label>
+              <input value={p.name} maxLength={60} onChange={(e) => set(i, { name: e.target.value })} className={inputClass} />
+            </div>
+            <div className="w-36">
+              <label className={labelClass}>Total price (₹)</label>
+              <input value={p.price} inputMode="numeric" onChange={(e) => set(i, { price: e.target.value.replace(/\D/g, "") === "" ? "" : Number(e.target.value.replace(/\D/g, "")) })} className={inputClass} />
+            </div>
+            <div className="w-44">
+              <label className={labelClass}>Time it takes</label>
+              <select value={p.durationMinutes} onChange={(e) => set(i, { durationMinutes: Number(e.target.value) })} className={inputClass}>
+                {!TIMES.some(([m]) => m === p.durationMinutes) && <option value={p.durationMinutes}>{p.durationMinutes} minutes</option>}
+                {TIMES.map(([m, l]) => (
+                  <option key={m} value={m}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="button" aria-label={`Remove ${p.name || "package"}`} onClick={() => onChange(packages.filter((_, j) => j !== i))} className="h-11 w-11 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-white hover:text-red-600">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+          <div>
+            <label className={labelClass}>Services in it (one per line)</label>
+            <textarea value={p.services.join("\n")} onChange={(e) => set(i, { services: e.target.value.split("\n") })} rows={Math.min(14, Math.max(4, p.services.length + 1))} className={`${inputClass} h-auto py-3`} />
+          </div>
+        </div>
+      ))}
+      {packages.length < MAX && (
+        <button type="button" onClick={() => onChange([...packages, { name: "", price: "", services: [""], durationMinutes: 120 }])} className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border border-stone-200 bg-white text-sm font-semibold text-stone-800 hover:bg-stone-50">
+          <Plus className="w-4 h-4" /> Add a package by hand
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** A copy of the list with one item moved from one place to another. */
 function move<T>(list: T[], from: number, to: number): T[] {
   const next = [...list];
@@ -432,6 +491,13 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
             This price is shown on the page and recorded with the request. It is <b>not applied</b> to anything: the receptionist gives the discount by hand when she bills.
           </p>
 
+          <PackagesEditor
+            packages={page.packages}
+            onChange={(packages) => setPage({ packages })}
+            canAddPicture={page.images.length < MAX_PICTURES}
+            onAddPicture={(u) => setPage({ images: [...page.images, u] })}
+          />
+
           <div>
             <label className={labelClass}>Pictures and posters (up to {MAX_PICTURES})</label>
             <p className="text-xs text-stone-500 mb-2">They play as a slideshow at the top of the page, in this order. Visitors can swipe through them.</p>
@@ -472,8 +538,8 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
           </div>
 
           <div>
-            <label className={labelClass}>Services the booking form selects</label>
-            {page.serviceIds.length === 0 && <p className="text-xs text-red-600 mb-2">Add at least one service. The form books exactly these.</p>}
+            <label className={labelClass}>Services the booking form selects {page.packages.length > 0 && "(not used while the page has packages)"}</label>
+            {page.serviceIds.length === 0 && page.packages.length === 0 && <p className="text-xs text-red-600 mb-2">Add at least one service, or add a package above. The form books exactly these.</p>}
             <ul className="space-y-1.5 mb-2">
               {page.serviceIds.map((id) => (
                 <li key={id} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-sm">
@@ -508,7 +574,12 @@ function priceProblem(o: Offer, menu: MenuService[]): string | null {
   }
   if (o.page?.slug !== null && o.page?.slug !== undefined) {
     if (o.page.slug.length < 3) return "The page address needs at least 3 letters or numbers.";
-    if (o.page.serviceIds.length === 0) return "The offer page needs at least one service to pre-select.";
+    for (const k of o.page.packages ?? []) {
+      if (!k.name.trim()) return "Give each package on the offer page a name.";
+      if (!(Number.isInteger(Number(k.price)) && Number(k.price) >= 1)) return `${k.name}: enter the package price in whole rupees.`;
+      if (!k.services.some((x) => x.trim())) return `${k.name}: list at least one service.`;
+    }
+    if (o.page.serviceIds.length === 0 && (o.page.packages ?? []).length === 0) return "The offer page needs a package, or at least one service to pre-select.";
     if (o.page.serviceIds.some((id) => !byId.has(id))) return "A service on the offer page is not on the website menu any more. Remove it.";
   }
   return null;
@@ -790,7 +861,7 @@ export default function WebsiteOffers() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [], page: { ...blankPage(), ...(o.page ?? {}), images: o.page?.images?.length ? o.page.images : o.page?.image ? [o.page.image] : [], serviceIds: (o.page?.serviceIds ?? []).map(String) } })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
+                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [], page: { ...blankPage(), ...(o.page ?? {}), images: o.page?.images?.length ? o.page.images : o.page?.image ? [o.page.image] : [], packages: (o.page?.packages ?? []).map((k) => ({ slug: k.slug, name: k.name, price: k.price, services: k.services ?? [], durationMinutes: k.durationMinutes ?? 120 })), serviceIds: (o.page?.serviceIds ?? []).map(String) } })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button

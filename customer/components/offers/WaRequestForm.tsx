@@ -16,8 +16,8 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { addDays, clock, dayParts, isOpenOn, nowMinutesIST, todayIST, whatsappHref } from "@/lib/format";
-import type { SiteInfo } from "@/lib/types";
+import { addDays, clock, dayParts, isOpenOn, nowMinutesIST, rupees, todayIST, whatsappHref } from "@/lib/format";
+import type { OfferPackage, SiteInfo } from "@/lib/types";
 
 const DAYS_SHOWN = 14;
 const STEP = 30;
@@ -29,6 +29,7 @@ export interface WaPick {
 }
 
 interface Result {
+  package?: { name: string; price: number };
   ref: string;
   date: string;
   time: string;
@@ -57,6 +58,7 @@ export function WaRequestForm({
   campaign: campaignProp,
   offerSlug,
   fixedServices,
+  packages,
   menu,
   initialServiceIds,
   initialPhone,
@@ -69,6 +71,8 @@ export function WaRequestForm({
   offerSlug?: string | null;
   /** Shown as the list being booked (offer pages). */
   fixedServices?: WaPick[];
+  /** The offer's packages (D64): the customer chooses one. Its price and services come from the offer, not from this form. */
+  packages?: OfferPackage[];
   /** /book?src=wa: what the customer may choose from. */
   menu?: WaPick[];
   initialServiceIds?: string[];
@@ -82,6 +86,8 @@ export function WaRequestForm({
     return Array.from({ length: DAYS_SHOWN + 1 }, (_, i) => addDays(today, i)).filter((d) => isOpenOn(site, d));
   }, [site]);
   const [picked, setPicked] = useState<string[]>(initialServiceIds ?? []);
+  const [pkgSlug, setPkgSlug] = useState("");
+  const chosen = packages?.find((p) => p.slug === pkgSlug) ?? null;
   const [date, setDate] = useState<string>("");
   const [time, setTime] = useState("");
   const [name, setName] = useState("");
@@ -91,11 +97,12 @@ export function WaRequestForm({
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
 
-  const times = useMemo(() => (date ? timesFor(site, date, minutesNeeded) : []), [site, date, minutesNeeded]);
+  const needed = chosen ? chosen.durationMinutes : minutesNeeded;
+  const times = useMemo(() => (date ? timesFor(site, date, needed) : []), [site, date, needed]);
   const phoneDigits = phone.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
   const phoneOk = /^[6-9]\d{9}$/.test(phoneDigits);
   const needsPick = !offerSlug && !fixedServices;
-  const ready = Boolean(date && time && name.trim().length >= 2 && phoneOk && (!needsPick || picked.length > 0)) && !sending;
+  const ready = Boolean(date && time && name.trim().length >= 2 && phoneOk && (!needsPick || picked.length > 0) && (!packages?.length || chosen)) && !sending;
 
   async function submit() {
     setSending(true);
@@ -105,7 +112,7 @@ export function WaRequestForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(offerSlug ? { offerSlug } : { services: picked }),
+          ...(offerSlug ? { offerSlug, ...(chosen ? { packageSlug: chosen.slug } : {}) } : { services: picked }),
           ...(campaign ? { campaign } : {}),
           date,
           time,
@@ -134,7 +141,7 @@ export function WaRequestForm({
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">{result.duplicate ? "Already with us" : "Request sent"}</p>
         <h3 className="mt-3 font-serif text-[30px] leading-tight md:text-[38px]">Thank you, {name.trim().split(" ")[0] || "and welcome"}.</h3>
         <p className="mt-3 text-[16px] leading-[1.6]">
-          We have your request for <b>{dayParts(result.date).long}</b> at <b>{clock(result.time)}</b>. It is <b>not booked yet</b>: we will confirm it on WhatsApp.
+          We have your request{result.package ? <> for <b>{result.package.name}</b> ({rupees(result.package.price)})</> : null} for <b>{dayParts(result.date).long}</b> at <b>{clock(result.time)}</b>. It is <b>not booked yet</b>: we will confirm it on WhatsApp.
           Nothing is paid now.
         </p>
         <p className="mt-2 text-[14px] text-ink-muted">
@@ -162,6 +169,33 @@ export function WaRequestForm({
         if (ready) void submit();
       }}
     >
+      {packages && packages.length > 0 && (
+        <fieldset className="min-w-0">
+          <legend className={label}>Choose your package</legend>
+          <div className="mt-2 grid gap-3">
+            {packages.map((p) => {
+              const on = p.slug === pkgSlug;
+              return (
+                <label key={p.slug} className={`block cursor-pointer rounded-[var(--radius-card)] border p-4 transition-colors ${on ? "border-ink bg-ivory-2 ring-1 ring-ink" : "border-line bg-ivory hover:bg-ivory-2"}`}>
+                  <input type="radio" name="package" value={p.slug} checked={on} onChange={() => { setPkgSlug(p.slug); setTime(""); }} className="sr-only" />
+                  <span className="flex items-baseline justify-between gap-4">
+                    <span className="font-serif text-[22px] leading-tight">{p.name}</span>
+                    <span className="tabular text-[22px] font-semibold">{rupees(p.price)}</span>
+                  </span>
+                  <ul className="mt-3 grid gap-x-6 gap-y-1 text-[15px] sm:grid-cols-2">
+                    {p.services.map((n, i) => (
+                      <li key={i}>· {n}</li>
+                    ))}
+                  </ul>
+                  <span className="mt-3 block text-[13px] text-ink-muted">About {p.durationMinutes >= 60 ? `${Math.round((p.durationMinutes / 60) * 2) / 2} ${Math.round((p.durationMinutes / 60) * 2) / 2 === 1 ? "hour" : "hours"}` : `${p.durationMinutes} minutes`}</span>
+                  <span className={`mt-2 inline-block rounded-full px-3 py-1 text-[13px] font-semibold ${on ? "bg-ink text-ivory" : "border border-line text-ink-muted"}`}>{on ? "Selected" : "Tap to choose"}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
       {fixedServices && (
         <div>
           <span className={label}>What you are asking for</span>

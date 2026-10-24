@@ -29,14 +29,15 @@ const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 function requestAlertText(appt) {
   const items = appt.guests.flatMap((g) => g.items);
+  const pkg = appt.source?.offerPackage;
   const lines = [
     `🆕 ${appt.source?.channel === "wa_ad" ? "WhatsApp ad" : "Website"} request ${appt.ref}`,
     `${appt.name} · ${appt.contact}`,
     appt.requestedWindow.time
       ? `${formatDate(appt.requestedWindow.date)}, ${appt.requestedWindow.time}`
       : `${formatDate(appt.requestedWindow.date)}, ${WINDOW_LABEL[appt.requestedWindow.window] || appt.requestedWindow.window}`,
-    ...items.map((i) => `• ${i.name} — ${rupees(i.publicPrice)}`),
-    `Total ${rupees(appt.pricing.total)}`,
+    // A package request (D64) shows the package, its ONE price and the services as printed on the poster.
+    ...(pkg ? [`Package: ${pkg.name} — ${rupees(pkg.price)}`, ...pkg.services.map((n) => `• ${n}`)] : [...items.map((i) => `• ${i.name} — ${rupees(i.publicPrice)}`), `Total ${rupees(appt.pricing.total)}`]),
   ];
   if (appt.preferredArtistName) lines.push(`Prefers: ${appt.preferredArtistName}`);
   if (appt.notes) lines.push(`Note: ${appt.notes}`);

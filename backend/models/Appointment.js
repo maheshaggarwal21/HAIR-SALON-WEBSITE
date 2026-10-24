@@ -191,6 +191,19 @@ const appointmentSchema = new mongoose.Schema(
       offerHeadline: { type: String, maxlength: 90 },
       offerPrice: { type: Number },
       offerPriceNote: { type: String, maxlength: 60 },
+      /** The package the customer asked for (D64): name, its one price and the services listed, copied from the offer at request time. */
+      offerPackage: {
+        type: new mongoose.Schema(
+          {
+            slug: String,
+            name: String,
+            price: Number,
+            services: [String],
+            durationMinutes: Number,
+          },
+          { _id: false }
+        ),
+      },
       campaignId: { type: mongoose.Schema.Types.ObjectId, default: null },
       promoCode: { type: String, default: null },
     },

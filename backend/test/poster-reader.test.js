@@ -87,7 +87,7 @@ beforeEach(async () => {
     mk("Bleach (Face & Neck)", 400), mk("Bleach (Full Body)", 1500), mk("Paragon Facial", 1200), mk("Facial (Basic)", 700),
     mk("Full Arms Wax (Rica)", 600), mk("Full Arms Wax (Honey)", 400), mk("Half Leg Wax (Rica)", 500), mk("Pedicure", 700),
     mk("Head Wash", 200), mk("Blow Dry", 300), mk("Threading (Eyebrows)", 50), mk("Upper Lip Threading", 30), mk("Forehead Threading", 30),
-    mk("Hair Spa", 800), mk("Haircut Women", 500), mk("Manicure", 500), mk("Retired Facial", 900, { isActive: false }), mk("Hidden Price", 100, { publicPrice: null }),
+    mk("Hair Spa", 800), mk("Haircut Women", 500), mk("Manicure", 500), mk("Retired Facial", 900, { isActive: false }), mk("Hot Stone Massage", 100, { publicPrice: null }),
   ]);
 });
 
@@ -102,31 +102,31 @@ test("the poster goes to the model as a link with a fixed answer shape, and the 
   assert.equal(a.output_config.format.schema.additionalProperties, false);
   assert.equal(a.thinking, undefined, "thinking is left on its default");
   assert.equal(r.body.title, "Karva Chauth Special");
-  assert.deepEqual(r.body.packages.map((p) => [p.name, p.price, p.regularPrice, p.lines.length]), [["Package 1", 3500, 7000, 10], ["Package 2", 4500, 9000, 10], ["Package 3", 2500, 5000, 4]]);
+  assert.deepEqual(r.body.packages.map((p) => [p.name, p.price, p.services.length]), [["Package 1", 3500, 10], ["Package 2", 4500, 10], ["Package 3", 2500, 4]]);
+  assert.ok(!JSON.stringify(r.body).match(/regularPrice|separately|"price":\s*\d+,"score"|serviceId/), "no per-service prices, no totals, no ids");
   assert.deepEqual(r.body.notes, ["Threading may be several areas."]);
 });
 
-test("clear lines are pre-matched to the menu; ambiguous or unknown ones are left for the owner, never forced", async () => {
+test("each service is checked by NAME against the service list: found, similar, or not found; no prices anywhere", async () => {
   const r = await post({ imageUrl: "https://blob.example/p.png" });
   const p1 = r.body.packages[0];
-  const by = (line) => p1.lines.find((l) => l.line === line);
-  assert.equal(by("Paragon Facial").match.name, "Paragon Facial");
-  assert.equal(by("Pedicure").match.name, "Pedicure");
-  assert.equal(by("Head Wash").match.name, "Head Wash");
-  assert.equal(by("Blowdry").match.name, "Blow Dry");
-  assert.equal(by("Upperlips").match.name, "Upper Lip Threading");
-  assert.equal(by("Bleach").match, null, "two bleaches on the menu: the owner chooses");
-  assert.ok(by("Bleach").candidates.length >= 2);
-  assert.equal(by("Full Arm Wax").match, null, "Rica or Honey: the owner chooses");
-  assert.ok(by("Full Arm Wax").candidates.every((c) => /wax/i.test(c.name)));
+  const by = (pk, text) => pk.services.find((x) => x.text === text);
+  assert.equal(by(p1, "Paragon Facial").menuName, "Paragon Facial");
+  assert.equal(by(p1, "Pedicure").menuName, "Pedicure");
+  assert.equal(by(p1, "Head Wash").menuName, "Head Wash");
+  assert.equal(by(p1, "Blowdry").menuName, "Blow Dry");
+  assert.equal(by(p1, "Upperlips").menuName, "Upper Lip Threading");
+  assert.equal(by(p1, "Bleach").menuName, null, "two bleaches on the list: not one exact match");
+  assert.deepEqual(by(p1, "Bleach").similar.sort(), ["Bleach (Face & Neck)", "Bleach (Full Body)"]);
+  assert.deepEqual(by(p1, "Full Arm Wax").similar.sort(), ["Full Arms Wax (Honey)", "Full Arms Wax (Rica)"]);
   const p2 = r.body.packages[1];
-  assert.equal(p2.lines.find((l) => l.line === "Kanpeki Facial").match, null, "not on the menu: never forced onto Paragon");
-  assert.equal(p2.lines.find((l) => l.line === "Half Leg Wax (Rica)").match.name, "Half Leg Wax (Rica)");
-  assert.equal(p2.lines.find((l) => l.line === "Hairspa").match.name, "Hair Spa");
-  // only services that are on the website menu can ever be offered
-  const offered = JSON.stringify(r.body);
-  assert.ok(!offered.includes("Retired Facial") && !offered.includes("Hidden Price"));
-  assert.equal(p1.separatelyTotal, p1.lines.filter((l) => l.match).reduce((n, l) => n + l.match.price, 0));
+  assert.deepEqual([by(p2, "Kanpeki Facial").menuName, by(p2, "Kanpeki Facial").similar], [null, []], "not on the list at all: not found, nothing suggested");
+  assert.equal(by(p2, "Half Leg Wax (Rica)").menuName, "Half Leg Wax (Rica)");
+  assert.equal(by(p2, "Hairspa").menuName, "Hair Spa");
+  // inactive services are not on the list
+  assert.ok(!JSON.stringify(r.body).includes("Retired Facial"));
+  // a service with no website price is still on the list: only its name matters
+  assert.equal(by(r.body.packages[0], "Pedicure").menuName, "Pedicure");
 });
 
 test("reading saves nothing and is audited", async () => {
@@ -193,9 +193,9 @@ test("the answer is tidied: whole rupees, sane sizes, junk dropped", async () =>
   assert.equal(r.status, 200);
   assert.equal(r.body.title, "Diwali Offer");
   assert.equal(r.body.packages.length, 12);
-  assert.deepEqual([r.body.packages[0].name, r.body.packages[0].price, r.body.packages[0].regularPrice], ["Package 1", 3000, null]);
-  assert.equal(r.body.packages[0].lines[0].line, "Hair Spa");
-  assert.equal(r.body.packages[0].lines[1].line.length, 80);
+  assert.deepEqual([r.body.packages[0].name, r.body.packages[0].price], ["Package 1", 3000]);
+  assert.equal(r.body.packages[0].services[0].text, "Hair Spa");
+  assert.equal(r.body.packages[0].services[1].text.length, 80);
   assert.ok(r.body.packages.every((p) => p.name !== "Empty"));
   assert.equal(r.body.notes.length, 10);
 });
@@ -244,8 +244,8 @@ test("OpenAI: the poster goes as a link with a strict answer shape, and the answ
   assert.deepEqual(content.find((c) => c.type === "input_image"), { type: "input_image", image_url: "https://blob.example/karwa-poster.png", detail: "high" });
   assert.equal(a.text.format.type, "json_schema");
   assert.equal(a.text.format.strict, true);
-  assert.deepEqual(r.body.packages.map((p) => [p.name, p.price, p.lines.length]), [["Package 1", 3500, 10], ["Package 2", 4500, 10], ["Package 3", 2500, 4]]);
-  assert.equal(r.body.packages[0].lines.find((l) => l.line === "Pedicure").match.name, "Pedicure", "the same menu matching applies");
+  assert.deepEqual(r.body.packages.map((p) => [p.name, p.price, p.services.length]), [["Package 1", 3500, 10], ["Package 2", 4500, 10], ["Package 3", 2500, 4]]);
+  assert.equal(r.body.packages[0].services.find((x) => x.text === "Pedicure").menuName, "Pedicure", "the same name check applies");
   assert.equal(await Campaign.countDocuments(), 0, "reading still saves nothing");
 });
 

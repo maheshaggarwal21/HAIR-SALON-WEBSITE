@@ -625,6 +625,13 @@ const campaignValidators = (partial) => {
     body("page.images").optional().isArray({ max: 5 }).withMessage("At most 5 pictures on an offer page"),
     body("page.images.*").isString().matches(/^https:\/\/\S+$/).isLength({ max: 1000 }).withMessage("Use an https link"),
     body("page.reelId").optional({ nullable: true }).matches(/^[a-f0-9]{24}$/i).withMessage("Unknown reel"),
+    // The poster's packages (D64): name, ONE price, the services listed. Cleaned and given addresses by preparePackages.
+    body("page.packages").optional().isArray({ max: 8 }).withMessage("At most 8 packages on an offer page"),
+    body("page.packages.*.name").isString().trim().isLength({ min: 1, max: 60 }).withMessage("Give each package a name"),
+    body("page.packages.*.price").isInt({ min: 1, max: 1000000 }).withMessage("Package prices are whole rupees").toInt(),
+    body("page.packages.*.services").isArray({ min: 1, max: 30 }).withMessage("List 1 to 30 services in each package"),
+    body("page.packages.*.services.*").isString().trim().isLength({ max: 80 }).withMessage("A service name is at most 80 letters"),
+    body("page.packages.*.durationMinutes").optional({ nullable: true }).isInt({ min: 15, max: 480 }).withMessage("Time needed is 15 to 480 minutes").toInt(),
     body("page.serviceIds").optional().isArray({ max: 12 }).withMessage("At most 12 services on an offer page"),
     body("page.serviceIds.*").matches(/^[a-f0-9]{24}$/i).withMessage("Pick a service"),
   ];
@@ -666,7 +673,7 @@ const withStatus = (c, today) => ({ ...c.toObject(), status: c.statusOn(today) }
 async function offerPageProblem(c) {
   if (!c.page?.slug) return null;
   const ids = (c.page.serviceIds || []).map(String);
-  if (!ids.length) return "Pick at least one service for the offer page";
+  if (!ids.length) return c.page.packages?.length ? null : "Add at least one package, or pick at least one service, for the offer page";
   const found = await Service.countDocuments({ ...PUBLIC_SERVICE_FILTER, _id: { $in: ids } });
   if (found !== new Set(ids).size) return "One of the offer page's services is not on the public menu";
   return null;
@@ -686,9 +693,10 @@ router.get("/campaigns", async (_req, res) => {
 // ─── Read a poster (D63) ─────────────────────────────────────────────────────
 /**
  * POST /campaigns/read-poster  { imageUrl }
- * Reads a picture of an offer poster and returns a DRAFT: each package with its price and its
- * lines, each line matched to the salon's own menu where that is clear. Saves nothing. The
- * owner checks and edits every line in the staff app before any bundle exists.
+ * Reads a picture of an offer poster and returns a DRAFT: each package with its ONE price and the
+ * services listed under it, each service checked by NAME against the service list (found, several
+ * possible, or not found). No per-service prices and no price rules. Saves nothing: the owner
+ * checks and edits everything in the staff app before it goes onto the offer page.
  * 20 reads per person per day (each is a paid AI call).
  */
 router.post(
@@ -708,13 +716,18 @@ router.post(
       if (!draft.packages.length) {
         return res.status(422).json({ error: draft.notes[0] || "I couldn't find any packages on that picture. Try a clearer picture of the poster." });
       }
-      const menu = await Service.find({ isActive: true, publicPrice: { $ne: null } }, { name: 1, publicName: 1, publicPrice: 1 }).lean();
-      const packages = draft.packages.map((p) => {
-        const lines = p.services.map((line) => matchLine(line, menu));
-        const matched = lines.filter((l) => l.match);
-        return { ...p, lines, separatelyTotal: matched.reduce((n, l) => n + l.match.price, 0) };
-      });
-      await audit.record({ action: "website.poster_read", req, meta: { packages: packages.length, lines: packages.reduce((n, p) => n + p.lines.length, 0) } });
+      // Names only (D64): each printed service is checked against the service list. No prices, no totals.
+      const menu = await Service.find({ isActive: true }, { name: 1, publicName: 1, publicPrice: 1 }).lean();
+      const packages = draft.packages.map((p) => ({
+        name: p.name,
+        price: p.price,
+        services: p.services.map((text) => {
+          const m = matchLine(text, menu);
+          // found: this exact service is on the list. similar: other names that contain every word printed.
+          return { text, menuName: m.match?.name ?? null, similar: m.candidates.filter((c) => c.covers && c.name !== m.match?.name).slice(0, 3).map((c) => c.name) };
+        }),
+      }));
+      await audit.record({ action: "website.poster_read", req, meta: { packages: packages.length, lines: packages.reduce((n, p) => n + p.services.length, 0) } });
       return res.json({ title: draft.title, notes: draft.notes, packages });
     } catch (err) {
       if (err instanceof posterReader.PosterReaderError) return res.status(err.status).json({ error: err.message });
@@ -730,6 +743,8 @@ router.post("/campaigns", campaignValidators(false), async (req, res) => {
     const c = new Campaign({});
     const lines = await offers.prepareOfferLines(req.body);
     applyPaths(c, { ...req.body, servicePrices: lines.servicePrices, bundles: lines.bundles }, CAMPAIGN_PATHS);
+    const pkgs = await offerPages.preparePackages(req.body.page?.packages, []);
+    if (pkgs) c.set("page.packages", pkgs);
     const pageProblem = await offerPageProblem(c);
     if (pageProblem) return res.status(400).json({ error: pageProblem });
     await c.save();
@@ -750,6 +765,8 @@ router.patch("/campaigns/:id", validateId, campaignValidators(true), async (req,
     const before = c.toObject();
     const lines = await offers.prepareOfferLines(req.body, before.bundles);
     applyPaths(c, { ...req.body, servicePrices: lines.servicePrices, bundles: lines.bundles }, CAMPAIGN_PATHS);
+    const pkgs = await offerPages.preparePackages(req.body.page?.packages, before.page?.packages || []);
+    if (pkgs) c.set("page.packages", pkgs);
     const pageProblem = await offerPageProblem(c);
     if (pageProblem) return res.status(400).json({ error: pageProblem });
     await c.save();

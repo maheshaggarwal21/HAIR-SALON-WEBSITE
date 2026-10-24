@@ -1,130 +1,75 @@
 /**
  * @file PosterReader.tsx
- * @description "Fill the bundles from a poster" (D63), inside an offer's Bundles section.
+ * @description "Fill the packages from a poster" (D64), inside an offer's page section.
  *
- * The owner uploads a photo of the offer poster, presses "Read the poster", and gets a DRAFT:
- * each package with its price and every service line, each line already matched to the salon's
- * own menu where that is clear. She checks and changes anything, then adds the packages as
- * bundles. Nothing is saved by reading, and nothing reaches the website until she saves the
- * offer; the server checks every price against the real menu again at that moment.
+ * The owner uploads a photo of the offer poster and presses "Read the poster". She gets a DRAFT:
+ * each package with its ONE total price and the services listed under it, exactly as printed.
+ * Each service is only CHECKED BY NAME against the salon's service list (found / similar names /
+ * not found); there are no per-service prices and no price rules, because poster packages often
+ * include services that are not on the list. She edits anything, then adds the packages to the
+ * offer page. Nothing is saved by reading; it is saved when she saves the offer.
  *
- * The reading is done by an AI model on the server (a few rupees per poster) and can be wrong
- * about a word or a price: that is why every line stays editable and unsure lines are marked.
+ * The reading is done by an AI model on the server (a few rupees or less per poster) and can get
+ * a word or a price wrong, which is why every name and price stays editable.
  */
 
-import { useMemo, useState } from "react";
-import { Loader2, ScanText, Search, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Check, HelpCircle, Loader2, ScanText, Trash2 } from "lucide-react";
 import MediaInput from "@/components/website/MediaInput";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
-export interface PosterMenuService {
-  _id: string;
+export interface PosterPackage {
   name: string;
-  publicName?: string | null;
-  publicPrice?: number | null;
-  audience?: string | null;
-}
-export interface PosterBundle {
-  name: string;
-  description: string | null;
-  audience: "her" | "him" | "unisex";
-  serviceIds: string[];
   price: number;
+  services: string[];
+  durationMinutes: number;
 }
 
-interface Cand {
-  serviceId: string;
-  name: string;
-  price: number;
-  score: number;
-}
-interface DraftLine {
-  line: string;
-  match: Cand | null;
-  candidates: Cand[];
+interface DraftService {
+  text: string;
+  menuName: string | null;
+  similar: string[];
 }
 interface DraftPackage {
   name: string;
   price: number | null;
-  regularPrice: number | null;
-  lines: DraftLine[];
-}
-interface Draft {
-  title: string | null;
-  notes: string[];
-  packages: DraftPackage[];
+  services: DraftService[];
 }
 
-/** What the owner can still change before adding. `serviceId` null = skip this line. */
+/** One package while the owner is checking it. `checked` keeps the name check only for lines she has not edited. */
 interface EditLine {
   text: string;
-  serviceId: string | null;
-  candidates: Cand[];
-  unsure: boolean;
+  menuName: string | null;
+  similar: string[];
+  edited: boolean;
 }
 interface EditPackage {
   use: boolean;
   name: string;
   price: string;
-  regularPrice: number | null;
   lines: EditLine[];
 }
 
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
-const nameOf = (s: PosterMenuService) => s.publicName || s.name;
 const field =
   "w-full h-10 px-3 rounded-lg border border-stone-200 bg-white text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400";
 
-function toEditable(d: Draft, title: string | null): EditPackage[] {
-  return d.packages.map((p) => ({
+function toEditable(packages: DraftPackage[], title: string | null): EditPackage[] {
+  return packages.map((p) => ({
     use: true,
     name: (title && `${title} · ${p.name}`.length <= 60 ? `${title} · ${p.name}` : p.name).slice(0, 60),
     price: p.price != null ? String(p.price) : "",
-    regularPrice: p.regularPrice,
-    lines: p.lines.map((l) => ({ text: l.line, serviceId: l.match?.serviceId ?? null, candidates: l.candidates, unsure: !l.match })),
+    lines: p.services.map((s) => ({ text: s.text, menuName: s.menuName, similar: s.similar, edited: false })),
   }));
 }
 
-/** A tiny menu search for a line the reader could not match on its own. */
-function LineSearch({ menu, onPick }: { menu: PosterMenuService[]; onPick: (id: string) => void }) {
-  const [q, setQ] = useState("");
-  const hits = q.trim() ? menu.filter((s) => `${s.name} ${s.publicName ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6) : [];
-  return (
-    <div className="relative">
-      <Search className="absolute left-3 top-3 w-4 h-4 text-stone-400" />
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your menu…" className={`${field} pl-9`} />
-      {hits.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full rounded-xl border border-stone-200 bg-white shadow-lg overflow-hidden">
-          {hits.map((s) => (
-            <li key={s._id}>
-              <button
-                type="button"
-                onClick={() => {
-                  onPick(s._id);
-                  setQ("");
-                }}
-                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm text-left hover:bg-amber-50"
-              >
-                <span>{nameOf(s)}</span>
-                <span className="text-stone-500 tabular-nums">{rupees(s.publicPrice ?? 0)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 export default function PosterReader({
-  menu,
-  onAddBundles,
+  onAddPackages,
   onAddPicture,
   canAddPicture,
 }: {
-  menu: PosterMenuService[];
-  onAddBundles: (bundles: PosterBundle[]) => void;
+  onAddPackages: (packages: PosterPackage[]) => void;
   /** Lets the owner also use the poster as one of the offer page's pictures. */
   onAddPicture?: (url: string) => void;
   canAddPicture?: boolean;
@@ -135,7 +80,6 @@ export default function PosterReader({
   const [draft, setDraft] = useState<{ title: string | null; notes: string[] } | null>(null);
   const [pkgs, setPkgs] = useState<EditPackage[]>([]);
   const [done, setDone] = useState("");
-  const byId = useMemo(() => new Map(menu.map((s) => [s._id, s])), [menu]);
 
   async function read() {
     if (!url) return;
@@ -153,7 +97,7 @@ export default function PosterReader({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Reading the poster didn't work.");
       setDraft({ title: data.title ?? null, notes: data.notes ?? [] });
-      setPkgs(toEditable(data as Draft, data.title ?? null));
+      setPkgs(toEditable(data.packages as DraftPackage[], data.title ?? null));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reading the poster didn't work.");
     } finally {
@@ -167,33 +111,20 @@ export default function PosterReader({
 
   /** Why a package cannot be added yet, in plain words; null when it can. */
   function problem(p: EditPackage): string | null {
-    const ids = [...new Set(p.lines.map((l) => l.serviceId).filter((x): x is string => Boolean(x)))];
-    if (ids.length < 2) return "Pick at least two services from your menu.";
-    const total = ids.reduce((n, id) => n + (byId.get(id)?.publicPrice ?? 0), 0);
+    if (!p.name.trim()) return "Give the package a name.";
     const price = Number(p.price);
-    if (!p.name.trim()) return "Give the bundle a name.";
-    if (!Number.isInteger(price) || price < 1) return "Enter the bundle price in whole rupees.";
-    if (price >= total) return `The bundle price must be below ${rupees(total)}, what these services cost separately on your menu.`;
+    if (!Number.isInteger(price) || price < 1) return "Enter the package price in whole rupees.";
+    if (!p.lines.some((l) => l.text.trim())) return "List at least one service.";
     return null;
   }
 
   function add() {
-    const out: PosterBundle[] = [];
-    for (const p of pkgs) {
-      if (!p.use || problem(p)) continue;
-      const ids = [...new Set(p.lines.map((l) => l.serviceId).filter((x): x is string => Boolean(x)))];
-      const aud = new Set(ids.map((id) => byId.get(id)?.audience));
-      out.push({
-        name: p.name.trim().slice(0, 60),
-        description: null,
-        audience: aud.size === 1 && (aud.has("her") || aud.has("him")) ? ([...aud][0] as "her" | "him") : "unisex",
-        serviceIds: ids,
-        price: Number(p.price),
-      });
-    }
+    const out: PosterPackage[] = pkgs
+      .filter((p) => p.use && !problem(p))
+      .map((p) => ({ name: p.name.trim().slice(0, 60), price: Number(p.price), services: p.lines.map((l) => l.text.trim()).filter(Boolean), durationMinutes: 120 }));
     if (!out.length) return;
-    onAddBundles(out);
-    setDone(`${out.length} bundle${out.length > 1 ? "s" : ""} added below. Check them, then save the offer.`);
+    onAddPackages(out);
+    setDone(`${out.length} package${out.length > 1 ? "s" : ""} added below. Check the time each one takes, then save the offer.`);
     setDraft(null);
     setPkgs([]);
   }
@@ -204,10 +135,10 @@ export default function PosterReader({
     <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 space-y-4">
       <div>
         <h4 className="font-semibold text-stone-900 flex items-center gap-2">
-          <ScanText className="w-4 h-4 text-amber-600" /> Fill the bundles from a poster
+          <ScanText className="w-4 h-4 text-amber-600" /> Fill the packages from a poster
         </h4>
         <p className="mt-1 text-xs text-stone-600">
-          Upload your offer poster. We read the packages, prices and services off it and match them to your menu. You check every line before anything is added.
+          Upload your offer poster. We read each package's total price and the services listed under it. Each service name is checked against your service list. You check everything before it is added.
         </p>
       </div>
 
@@ -222,7 +153,7 @@ export default function PosterReader({
         >
           {reading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanText className="w-4 h-4" />} {reading ? "Reading…" : "Read the poster"}
         </button>
-        {reading && <span className="text-xs text-stone-500">This takes about 15 to 30 seconds.</span>}
+        {reading && <span className="text-xs text-stone-500">This takes about 10 to 30 seconds.</span>}
         {url && !reading && canAddPicture && onAddPicture && (
           <button type="button" onClick={() => onAddPicture(url)} className="text-xs font-semibold text-stone-700 underline">
             Also use this poster as an offer page picture
@@ -235,7 +166,11 @@ export default function PosterReader({
 
       {draft && (
         <div className="space-y-4">
-          {draft.title && <p className="text-sm text-stone-700">Poster title: <b>{draft.title}</b></p>}
+          {draft.title && (
+            <p className="text-sm text-stone-700">
+              Poster title: <b>{draft.title}</b>
+            </p>
+          )}
           {draft.notes.length > 0 && (
             <ul className="rounded-lg border border-amber-300 bg-amber-100/60 px-3 py-2 text-xs text-amber-900 space-y-1">
               {draft.notes.map((n, i) => (
@@ -244,13 +179,11 @@ export default function PosterReader({
             </ul>
           )}
           <p className="text-xs text-stone-600">
-            Lines marked <span className="font-semibold text-amber-700">check</span> could not be matched for sure. Choose the right service, or remove the line. Poster prices are copied as printed.
+            Each service shows whether its name is on your service list. <b>Not on your list is fine</b>: the package keeps it as printed. Fix any wording or price the reader got wrong.
           </p>
 
           {pkgs.map((p, i) => {
             const msg = p.use ? problem(p) : null;
-            const ids = [...new Set(p.lines.map((l) => l.serviceId).filter((x): x is string => Boolean(x)))];
-            const total = ids.reduce((n, id) => n + (byId.get(id)?.publicPrice ?? 0), 0);
             return (
               <div key={i} className={`rounded-xl border bg-white p-4 space-y-3 ${p.use ? "border-stone-200" : "border-stone-100 opacity-60"}`}>
                 <div className="flex flex-wrap items-end gap-3">
@@ -258,52 +191,45 @@ export default function PosterReader({
                     <input type="checkbox" checked={p.use} onChange={(e) => setPkg(i, { use: e.target.checked })} /> Add
                   </label>
                   <div className="flex-1 basis-48">
-                    <label className="block text-xs font-semibold text-stone-600 mb-1 uppercase tracking-wider">Bundle name</label>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1 uppercase tracking-wider">Package name</label>
                     <input value={p.name} maxLength={60} onChange={(e) => setPkg(i, { name: e.target.value })} className={field} />
                   </div>
-                  <div className="w-36">
-                    <label className="block text-xs font-semibold text-stone-600 mb-1 uppercase tracking-wider">Price (₹)</label>
+                  <div className="w-40">
+                    <label className="block text-xs font-semibold text-stone-600 mb-1 uppercase tracking-wider">Total price (₹)</label>
                     <input value={p.price} inputMode="numeric" onChange={(e) => setPkg(i, { price: e.target.value.replace(/\D/g, "") })} className={field} />
                   </div>
                 </div>
-                {p.regularPrice != null && <p className="text-xs text-stone-500">The poster shows {rupees(p.regularPrice)} crossed out. We don't copy that: the website works out the saving from your menu prices.</p>}
 
                 <ul className="space-y-2">
                   {p.lines.map((l, k) => (
-                    <li key={k} className="grid gap-2 sm:grid-cols-[minmax(0,12rem)_1fr_auto] sm:items-center">
-                      <span className="text-sm text-stone-600 italic">
-                        “{l.text}” {l.unsure && !l.serviceId && <span className="not-italic text-xs font-semibold text-amber-700">check</span>}
+                    <li key={k} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)_auto] sm:items-center">
+                      <input
+                        value={l.text}
+                        maxLength={80}
+                        onChange={(e) => setLine(i, k, { text: e.target.value, edited: true })}
+                        aria-label={`Service ${k + 1}`}
+                        className={field}
+                      />
+                      <span className="text-xs">
+                        {l.edited ? (
+                          <span className="text-stone-400">Checked when you save</span>
+                        ) : l.menuName ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700">
+                            <Check className="w-3.5 h-3.5" /> On your list{l.menuName.toLowerCase().replace(/[^a-z0-9]/g, "") !== l.text.toLowerCase().replace(/[^a-z0-9]/g, "") ? `: ${l.menuName}` : ""}
+                          </span>
+                        ) : l.similar.length ? (
+                          <span className="inline-flex items-start gap-1 text-amber-700">
+                            <HelpCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> Several on your list: {l.similar.join(", ")}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-stone-500">
+                            <HelpCircle className="w-3.5 h-3.5" /> Not on your list (kept as printed)
+                          </span>
+                        )}
                       </span>
-                      {l.serviceId ? (
-                        <select value={l.serviceId} onChange={(e) => setLine(i, k, { serviceId: e.target.value || null })} className={field}>
-                          {l.serviceId && !l.candidates.some((c) => c.serviceId === l.serviceId) && byId.get(l.serviceId) && (
-                            <option value={l.serviceId}>{nameOf(byId.get(l.serviceId)!)} — {rupees(byId.get(l.serviceId)!.publicPrice ?? 0)}</option>
-                          )}
-                          {l.candidates.map((c) => (
-                            <option key={c.serviceId} value={c.serviceId}>
-                              {c.name} — {rupees(c.price)}
-                            </option>
-                          ))}
-                          <option value="">Not on my menu (leave out)</option>
-                        </select>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {l.candidates.length > 0 && (
-                            <select value="" onChange={(e) => setLine(i, k, { serviceId: e.target.value || null })} className={field}>
-                              <option value="">Choose the right service…</option>
-                              {l.candidates.map((c) => (
-                                <option key={c.serviceId} value={c.serviceId}>
-                                  {c.name} — {rupees(c.price)}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                          <LineSearch menu={menu} onPick={(id) => setLine(i, k, { serviceId: id })} />
-                        </div>
-                      )}
                       <button
                         type="button"
-                        aria-label="Leave this line out"
+                        aria-label="Leave this service out"
                         onClick={() => setPkg(i, { lines: p.lines.filter((_, m) => m !== k) })}
                         className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-red-600"
                       >
@@ -315,7 +241,7 @@ export default function PosterReader({
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2 text-sm">
                   <span className="text-stone-600">
-                    {ids.length} service{ids.length === 1 ? "" : "s"} · {rupees(total)} separately on your menu
+                    {p.lines.filter((l) => l.text.trim()).length} services · {p.price ? rupees(Number(p.price)) : "no price yet"}
                   </span>
                   {msg && <span className="text-red-600 text-xs">{msg}</span>}
                 </div>
@@ -329,9 +255,9 @@ export default function PosterReader({
             onClick={add}
             className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40 hover:bg-emerald-700"
           >
-            Add {addable} bundle{addable === 1 ? "" : "s"} to this offer
+            Add {addable} package{addable === 1 ? "" : "s"} to the offer page
           </button>
-          <p className="text-xs text-stone-500">Nothing is saved yet. The bundles appear below for one last look, and the offer is saved when you press Save.</p>
+          <p className="text-xs text-stone-500">Nothing is saved yet. The packages appear below for one last look, and the offer is saved when you press Save.</p>
         </div>
       )}
     </div>

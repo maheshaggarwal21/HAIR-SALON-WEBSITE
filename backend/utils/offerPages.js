@@ -16,6 +16,8 @@ const Service = require("../models/Service");
 const Reel = require("../models/Reel");
 const { PUBLIC_SERVICE_FILTER } = require("./publicCatalogue");
 const { salonDate } = require("./time");
+const { matchLine } = require("./posterMatch");
+const { OfferError } = require("./offers");
 
 /** Addresses that are already pages or routes on the site. */
 const RESERVED_SLUGS = new Set(["now", "karva-chauth", "api", "new", "edit"]);
@@ -31,6 +33,47 @@ async function findNow(today = salonDate()) {
 
 /** The page at /offers/<slug> (active offers only), or null. */
 const findBySlug = (slug) => (typeof slug === "string" ? Campaign.findOne({ ...withPage, "page.slug": slug }).lean() : null);
+
+const slugifyName = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "package";
+
+/**
+ * Clean the packages the owner typed (or the poster reader drafted), D64.
+ *  - names, one whole-rupee price, the services as listed (duplicates and blanks dropped);
+ *  - a stable address (slug) per package, kept when the package already existed;
+ *  - `serviceIds`: only the lines the SERVER recognises on the service list (a clear name match),
+ *    so a booking can appear on the Today board. Anything else stays as printed text. A browser
+ *    can never set these.
+ * No rule ties the price to the menu: poster packages include services that are not on it.
+ * @param {any[]} input
+ * @param {{slug: string}[]} existing  this offer's saved packages, so addresses stay put
+ */
+async function preparePackages(input, existing = []) {
+  if (!Array.isArray(input)) return undefined;
+  const menu = await Service.find({ isActive: true }, { name: 1, publicName: 1, publicPrice: 1 }).lean();
+  const kept = new Set(existing.map((p) => p.slug));
+  const used = new Set();
+  return input.map((p) => {
+    const name = String(p?.name ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!name) throw new OfferError("Give each package a name.");
+    const price = Number(p?.price);
+    if (!Number.isInteger(price) || price < 1 || price > 1_000_000) throw new OfferError(`${name}: enter the package price in whole rupees.`);
+    const seen = new Set();
+    const services = (Array.isArray(p?.services) ? p.services : [])
+      .map((x) => String(x ?? "").replace(/\s+/g, " ").trim().slice(0, 80))
+      .filter((x) => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()));
+    if (!services.length) throw new OfferError(`${name}: list at least one service.`);
+    if (services.length > 30) throw new OfferError(`${name}: at most 30 services.`);
+    let slug = p?.slug && kept.has(p.slug) && !used.has(p.slug) ? p.slug : null;
+    for (let n = 1; !slug; n++) {
+      const candidate = `${slugifyName(name)}${n > 1 ? `-${n}` : ""}`;
+      if (!used.has(candidate) && !kept.has(candidate)) slug = candidate;
+    }
+    used.add(slug);
+    const serviceIds = [...new Set(services.map((line) => matchLine(line, menu).match?.serviceId).filter(Boolean))];
+    const mins = Math.round(Number(p?.durationMinutes) || 120);
+    return { slug, name, price, services, durationMinutes: Math.min(480, Math.max(15, mins)), serviceIds };
+  });
+}
 
 /** "live" while today is inside the dates, "scheduled" before, "ended" after. */
 function stateOn(c, today = salonDate()) {
@@ -65,8 +108,10 @@ async function toPublic(c, today = salonDate()) {
     startDate: c.startDate,
     endDate: c.endDate,
     // Order the owner chose; services no longer on the menu drop out quietly.
+    // The poster's packages (D64): name, ONE price, the service names and how long it takes. No ids, no per-service prices.
+    packages: (p.packages || []).map((k) => ({ slug: k.slug, name: k.name, price: k.price, services: k.services, durationMinutes: k.durationMinutes ?? 120 })),
     services: (p.serviceIds || []).map((id) => byId.get(String(id))).filter(Boolean).map((s) => ({ id: String(s._id), name: s.publicName || s.name })),
   };
 }
 
-module.exports = { RESERVED_SLUGS, findNow, findBySlug, stateOn, toPublic };
+module.exports = { RESERVED_SLUGS, findNow, findBySlug, stateOn, toPublic, preparePackages };
