@@ -29,7 +29,7 @@ import { ArrowLeft, CalendarPlus, MapPin, Minus, Plus, X } from "lucide-react";
 import type { ManageView, PublicArtist, PublicBooking, PublicPackage, Quote, ServiceCard as Card, SiteInfo, Slot } from "@/lib/types";
 import { addDays, dayParts, isOpenOn, rupees, todayIST, whatsappHref } from "@/lib/format";
 import { TURNSTILE_SITE_KEY } from "@/lib/config";
-import { trackOnce } from "@/lib/pixel";
+import { pixelHeaders, track, trackOnce } from "@/lib/pixel";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { ServiceCard } from "@/components/ui/ServiceCard";
@@ -88,7 +88,7 @@ function loadCheckout(): Promise<boolean> {
 }
 
 async function post<T>(path: string, body: unknown): Promise<{ ok: boolean; status: number; data: T & { error?: string; message?: string; alternatives?: { startAt: string; time: string }[] } }> {
-  const res = await fetch(`/api/public${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(`/api/public${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...pixelHeaders() }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
@@ -143,10 +143,20 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
   // still has to approve is a Lead; only a confirmed one is a Schedule.
   useEffect(() => {
     if (!done) return;
-    const params = { content_name: done.guests[0]?.items[0]?.name ?? "Booking" };
+    const params = { content_name: done.guests[0]?.items[0]?.name ?? "Booking", value: done.pricing.total, currency: "INR" };
     if (done.status === "confirmed") trackOnce("Schedule", done.ref, params);
     else if (done.status === "requested") trackOnce("Lead", done.ref, params);
   }, [done]);
+
+  // Meta Pixel: opening the sheet is the booking STARTED (InitiateCheckout), once per open.
+  // Whoever gets this far and never books is the retargeting audience.
+  const startedFor = useRef<Date | null>(null);
+  useEffect(() => {
+    if (!isOpen || !openedAt || startedFor.current === openedAt) return;
+    startedFor.current = openedAt;
+    const pkg = preset.packageSlug ? packages.find((p) => p.slug === preset.packageSlug) : null;
+    track("InitiateCheckout", { content_name: pkg?.name ?? "Booking" });
+  }, [isOpen, openedAt, preset.packageSlug, packages]);
   /** Wall clock for the hold countdown and resend timer, set from the interval (never read during render). */
   const [nowMs, setNowMs] = useState(0);
   const [appliedOpen, setAppliedOpen] = useState<Date | null>(null);

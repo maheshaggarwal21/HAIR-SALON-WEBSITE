@@ -206,6 +206,21 @@ const appointmentSchema = new mongoose.Schema(
       },
       campaignId: { type: mongoose.Schema.Types.ObjectId, default: null },
       promoCode: { type: String, default: null },
+      /**
+       * Meta Pixel ids and user agent from the customer's browser when they booked (D65), so a
+       * confirmation later (webhook, staff) can still be sent to the Conversions API. No IP, no contact details.
+       */
+      pixel: {
+        type: new mongoose.Schema(
+          {
+            fbp: { type: String, maxlength: 120 },
+            fbc: { type: String, maxlength: 600 },
+            userAgent: { type: String, maxlength: 400 },
+          },
+          { _id: false }
+        ),
+        default: null,
+      },
     },
 
     policyVersion: { type: String, default: null },

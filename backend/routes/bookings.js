@@ -40,6 +40,7 @@ const audit = require("../utils/audit");
 const { isValidDate, salonInstant, salonDate, TIME_RE } = require("../utils/time");
 const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
 const waRequest = require("../utils/waRequest");
+const metaCapi = require("../utils/metaCapi");
 const { manageToken, hashManageToken } = require("../utils/bookingToken");
 const booking = require("../utils/booking");
 const { approveRequest, closeBooking } = booking;
@@ -238,7 +239,12 @@ router.post(
 
       // WhatsApp-ad requests (D62) are told at once, with the confirmed time. Request-lite
       // bookings from the website are still handled by phone, as before. Never throws.
-      if (updated.source?.channel === "wa_ad") await waRequest.sendConfirmed(updated);
+      // A website or offer-page request turning into a booking is the conversion the ads paid
+      // for: Schedule to Meta, matched on the ids saved with the request (D65). Never throws.
+      await Promise.all([
+        updated.source?.channel === "wa_ad" ? waRequest.sendConfirmed(updated) : null,
+        metaCapi.send("Schedule", updated),
+      ]);
 
       await audit.record({
         action: "booking.confirmed",

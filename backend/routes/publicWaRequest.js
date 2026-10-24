@@ -36,6 +36,8 @@ const wa = require("../utils/waRequest");
 const mongoose = require("mongoose");
 const { manageToken, hashManageToken } = require("../utils/bookingToken");
 const offerPages = require("../utils/offerPages");
+const metaCapi = require("../utils/metaCapi");
+const { clientIp } = require("../utils/audit");
 
 const router = express.Router();
 const HOUR = 60 * 60 * 1000;
@@ -214,13 +216,14 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
         offerPriceNote: offerDoc ? offerDoc.page.priceNote ?? null : null,
         ...(pkg ? { offerPackage: { slug: pkg.slug, name: pkg.name, price: pkg.price, services: [...pkg.services], durationMinutes: pkg.durationMinutes || 120 } } : {}),
         promoCode: null,
+        pixel: metaCapi.fromRequest(req),
       },
       policyVersion: settings.policyVersion,
       statusHistory: [{ from: null, to: "requested", at: now, by: "customer" }],
     });
 
-    // Before responding: on Vercel, work after the response may never run. Neither call throws.
-    await Promise.all([wa.sendReceived(appt), alertNewRequest(appt)]);
+    // Before responding: on Vercel, work after the response may never run. None of these throws.
+    await Promise.all([wa.sendReceived(appt), alertNewRequest(appt), metaCapi.send("Lead", appt, { ip: clientIp(req) })]);
 
     return res.status(201).json(summary(appt));
   } catch (err) {

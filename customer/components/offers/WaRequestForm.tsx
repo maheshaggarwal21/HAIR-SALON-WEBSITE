@@ -13,12 +13,12 @@
  * WhatsApp, and nothing is paid now.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { addDays, clock, dayParts, isOpenOn, nowMinutesIST, rupees, todayIST, whatsappHref } from "@/lib/format";
 import type { OfferPackage, SiteInfo } from "@/lib/types";
-import { trackOnce } from "@/lib/pixel";
+import { pixelHeaders, track, trackOnce } from "@/lib/pixel";
 
 const DAYS_SHOWN = 14;
 const STEP = 30;
@@ -105,13 +105,22 @@ export function WaRequestForm({
   const needsPick = !offerSlug && !fixedServices;
   const ready = Boolean(date && time && name.trim().length >= 2 && phoneOk && (!needsPick || picked.length > 0) && (!packages?.length || chosen)) && !sending;
 
+  // Meta Pixel: the first touch inside the form is the request STARTED (InitiateCheckout),
+  // once per page view. Pointer as well as focus: Safari doesn't focus a tapped button.
+  const started = useRef(false);
+  function markStarted() {
+    if (started.current) return;
+    started.current = true;
+    track("InitiateCheckout", { content_name: offerSlug ?? campaign ?? "Request" });
+  }
+
   async function submit() {
     setSending(true);
     setError("");
     try {
       const res = await fetch("/api/public/requests/wa", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...pixelHeaders() },
         body: JSON.stringify({
           ...(offerSlug ? { offerSlug, ...(chosen ? { packageSlug: chosen.slug } : {}) } : { services: picked }),
           ...(campaign ? { campaign } : {}),
@@ -129,7 +138,9 @@ export function WaRequestForm({
       }
       setResult(data as Result);
       const r = data as Result;
-      if (!r.duplicate) trackOnce("Lead", r.ref, { content_name: r.package?.name ?? r.items[0]?.name ?? "Request" });
+      if (!r.duplicate) {
+        trackOnce("Lead", r.ref, { content_name: r.package?.name ?? r.items[0]?.name ?? "Request", ...(r.package ? { value: r.package.price, currency: "INR" } : {}) });
+      }
     } catch {
       setError("You seem to be offline. Check your connection and try again.");
     } finally {
@@ -167,6 +178,8 @@ export function WaRequestForm({
   return (
     <form
       className="space-y-6"
+      onPointerDownCapture={markStarted}
+      onFocusCapture={markStarted}
       onSubmit={(e) => {
         e.preventDefault();
         if (ready) void submit();
