@@ -15,6 +15,7 @@ import { getService, getServices, getSite } from "@/lib/api";
 import { OptionPicker } from "@/components/menu/OptionPicker";
 import { Faq } from "@/components/site/Faq";
 import { ServiceJsonLd } from "@/components/site/JsonLd";
+import { ViewContent } from "@/components/analytics/ViewContent";
 import { getServiceImage } from "@/lib/serviceImages";
 
 /** Cache Components needs at least one param; "menu" is a stand-in that 404s. */
@@ -45,6 +46,7 @@ async function ServiceDetail({ params }: { params: PageProps<"/services/[slug]">
   return (
     <>
       <ServiceJsonLd service={service} />
+      <ViewContent name={service.name} />
       <nav aria-label="Breadcrumb" className="text-[14px] text-ink-muted">
         <Link href="/services" className="hover:text-ink">
           Services

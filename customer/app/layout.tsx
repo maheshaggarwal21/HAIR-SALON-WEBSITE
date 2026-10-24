@@ -4,6 +4,7 @@ import "./globals.css";
 import { getArtists, getCampaigns, getPackages, getServices, getSite } from "@/lib/api";
 import { SITE_URL, INDEXABLE } from "@/lib/site";
 import { UtmCapture } from "@/components/UtmCapture";
+import { MetaPixel } from "@/components/analytics/MetaPixel";
 import { RequestProvider } from "@/components/request/RequestContext";
 import { RequestSheet } from "@/components/request/RequestSheet";
 import { BookingSheet } from "@/components/request/BookingSheet";
@@ -94,6 +95,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <OfferPopup data={campaigns} />
         </RequestProvider>
         <UtmCapture />
+        <MetaPixel />
         <RevealObserver />
       </body>
     </html>

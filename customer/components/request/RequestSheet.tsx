@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { ServiceCard } from "@/components/ui/ServiceCard";
 import { readFirstTouch } from "@/components/UtmCapture";
+import { trackOnce } from "@/lib/pixel";
 import { Turnstile } from "./Turnstile";
 import { useRequest } from "./RequestContext";
 
@@ -240,6 +241,8 @@ export function RequestSheet({ site, services, artists, packages }: Props) {
         return;
       }
       setResult(data as RequestResult);
+      const r = data as RequestResult;
+      trackOnce("Lead", r.ref, { content_name: r.packageName ?? r.items[0]?.name ?? "Request" });
     } catch {
       setError("You seem to be offline. Check your connection and try again.");
     } finally {
