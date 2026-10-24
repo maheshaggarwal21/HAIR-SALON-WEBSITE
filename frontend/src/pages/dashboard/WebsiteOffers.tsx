@@ -80,6 +80,12 @@ interface ReelRow {
 
 const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, images: [], packages: [], reelId: null, serviceIds: [] });
 const slugify = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+/**
+ * While the owner is TYPING an address a dash at the end must stay (she is about to type the next
+ * word); it is only trimmed when she leaves the box and when the offer is saved.
+ */
+const typingAddress = (v: string) => v.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+/, "").slice(0, 60);
+const finishedAddress = (v: string | null) => (v == null ? null : v.replace(/-+$/, ""));
 const SITE = "https://www.thexpertshair.com";
 /** Addresses the website already uses for its own pages. The server refuses them too (utils/offerPages.js). */
 const RESERVED_ADDRESSES = ["now", "karva-chauth", "api", "new", "edit"];
@@ -465,7 +471,7 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
             <label className={labelClass}>Page address</label>
             <div className="flex items-center gap-2">
               <span className="text-sm text-stone-500 whitespace-nowrap">…/offers/</span>
-              <input value={slug} onChange={(e) => setPage({ slug: slugify(e.target.value) })} maxLength={60} placeholder="karwa" className={inputClass} />
+              <input value={slug} onChange={(e) => setPage({ slug: typingAddress(e.target.value) })} onBlur={() => setPage({ slug: finishedAddress(page.slug) })} maxLength={60} placeholder="karwa" className={inputClass} />
             </div>
             {slug.length >= 3 && (
               <div className="mt-2 space-y-0.5 text-xs text-stone-500">
@@ -628,7 +634,7 @@ export default function WebsiteOffers() {
     setError("");
     try {
       const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page } = editing;
-      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, image: page.images?.[0] ?? null } };
+      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, slug: finishedAddress(page.slug), image: page.images?.[0] ?? null } };
       await api(_id ? `/campaigns/${_id}` : "/campaigns", { method: _id ? "PATCH" : "POST", body: JSON.stringify(body) });
       setEditing(null);
       await load();
