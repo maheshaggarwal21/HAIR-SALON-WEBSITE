@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarPlus, MapPin } from "lucide-react";
 import type { ManageView, Slot } from "@/lib/types";
-import { addDays, dayParts, isOpenOn, rupees, todayIST, whatsappHref } from "@/lib/format";
+import { addDays, clock, dayParts, isOpenOn, rupees, todayIST, whatsappHref } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { Turnstile } from "@/components/request/Turnstile";
 import { TURNSTILE_SITE_KEY } from "@/lib/config";
@@ -33,6 +33,8 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
+/** "Sunday, 25 October" from a calendar day (YYYY-MM-DD), without any timezone shift. */
+const fmtAsked = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Kolkata" });
 
 async function post<T>(path: string, body: unknown) {
@@ -150,6 +152,11 @@ export function ManageBooking({ token }: { token: string }) {
           <>
             {fmtDay(b.startAt)}, <em className="text-gold">{fmtTime(b.startAt)}</em>.
           </>
+        ) : b.requestedFor ? (
+          <>
+            {fmtAsked(b.requestedFor.date)}
+            {b.requestedFor.time ? <>, <em className="text-gold">{clock(b.requestedFor.time)}</em></> : null}.
+          </>
         ) : (
           "Your booking."
         )}
@@ -158,6 +165,21 @@ export function ManageBooking({ token }: { token: string }) {
       {note && <p className="mt-3 text-[15px] font-medium text-success" aria-live="polite">{note}</p>}
 
       <div className="mt-6 rounded-[var(--radius-card)] border border-line bg-ivory-2 p-4 text-[15px]">
+        {b.package ? (
+          <div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-serif text-[20px]">{b.package.name}</span>
+              <span className="tabular text-[18px] font-semibold">{rupees(b.package.price)}</span>
+            </div>
+            <ul className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+              {b.package.services.map((n, i) => (
+                <li key={i}>· {n}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-ink-muted">Nothing is paid online. You pay at the salon after your visit.</p>
+          </div>
+        ) : (
+        <>
         <ul className="space-y-1">
           {b.guests.flatMap((g) =>
             g.items.map((i, idx) => (
@@ -176,6 +198,8 @@ export function ManageBooking({ token }: { token: string }) {
           <span>Total</span>
           <span className="tabular">{rupees(b.pricing.total)}</span>
         </div>
+        </>
+        )}
         {b.payment.amount > 0 && !["none", "pending"].includes(b.payment.status) && (
           <div className="mt-1 flex justify-between text-ink-muted">
             <span>Paid online</span>

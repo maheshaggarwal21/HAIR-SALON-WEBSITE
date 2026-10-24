@@ -40,6 +40,7 @@ const audit = require("../utils/audit");
 const { isValidDate, salonInstant, salonDate, TIME_RE } = require("../utils/time");
 const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
 const waRequest = require("../utils/waRequest");
+const { manageToken, hashManageToken } = require("../utils/bookingToken");
 const booking = require("../utils/booking");
 const { approveRequest, closeBooking } = booking;
 const { dayBoard } = require("../utils/board");
@@ -227,7 +228,8 @@ router.post(
       const updated = await Appointment.findOneAndUpdate(
         { _id: appt._id, status: "requested" },
         {
-          $set: { status: "confirmed", startAt, endAt, guests },
+          // An older WhatsApp-ad request made before its link was wired up gets its link key now (D62).
+          $set: { status: "confirmed", startAt, endAt, guests, ...(appt.source?.channel === "wa_ad" && !appt.manageTokenHash ? { manageTokenHash: hashManageToken(manageToken(appt._id)) } : {}) },
           $push: { statusHistory: { from: "requested", to: "confirmed", at: new Date(), ...who } },
         },
         { returnDocument: "after", runValidators: true }
