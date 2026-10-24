@@ -16,7 +16,7 @@
 const Appointment = require("../models/Appointment");
 const { notify } = require("./notify");
 const { manageUrl } = require("./booking");
-const { formatInstant } = require("./bookingAlerts");
+const { formatInstant, peopleSuffix } = require("./bookingAlerts");
 const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
 const { salonDate, salonInstant, weekdayKey, daysBetween, isValidDate } = require("./time");
 
@@ -78,9 +78,6 @@ function windowFor(settings, time) {
 }
 
 const minutesFor = (items) => items.reduce((n, i) => n + (i.durationMin || DEFAULT_DURATION_MINUTES), 0);
-
-/** " (3 people)" for a group, "" for one person: the group is said INSIDE the existing "when" text (D67). */
-const peopleSuffix = (appt) => ((appt.guests || []).length > 1 ? ` (${appt.guests.length} people)` : "");
 
 /** "Sat, 25 Oct, 11:00 am" for the time the customer asked for. */
 const requestedWhen = (appt) =>

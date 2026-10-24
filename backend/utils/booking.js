@@ -59,7 +59,7 @@ const { BLOCK_MS, blocksFor, salonDate, salonInstant, daysBetween, addWorkingMin
 const { manageToken, hashManageToken } = require("./bookingToken");
 const payments = require("./payments");
 const { notify } = require("./notify");
-const { alertBooking, formatInstant } = require("./bookingAlerts");
+const { alertBooking, formatInstant, whenText } = require("./bookingAlerts");
 const metaCapi = require("./metaCapi");
 
 const ACTIVE = ["pending_payment", "requested", "confirmed"];
@@ -74,11 +74,13 @@ const ALTERNATIVES = 3;
  * Normalise the guests the browser sent and load their services. A package's
  * items go to the first guest, ahead of anything they added (D20).
  *
- * @param {{name?: string, for?: "her"|"him", services?: string[]}[]} rawGuests
+ * @param {{name?: string, for?: "her"|"him", services?: string[], artistId?: string|null}[]} rawGuests
+ *        `artistId` is the artist this person asked for (D67), already resolved by the caller
  * @param {object|null} pkg   a live package from livePackages()
- * @returns {Promise<{guests: {key, name, gender, serviceIds}[], services: Map, pkg}>}
+ * @param {{groupMode?: "parallel"|"series"}} [opts]  "series": one artist for everyone, one after another
+ * @returns {Promise<{guests: {key, name, gender, serviceIds, artistId}[], services: Map, pkg, groupMode}>}
  */
-async function prepareSelection(rawGuests, pkg = null) {
+async function prepareSelection(rawGuests, pkg = null, { groupMode = "parallel" } = {}) {
   const pkgIds = pkg ? pkg.items.map((i) => String(i.id)) : [];
   const guests = rawGuests.map((g, idx) => {
     const own = [...new Set((g.services || []).map(String))];
@@ -88,8 +90,13 @@ async function prepareSelection(rawGuests, pkg = null) {
       name: g.name?.trim() || null,
       gender: g.for === "him" ? "male" : g.for === "her" ? "female" : null,
       serviceIds,
+      artistId: g.artistId ? String(g.artistId) : null,
     };
   });
+  const series = groupMode === "series" && guests.length > 1;
+  if (series && new Set(guests.map((g) => g.artistId).filter(Boolean)).size > 1) {
+    throw new BookingError("VALIDATION", "For one artist after another, choose the same artist for everyone, or Any artist.");
+  }
   if (!guests.length || guests.some((g) => !g.serviceIds.length)) {
     throw new BookingError("VALIDATION", "Choose at least one service for each person.");
   }
@@ -97,7 +104,7 @@ async function prepareSelection(rawGuests, pkg = null) {
     guests.flatMap((g) => g.serviceIds),
     { allowPackageOnly: new Set(pkgIds) }
   );
-  return { guests, services, pkg };
+  return { guests, services, pkg, groupMode: series ? "series" : "parallel" };
 }
 
 function hhmm(ms) {
@@ -145,31 +152,44 @@ async function patchTestOkFor(phone, now) {
  * @returns {Promise<{mode, slots: object[], patchTestDelay: boolean, raw: object[]}>}
  */
 /**
- * A group is served in parallel, so each guest needs a different artist. One
- * chosen artist would be demanded for everyone's services and leave no time at
- * all; groups therefore always use "any available" (D46). The booking sheet
- * skips the artist step for groups; this keeps the API honest for anyone else.
+ * The artist for ONE person: the one passed in, else the one named on the selection. A group has no
+ * single artist: each guest names their own (`guest.artistId`), and the engine uses it for the items that
+ * artist can do (D67 supersedes D46, which ignored any named artist for 2+ people).
  */
-const artistForGroup = (selection, artistId) => (selection.guests.length > 1 ? null : artistId || null);
+const singleArtist = (selection, artistId) => (selection.guests.length === 1 ? artistId || selection.guests[0].artistId || null : null);
+
+/** Can ONE artist (online) do every service of every guest? That is what "one after another" needs. */
+function seriesPossible(input) {
+  const items = input.guests.flatMap((g) => g.items);
+  return input.artists.some((a) => items.every((it) => canDo(a, it)));
+}
 
 async function findSlots({ date, selection, artistId: wantedArtist = null, now = new Date(), phone = null, excludeAppointmentId = null }) {
-  const artistId = artistForGroup(selection, wantedArtist);
+  const artistId = singleArtist(selection, wantedArtist);
   const patchTestOk = await patchTestOkFor(phone, now);
+  const groupMode = selection.groupMode || "parallel";
   const { input, mode } = await loadEngineInput({
     date,
     guests: selection.guests,
     services: selection.services,
     artistId,
+    groupMode,
     now,
     patchTestOk,
     excludeAppointmentId,
   });
   const out = availability(input);
+  const group = selection.guests.length > 1;
+  // Side by side found nothing but one artist could do everyone one after another: say so (D67).
+  let hint = null;
+  if (group && groupMode === "parallel" && !out.slots.length && availability({ ...input, groupMode: "series" }).slots.length) hint = "series_available";
   return {
     mode,
     patchTestDelay: out.patchTestDelay,
     slots: out.slots.map((s) => publicSlot(s, selection.services)),
     raw: out.slots,
+    groupMode,
+    ...(group ? { seriesPossible: seriesPossible(input), hint } : {}),
   };
 }
 
@@ -277,7 +297,7 @@ function lockUpdate(lock) {
 async function createBooking(o) {
   const now = o.now || new Date();
   const { selection } = o;
-  o = { ...o, artistId: artistForGroup(selection, o.artistId) };
+  o = { ...o, artistId: singleArtist(selection, o.artistId) };
   const settings = (await SiteSettings.getSingleton()).toObject();
   const wanted = Date.parse(o.startAt);
   if (!Number.isFinite(wanted)) throw new BookingError("VALIDATION", "Pick a time.");
@@ -312,6 +332,7 @@ async function createBooking(o) {
     guests: selection.guests,
     services: selection.services,
     artistId: o.artistId || null,
+    groupMode: selection.groupMode || "parallel",
     now,
     patchTestOk,
     staff: Boolean(o.staff),
@@ -342,6 +363,7 @@ async function createBooking(o) {
       guestKey: g.key,
       name: g.name || (g.key === "g1" ? o.name : null),
       gender: g.gender,
+      preferredArtistId: g.artistId || null,
       items: c.items.map((ci) => {
         const s = selection.services.get(ci.serviceId);
         return {
@@ -411,8 +433,9 @@ async function createBooking(o) {
                 guests,
                 startAt: draft.startAt,
                 endAt: draft.endAt,
-                preferredArtistId: o.artistId || null,
-                preferredArtistName: o.artistId ? guests[0].items.find((i) => String(i.artistId) === String(o.artistId))?.artistName ?? null : null,
+                preferredArtistId: guests[0].preferredArtistId || o.artistId || null,
+                preferredArtistName: (guests[0].preferredArtistId || o.artistId) ? guests[0].items.find((i) => String(i.artistId) === String(guests[0].preferredArtistId || o.artistId))?.artistName ?? null : null,
+                groupMode: groupModeOf(guests),
                 pricing: { subtotal: quote.subtotal, discount: quote.discount, total: quote.total },
                 deposit: {
                   required: !free,
@@ -495,7 +518,7 @@ async function afterSettled(appt, _settings) {
       type,
       to: appt.contact,
       appointmentId: appt._id,
-      params: { name: appt.name, ref: appt.ref, when: formatInstant(appt.startAt), link: manageUrl(appt) },
+      params: { name: appt.name, ref: appt.ref, when: whenText(appt), link: manageUrl(appt) },
     }),
     // The owner hears about website bookings; desk and phone bookings were made in front of staff.
     appt.source?.channel === "web" ? alertBooking(appt, appt.status) : null,
@@ -721,7 +744,7 @@ async function sendReminders(now = new Date()) {
     if (!hasPhone(a)) continue;
     const ahead = new Date(a.startAt).getTime() - t;
     const bookedAhead = new Date(a.startAt).getTime() - new Date(a.createdAt).getTime();
-    const params = { name: a.name, ref: a.ref, when: formatInstant(a.startAt), link: manageUrl(a), map: settings.contact?.mapUrl || "" };
+    const params = { name: a.name, ref: a.ref, when: whenText(a), link: manageUrl(a), map: settings.contact?.mapUrl || "" };
     if (ahead > 3 * HOUR_MS && bookedAhead > 25 * HOUR_MS) {
       const r = await notify({ key: `${a._id}:reminder_24h`, type: "reminder_24h", to: a.contact, appointmentId: a._id, params });
       if (r.status !== "duplicate") out.reminder24h += 1;
@@ -1117,20 +1140,50 @@ async function suggestArtistsForRequest(id, { date, time, now = new Date() }) {
     return { ok: out.every((s) => s.artistId), suggestions: out };
   };
 
+  // One artist for everybody, one after another (D67): who could do it all from `start`, if anyone.
+  const allItems = windows.flatMap((w) => w.items);
+  const totalBlocks = windows.reduce((n, w) => n + w.blocks, 0);
+  const placeSeries = (start) => {
+    const blocks = Array.from({ length: totalBlocks }, (_, k) => start + k * BLOCK_MS);
+    const able = input.artists.filter((a) => allItems.every((it) => canDo(a, it)));
+    const free = able
+      .filter((a) => a.intervals.some((iv) => iv.start <= blocks[0] && blocks[blocks.length - 1] + BLOCK_MS <= iv.end))
+      .filter((a) => blocks.every((b) => !input.locks.has(`${a.id}|${b}`)))
+      .sort((x, y) => Number(y.id === preferred) - Number(x.id === preferred) || x.bookedMinutes - y.bookedMinutes || x.name.localeCompare(y.name));
+    const pick = free[0];
+    if (!pick) return { ok: false, reason: able.length ? `No single artist is free for all ${totalBlocks * 15} minutes at ${hhmm(start)}.` : "No single artist can do everyone's services." };
+    return { ok: true, minutes: totalBlocks * 15, suggestions: windows.map((w) => ({ guestKey: w.guestKey, artistId: pick.id, artistName: names.get(pick.id) || pick.name })) };
+  };
+
   const here = place(startMs);
   if (here.ok) return { ok: true, suggestions: here.suggestions, alternatives: [] };
 
+  // Not enough artists free side by side: offer "one artist, one after another" at this time (windows.length > 1),
+  // and the nearest times (either way) on the same day.
+  const series = windows.length > 1 ? placeSeries(startMs) : null;
   const longest = Math.max(...windows.map((w) => w.blocks)) * BLOCK_MS;
   const alternatives = [];
   for (const o of input.opening) {
-    for (let t = Math.ceil(o.start / BLOCK_MS) * BLOCK_MS; t + longest <= o.end; t += BLOCK_MS) {
+    for (let t = Math.ceil(o.start / BLOCK_MS) * BLOCK_MS; t < o.end; t += BLOCK_MS) {
       if (t === startMs || t < now.getTime()) continue;
-      const tried = place(t);
-      if (tried.ok) alternatives.push({ time: hhmm(t), startAt: new Date(t).toISOString(), suggestions: tried.suggestions, distance: Math.abs(t - startMs) });
+      const distance = Math.abs(t - startMs);
+      if (t + longest <= o.end) {
+        const tried = place(t);
+        if (tried.ok) alternatives.push({ mode: "parallel", time: hhmm(t), startAt: new Date(t).toISOString(), suggestions: tried.suggestions, distance });
+      }
+      if (windows.length > 1 && t + totalBlocks * BLOCK_MS <= o.end) {
+        const tried = placeSeries(t);
+        if (tried.ok) alternatives.push({ mode: "series", time: hhmm(t), startAt: new Date(t).toISOString(), suggestions: tried.suggestions, distance });
+      }
     }
   }
-  alternatives.sort((a, b) => a.distance - b.distance || a.startAt.localeCompare(b.startAt));
-  return { ok: false, suggestions: here.suggestions, alternatives: alternatives.slice(0, 3).map(({ distance, ...rest }) => rest) };
+  alternatives.sort((a, b) => a.distance - b.distance || a.startAt.localeCompare(b.startAt) || (a.mode === "parallel" ? -1 : 1));
+  return {
+    ok: false,
+    suggestions: here.suggestions,
+    ...(series ? { series } : {}),
+    alternatives: alternatives.slice(0, 3).map(({ distance, ...rest }) => rest),
+  };
 }
 
 /**
@@ -1463,7 +1516,7 @@ async function moveBooking(id, { startAt, artistId = null, reason = null, by = "
       type: "booking_moved",
       to: updated.contact,
       appointmentId: updated._id,
-      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), link: manageUrl(updated) },
+      params: { name: updated.name, ref: updated.ref, when: whenText(updated), link: manageUrl(updated) },
     });
   }
   // They asked for a named artist and now have someone else: tell them (D48).
@@ -1474,7 +1527,7 @@ async function moveBooking(id, { startAt, artistId = null, reason = null, by = "
       type: "booking_artist_changed",
       to: updated.contact,
       appointmentId: updated._id,
-      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: before.artists.join(", "), newArtist: artistsNow.join(", "), reason, link: manageUrl(updated) },
+      params: { name: updated.name, ref: updated.ref, when: whenText(updated), oldArtist: before.artists.join(", "), newArtist: artistsNow.join(", "), reason, link: manageUrl(updated) },
     });
   }
   return { ok: true, appt: updated, before };
@@ -1575,7 +1628,7 @@ async function changeGuestArtist(id, guestKey, artistId, { by = "staff", byUserI
       type: "booking_artist_changed",
       to: updated.contact,
       appointmentId: updated._id,
-      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: from.join(", "), newArtist: to.join(", "), reason: null, link: manageUrl(updated) },
+      params: { name: updated.name, ref: updated.ref, when: whenText(updated), oldArtist: from.join(", "), newArtist: to.join(", "), reason: null, link: manageUrl(updated) },
     });
   }
   return { ok: true, appt: updated, changed: true, from, to };
@@ -1697,7 +1750,7 @@ async function reassignForLeave({ artistId, from, to, reason = null, by = "staff
           type: "booking_artist_changed",
           to: updated.contact,
           appointmentId: updated._id,
-          params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: oldNames.join(", "), newArtist: newNames.join(", "), reason, link: manageUrl(updated) },
+          params: { name: updated.name, ref: updated.ref, when: whenText(updated), oldArtist: oldNames.join(", "), newArtist: newNames.join(", "), reason, link: manageUrl(updated) },
         });
       }
       moved.push({ ...brief, from: oldNames, to: newNames, customerTold: named });
@@ -1930,11 +1983,11 @@ async function rescheduleBooking(appt, { startAt, now = new Date() }) {
   const ids = [...new Set(appt.guests.flatMap((g) => g.items.map((i) => String(i.serviceId))))];
   const docs = await require("../models/Service").find({ _id: { $in: ids } }).lean();
   const services = new Map(docs.map((d) => [String(d._id), d]));
-  const guests = appt.guests.map((g) => ({ key: g.guestKey, serviceIds: g.items.map((i) => String(i.serviceId)) }));
-  // One person keeps their artist. A group is matched afresh: naming guest 1's artist for everyone would leave
-  // no time at all (guests run in parallel). Per-person preferences come with the group engine (D67).
+  // One person keeps their artist. A group keeps what each person ASKED for (null = matched afresh), and a
+  // group booked "one after another" stays that way (D67).
+  const guests = appt.guests.map((g) => ({ key: g.guestKey, serviceIds: g.items.map((i) => String(i.serviceId)), artistId: appt.guests.length > 1 ? g.preferredArtistId || null : null }));
   const firstArtist = appt.guests.length === 1 && appt.guests[0]?.items[0]?.artistId ? String(appt.guests[0].items[0].artistId) : null;
-  const { input } = await loadEngineInput({ date, guests, services, artistId: firstArtist, now, excludeAppointmentId: appt._id, patchTestOk: true });
+  const { input } = await loadEngineInput({ date, guests, services, artistId: firstArtist, groupMode: appt.groupMode === "series" ? "series" : "parallel", now, excludeAppointmentId: appt._id, patchTestOk: true });
   const slot = availability({ ...input, onlyAt: wanted }).slots[0];
   if (!slot) throw slotTaken([]);
 
@@ -1978,7 +2031,7 @@ async function rescheduleBooking(appt, { startAt, now = new Date() }) {
       type: "booking_moved",
       to: updated.contact,
       appointmentId: updated._id,
-      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), link: manageUrl(updated) },
+      params: { name: updated.name, ref: updated.ref, when: whenText(updated), link: manageUrl(updated) },
     }),
     alertBooking(updated, "rescheduled"),
   ]);

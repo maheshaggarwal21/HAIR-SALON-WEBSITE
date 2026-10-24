@@ -86,6 +86,12 @@ function formatInstant(at) {
   return `${get("weekday")}, ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")} ${get("dayPeriod").toLowerCase()}`;
 }
 
+/** " (3 people)" for a group, "" for one person: the group is said INSIDE the existing "when" text (D67). */
+const peopleSuffix = (appt) => ((appt.guests || []).length > 1 ? ` (${appt.guests.length} people)` : "");
+
+/** The "when" of a booking message: "Sat, 29 Oct, 4:00 pm" and, for a group, " (3 people)". */
+const whenText = (appt) => formatInstant(appt.startAt) + peopleSuffix(appt);
+
 const BOOKING_HEADINGS = {
   confirmed: "✅ Online booking",
   requested: "🕒 Online booking — needs approval",
@@ -164,4 +170,4 @@ async function alertReassigned({ artistName, why, moved, flagged }) {
   }
 }
 
-module.exports = { alertReassigned, alertNewRequest, requestAlertText, alertBooking, bookingAlertText, formatInstant };
+module.exports = { alertReassigned, alertNewRequest, requestAlertText, alertBooking, bookingAlertText, formatInstant, peopleSuffix, whenText };

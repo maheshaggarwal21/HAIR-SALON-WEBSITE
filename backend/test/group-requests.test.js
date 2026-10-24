@@ -434,3 +434,42 @@ test("suggest writes nothing", async () => {
   assert.equal(await SlotLock.countDocuments(), 0);
   assert.equal((await stored(a.ref)).planRev, 0);
 });
+
+// ─── suggest: "one artist, one after another" when not enough artists are free side by side (phase 3) ───
+
+test("suggest: not enough artists side by side → it offers ONE artist, one after another, and confirming that works", async () => {
+  for (const x of [B, C]) await booking.blockTime({ artistId: x._id, startAt: at("11:00"), endAt: at("15:00") });
+  const a = await groupReq(2);
+  const r = await suggest(a);
+  assert.equal(r.body.ok, false, "only Mansi can do hair, so two people cannot be side by side");
+  assert.equal(r.body.series.ok, true, JSON.stringify(r.body.series));
+  assert.deepEqual(r.body.series.suggestions.map((s) => s.artistName), ["Mansi Kumari", "Mansi Kumari"]);
+  assert.equal(r.body.series.minutes, 240, "2 people × 2 hours, one after another");
+  const done = await confirm(a, { artistIds: Object.fromEntries(r.body.series.suggestions.map((s) => [s.guestKey, s.artistId])) });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  const cur = await stored(a.ref);
+  assert.equal(cur.groupMode, "series");
+  assert.deepEqual(cur.guests.map((g) => hhmm(g.items[0].startAt)), ["11:00", "13:00"]);
+});
+
+test("suggest: when one artist cannot do it all in one go either, it says so and still offers the nearest times (either way)", async () => {
+  for (const x of [B, C]) await booking.blockTime({ artistId: x._id, startAt: at("11:00"), endAt: at("15:00") });
+  await booking.blockTime({ artistId: A._id, startAt: at("13:00"), endAt: at("14:00") });
+  const a = await groupReq(2);
+  const r = await suggest(a);
+  assert.equal(r.body.ok, false);
+  assert.equal(r.body.series.ok, false);
+  assert.match(r.body.series.reason, /No single artist is free/);
+  assert.ok(r.body.alternatives.length > 0 && r.body.alternatives.every((x) => ["parallel", "series"].includes(x.mode)));
+  const first = r.body.alternatives[0];
+  const ok = await confirm(a, { time: first.time, artistIds: Object.fromEntries(first.suggestions.map((s) => [s.guestKey, s.artistId])) });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+});
+
+test("suggest: a one-person request never gets a series option", async () => {
+  for (const x of [A, B, C]) await booking.blockTime({ artistId: x._id, startAt: at("11:00"), endAt: at("13:00") });
+  const a = await groupReq(1);
+  const r = await suggest(a);
+  assert.equal(r.body.ok, false);
+  assert.ok(!("series" in r.body));
+});

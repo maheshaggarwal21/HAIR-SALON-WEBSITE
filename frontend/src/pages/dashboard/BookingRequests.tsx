@@ -364,7 +364,9 @@ function RequestCard({
   const [artistIds, setArtistIds] = useState<Record<string, string>>({});
   const [suggesting, setSuggesting] = useState(false);
   const [suggestNote, setSuggestNote] = useState<string[]>([]);
-  const [alternatives, setAlternatives] = useState<{ time: string; suggestions: { guestKey: string; artistId: string | null }[] }[]>([]);
+  const [alternatives, setAlternatives] = useState<{ time: string; mode?: "parallel" | "series"; suggestions: { guestKey: string; artistId: string | null }[] }[]>([]);
+  // "One artist, one after another" when there are not enough artists free side by side (D67).
+  const [seriesOption, setSeriesOption] = useState<{ minutes: number; artistName: string; suggestions: { guestKey: string; artistId: string | null }[] } | null>(null);
   const isWa = r.channel === "wa_ad";
   const [reason, setReason] = useState("");
   const [note, setNote] = useState(r.internalNote || "");
@@ -409,6 +411,7 @@ function RequestCard({
     setErr("");
     setSuggestNote([]);
     setAlternatives([]);
+    setSeriesOption(null);
     try {
       const res = await fetch(`${API}/api/bookings/${r._id}/suggest-artists`, {
         method: "POST",
@@ -422,8 +425,10 @@ function RequestCard({
       const notes: string[] = [];
       if (data.reason) notes.push(data.reason);
       for (const [i, s] of (data.suggestions || []).entries()) if (!s.artistId && s.reason) notes.push(`${personLabel(s.guestKey, i)}: ${s.reason}`);
+      if (data.series && !data.series.ok && data.series.reason) notes.push(`One after another: ${data.series.reason}`);
       setSuggestNote(notes);
       setAlternatives(data.alternatives || []);
+      if (data.series?.ok) setSeriesOption({ minutes: data.series.minutes, artistName: data.series.suggestions[0]?.artistName ?? "", suggestions: data.series.suggestions });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't suggest artists");
     } finally {
@@ -701,6 +706,22 @@ function RequestCard({
                   {n}
                 </p>
               ))}
+              {seriesOption && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600">
+                  <span>Not enough artists side by side.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      applySuggestions(seriesOption.suggestions);
+                      setSeriesOption(null);
+                      setSuggestNote([]);
+                    }}
+                    className="h-8 px-3 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                  >
+                    {seriesOption.artistName} for everyone, one after another ({durationLabel(seriesOption.minutes)} in all)
+                  </button>
+                </div>
+              )}
               {alternatives.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600">
                   <span>Times when everyone fits:</span>
@@ -713,10 +734,12 @@ function RequestCard({
                         applySuggestions(a.suggestions);
                         setAlternatives([]);
                         setSuggestNote([]);
+                        setSeriesOption(null);
                       }}
                       className="h-8 px-3 rounded-full border border-stone-200 bg-white text-stone-800 hover:bg-stone-100 tabular-nums"
                     >
                       {clockLabel(a.time)}
+                      {a.mode === "series" ? " · one after another" : ""}
                     </button>
                   ))}
                 </div>

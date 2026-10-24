@@ -111,8 +111,10 @@ const guestValidators = (field) => [
   body(`${field}.*.services.*`).isMongoId().withMessage("Unknown service."),
   body(`${field}.*.for`).optional({ nullable: true }).isIn(["her", "him"]).withMessage("Choose who each visit is for."),
   body(`${field}.*.name`).optional({ nullable: true }).isString().trim().isLength({ max: 60 }),
+  // The artist this person asked for (D67): a public artist address, or empty / null for "any".
+  body(`${field}.*.artist`).optional({ nullable: true }).matches(/^[a-z0-9-]{0,80}$/).withMessage("Unknown artist."),
   body(`${field}.*`).custom((g) => {
-    const extra = Object.keys(g || {}).filter((k) => !["services", "for", "name"].includes(k));
+    const extra = Object.keys(g || {}).filter((k) => !["services", "for", "name", "artist"].includes(k));
     if (extra.length) throw new Error("Unexpected fields.");
     return true;
   }),
@@ -130,6 +132,9 @@ router.get(
     query("date").custom(isValidDate).withMessage("Choose a date."),
     query("artist").optional().matches(/^[a-z0-9-]{1,80}$/),
     query("package").optional().matches(/^[a-z0-9-]{1,80}$/),
+    // A group (D67): `a` = each person's artist, in the order of `g` (empty = any); `mode=series` = one artist, one after another.
+    query("a").optional().custom((v) => [].concat(v).every((x) => /^[a-z0-9-]{0,80}$/.test(String(x)))).withMessage("Unknown artist."),
+    query("mode").optional().isIn(["parallel", "series"]),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -151,13 +156,28 @@ router.get(
 
       const pkg = await resolvePackage(req.query.package);
       const artistId = await resolveArtist(req.query.artist);
-      const selection = await booking.prepareSelection(raw.length ? raw.map((services) => ({ services })) : [{ services: [] }], pkg);
+      const slugs = [].concat(req.query.a ?? []).map(String);
+      if (slugs.length > raw.length) return res.status(400).json({ error: "VALIDATION", message: "Choose an artist for each person, in order." });
+      const perGuest = [];
+      for (let i = 0; i < Math.max(raw.length, 1); i++) perGuest.push(await resolveArtist(slugs[i] || null));
+      const selection = await booking.prepareSelection(
+        raw.length ? raw.map((services, i) => ({ services, artistId: perGuest[i] })) : [{ services: [] }],
+        pkg,
+        { groupMode: req.query.mode === "series" ? "series" : "parallel" }
+      );
       const out = await booking.findSlots({ date: req.query.date, selection, artistId });
 
       // Short shared cache: bursts are absorbed, a taken slot reappears for ≤ 30 s
       // at most — and the create call re-checks anyway (§4.3).
       res.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=30");
-      return res.json({ date: req.query.date, mode: out.mode, patchTestDelay: out.patchTestDelay, slots: out.slots });
+      return res.json({
+        date: req.query.date,
+        mode: out.mode,
+        patchTestDelay: out.patchTestDelay,
+        slots: out.slots,
+        // Groups only (D67): how they are laid out, whether one artist could do everyone, and the nudge to try that.
+        ...(selection.guests.length > 1 ? { groupMode: out.groupMode, seriesPossible: out.seriesPossible, hint: out.hint } : {}),
+      });
     } catch (err) {
       return sendError(res, err, "availability");
     }
@@ -253,7 +273,7 @@ router.post(
 
 // ─── POST /appointments ──────────────────────────────────────────────────────
 const APPOINTMENT_FIELDS = [
-  "bookingToken", "phone", "name", "guests", "packageSlug", "startAt", "artistSlug",
+  "bookingToken", "phone", "name", "guests", "packageSlug", "startAt", "artistSlug", "groupMode",
   "payment", "policyAccepted", "whatsappOptIn", "notes", "utm", "turnstileToken",
 ];
 
@@ -273,6 +293,8 @@ function publicBooking(appt) {
     })),
     pricing: { subtotal: appt.pricing.subtotal, discount: appt.pricing.discount, total: appt.pricing.total },
     payment: { kind: appt.deposit.kind, amount: appt.deposit.amount, status: appt.deposit.status },
+    // A group (D67): side by side, or one artist one after another. Absent for one person.
+    ...(appt.guests.length > 1 ? { groupMode: appt.groupMode || "parallel" } : {}),
     // A request made on an offer page (D62/D64): what they asked for, until a time is confirmed, and the package as printed.
     requestedFor: !appt.startAt && appt.requestedWindow?.date ? { date: appt.requestedWindow.date, time: appt.requestedWindow.time || null } : null,
     package: appt.source?.offerPackage?.name ? { name: appt.source.offerPackage.name, price: appt.source.offerPackage.price, services: appt.source.offerPackage.services || [], ...(appt.guests.length > 1 ? { people: appt.guests.length } : {}) } : null,
@@ -323,6 +345,7 @@ router.post(
     ...guestValidators("guests"),
     body("packageSlug").optional({ nullable: true }).matches(/^[a-z0-9-]{1,80}$/),
     body("artistSlug").optional({ nullable: true }).matches(/^[a-z0-9-]{1,80}$/),
+    body("groupMode").optional({ nullable: true }).isIn(["parallel", "series"]).withMessage("Choose how the group is served."),
     body("startAt").isISO8601({ strict: true }).withMessage("Pick a time."),
     body("payment").isIn(["full", "deposit"]).withMessage("Choose how you'd like to pay."),
     body("policyAccepted").equals("true").withMessage("Please accept the booking policy."),
@@ -351,7 +374,10 @@ router.post(
 
       const pkg = await resolvePackage(b.packageSlug);
       const artistId = await resolveArtist(b.artistSlug);
-      const selection = await booking.prepareSelection(b.guests, pkg);
+      // Each person's own artist (D67); for ONE person the old top-level artistSlug still works.
+      const guestsIn = [];
+      for (const g of b.guests) guestsIn.push({ ...g, artistId: await resolveArtist(g.artist || null) });
+      const selection = await booking.prepareSelection(guestsIn, pkg, { groupMode: b.groupMode === "series" ? "series" : "parallel" });
       const out = await booking.createBooking({
         phone: b.phone,
         name: b.name.trim(),
@@ -496,10 +522,12 @@ router.get("/booking/:token/availability", manageReadLimit, [query("date").custo
     const ids = [...new Set(appt.guests.flatMap((g) => g.items.map((i) => String(i.serviceId))))];
     const docs = await Service.find({ _id: { $in: ids } }).lean();
     const selection = {
-      guests: appt.guests.map((g) => ({ key: g.guestKey, serviceIds: g.items.map((i) => String(i.serviceId)) })),
+      // What each person ASKED for (null = matched afresh), and the layout the booking was made with (D67).
+      guests: appt.guests.map((g) => ({ key: g.guestKey, serviceIds: g.items.map((i) => String(i.serviceId)), artistId: appt.guests.length > 1 ? g.preferredArtistId || null : null })),
       services: new Map(docs.map((d) => [String(d._id), d])),
+      groupMode: appt.groupMode === "series" && appt.guests.length > 1 ? "series" : "parallel",
     };
-    // Same rule as rescheduleBooking: one person keeps their artist; a group is matched afresh.
+    // Same rule as rescheduleBooking: one person keeps their artist; a group keeps what each person asked for.
     const firstArtist = appt.guests.length === 1 && appt.guests[0]?.items[0]?.artistId ? String(appt.guests[0].items[0].artistId) : null;
     const out = await booking.findSlots({ date: req.query.date, selection, artistId: firstArtist, excludeAppointmentId: appt._id, phone: appt.contact });
     res.set("Cache-Control", "no-store");

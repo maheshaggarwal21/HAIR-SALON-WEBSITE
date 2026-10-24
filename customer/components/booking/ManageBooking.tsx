@@ -18,6 +18,7 @@ import type { ManageView, Slot } from "@/lib/types";
 import { addDays, clock, dayParts, isOpenOn, rupees, todayIST, whatsappHref } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { Turnstile } from "@/components/request/Turnstile";
+import { PersonLines } from "@/components/booking/PersonLines";
 import { TURNSTILE_SITE_KEY } from "@/lib/config";
 
 const STATUS_TEXT: Record<string, string> = {
@@ -185,6 +186,12 @@ export function ManageBooking({ token }: { token: string }) {
           </div>
         ) : (
         <>
+        {b.guests.length > 1 ? (
+          <>
+            <p className="mb-3 text-ink-muted">{b.groupMode === "series" ? "One artist, one after another." : "Everyone at the same time."}</p>
+            <PersonLines guests={b.guests} />
+          </>
+        ) : (
         <ul className="space-y-1">
           {b.guests.flatMap((g) =>
             g.items.map((i, idx) => (
@@ -199,6 +206,7 @@ export function ManageBooking({ token }: { token: string }) {
             ))
           )}
         </ul>
+        )}
         <div className="mt-3 flex justify-between border-t border-line pt-3 font-semibold">
           <span>Total</span>
           <span className="tabular">{rupees(b.pricing.total)}</span>

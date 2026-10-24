@@ -12,7 +12,8 @@
  * their items back to back, each with an artist who can do it, is working the
  * whole time, isn't locked, and (if the item needs one) a free station unit.
  * Group guests run in parallel from the same `t` (D9); blocks claimed by an
- * earlier guest in the same candidate count as taken for the later ones.
+ * earlier guest in the same candidate count as taken for the later ones. In "series"
+ * mode they run one after another with the same artist instead (D67).
  *
  * ── Rules ────────────────────────────────────────────────────────────────────
  *   - t ≥ now + minLeadMinutes (E10), and ≥ now + 48h when an item needs a
@@ -24,6 +25,10 @@
  *   - artist order per item: the customer's preferred artist (MUST be used for
  *     the items they can do) > the artist already doing this guest's chain >
  *     fewest booked minutes today > name;
+ *   - a GROUP (D67): each guest may name an artist (`guest.artistPref`, used for the items they can
+ *     do, like the single-guest preference). Side by side (the default) every guest needs an artist
+ *     of their own at the same time. `groupMode: "series"` is strict: ONE artist who can do every
+ *     guest's services does them all, guest after guest, back to back; a named artist must be that one.
  *   - onlineShare: an artist sells at most share% of their working minutes online;
  *   - `remaining` counts how many different first artists could take the slot
  *     (capped at 3) — the honest number behind "2 left" (DS §5).
@@ -65,7 +70,8 @@ const REMAINING_CAP = 3;
  * @property {Set<string>} locks          `${artistId}|${blockMs}` taken artist blocks
  * @property {{id:string, capacity:number}[]} [resources]
  * @property {Set<string>} [resourceLocks] `${resourceId}|${unit}|${blockMs}`
- * @property {string|null} [artistPref]
+ * @property {string|null} [artistPref]      single-guest preference; a guest's own `artistPref` wins
+ * @property {"parallel"|"series"} [groupMode]  default parallel
  * @property {boolean}  [patchTestOk]      customer had a patch test in the last 6 months
  * @property {number}   [onlyAt]          compute just this start (create / reschedule)
  */
@@ -84,6 +90,40 @@ function inside(intervals, start, end) {
 }
 
 /**
+ * Can artist `a` do `item` from `cursor` to `end` (blocks already listed)? Working then, blocks free,
+ * within their online share, and a free unit of every station the service needs. Returns the station
+ * units to use ([] if none) or null. Reads only.
+ */
+function fits(input, a, item, cursor, end, blocks, need, taken, localTaken, claimedMinutes, localMinutes) {
+  if (!inside(a.intervals, cursor, end)) return null;
+  const isTaken = (key) => input.locks.has(key) || taken.has(key) || localTaken.has(key);
+  if (blocks.some((b) => isTaken(`${a.id}|${b}`))) return null;
+  const sold = a.onlineMinutesSold + (claimedMinutes.get(a.id) || 0) + (localMinutes.get(a.id) || 0);
+  const working = a.intervals.reduce((s, i) => s + (i.end - i.start) / 60000, 0);
+  if (sold + need / 60000 > (working * a.onlineShare) / 100 + 1e-9) return null;
+
+  // Stations: one free unit of each required resource for the whole span.
+  const units = [];
+  for (const rid of item.resourceIds || []) {
+    const res = (input.resources || []).find((r) => r.id === String(rid));
+    if (!res) continue; // station not tracked
+    let unit = -1;
+    for (let u = 0; u < res.capacity; u++) {
+      if (!blocks.some((b) => (input.resourceLocks || new Set()).has(`${res.id}|${u}|${b}`) || taken.has(`r:${res.id}|${u}|${b}`) || localTaken.has(`r:${res.id}|${u}|${b}`))) {
+        unit = u;
+        break;
+      }
+    }
+    if (unit === -1) return null;
+    units.push({ resourceId: res.id, unit });
+  }
+  return units;
+}
+
+/** The artist a guest asked for, if any: their own, else the single-guest preference. */
+const prefOf = (input, guest) => guest.artistPref || input.artistPref || null;
+
+/**
  * Try to build one guest's chain from `t`. `taken` holds blocks claimed by
  * earlier guests/items in this candidate (artist and resource keys) and is
  * extended on success. `forceFirst` pins the first item's artist (used for
@@ -93,7 +133,7 @@ function buildChain(input, guest, t, taken, claimedMinutes, forceFirst = null) {
   const chain = [];
   const localTaken = new Set();
   const localMinutes = new Map();
-  const isTaken = (key) => input.locks.has(key) || taken.has(key) || localTaken.has(key);
+  const pref = prefOf(input, guest);
   let cursor = t;
 
   for (let idx = 0; idx < guest.items.length; idx++) {
@@ -104,8 +144,8 @@ function buildChain(input, guest, t, taken, claimedMinutes, forceFirst = null) {
     for (let b = cursor; b < end; b += BLOCK_MS) blocks.push(b);
 
     let candidates = input.artists.filter((a) => canDo(a, item));
-    const prefCan = input.artistPref && candidates.some((a) => a.id === input.artistPref);
-    if (prefCan) candidates = candidates.filter((a) => a.id === input.artistPref);
+    const prefCan = pref && candidates.some((a) => a.id === pref);
+    if (prefCan) candidates = candidates.filter((a) => a.id === pref);
     if (idx === 0 && forceFirst) candidates = candidates.filter((a) => a.id === forceFirst);
     const inChain = new Set(chain.map((c) => c.artistId));
     candidates.sort(
@@ -117,35 +157,11 @@ function buildChain(input, guest, t, taken, claimedMinutes, forceFirst = null) {
 
     let picked = null;
     for (const a of candidates) {
-      if (!inside(a.intervals, cursor, end)) continue;
-      if (blocks.some((b) => isTaken(`${a.id}|${b}`))) continue;
-      const sold = a.onlineMinutesSold + (claimedMinutes.get(a.id) || 0) + (localMinutes.get(a.id) || 0);
-      const working = a.intervals.reduce((s, i) => s + (i.end - i.start) / 60000, 0);
-      if (sold + need / 60000 > (working * a.onlineShare) / 100 + 1e-9) continue;
-
-      // Stations: one free unit of each required resource for the whole span.
-      const units = [];
-      let resourcesOk = true;
-      for (const rid of item.resourceIds || []) {
-        const res = (input.resources || []).find((r) => r.id === String(rid));
-        if (!res) continue; // station not tracked
-        let unit = -1;
-        for (let u = 0; u < res.capacity; u++) {
-          if (!blocks.some((b) => (input.resourceLocks || new Set()).has(`${res.id}|${u}|${b}`) || taken.has(`r:${res.id}|${u}|${b}`) || localTaken.has(`r:${res.id}|${u}|${b}`))) {
-            unit = u;
-            break;
-          }
-        }
-        if (unit === -1) {
-          resourcesOk = false;
-          break;
-        }
-        units.push({ resourceId: res.id, unit });
+      const units = fits(input, a, item, cursor, end, blocks, need, taken, localTaken, claimedMinutes, localMinutes);
+      if (units) {
+        picked = { a, units };
+        break;
       }
-      if (!resourcesOk) continue;
-
-      picked = { a, units };
-      break;
     }
     if (!picked) return null;
 
@@ -168,6 +184,55 @@ function buildChain(input, guest, t, taken, claimedMinutes, forceFirst = null) {
   for (const [id, m] of localMinutes) claimedMinutes.set(id, (claimedMinutes.get(id) || 0) + m);
   return { chain, endAt: cursor };
 }
+
+/**
+ * "Series" (D67): ONE artist does every guest's services, guest after guest, back to back from `t`.
+ * Strict: the artist must be able to do ALL the items, and must be the named artist if anyone named one
+ * (two different named artists cannot both be "the same artist"). `forceArtist` pins who (for `remaining`).
+ * Returns { chains, endAt } or null.
+ */
+function placeSeries(input, t, forceArtist = null) {
+  const named = new Set(input.guests.map((g) => prefOf(input, g)).filter(Boolean));
+  if (named.size > 1) return null;
+  const items = input.guests.flatMap((g) => g.items);
+  let candidates = input.artists.filter((a) => items.every((it) => canDo(a, it)));
+  if (named.size === 1) candidates = candidates.filter((a) => a.id === [...named][0]);
+  if (forceArtist) candidates = candidates.filter((a) => a.id === forceArtist);
+  candidates.sort((a, b) => a.bookedMinutes - b.bookedMinutes || a.name.localeCompare(b.name));
+
+  for (const a of candidates) {
+    const taken = new Set();
+    const claimed = new Map();
+    const chains = [];
+    let cursor = t;
+    let ok = true;
+    for (const guest of input.guests) {
+      const chain = [];
+      for (const item of guest.items) {
+        const need = blocksFor((item.durationMin || 0) + (item.bufferMin || 0));
+        const end = cursor + need;
+        const blocks = [];
+        for (let b = cursor; b < end; b += BLOCK_MS) blocks.push(b);
+        const units = fits(input, a, item, cursor, end, blocks, need / 1, taken, new Set(), claimed, new Map());
+        if (!units) {
+          ok = false;
+          break;
+        }
+        for (const b of blocks) taken.add(`${a.id}|${b}`);
+        for (const { resourceId, unit } of units) for (const b of blocks) taken.add(`r:${resourceId}|${unit}|${b}`);
+        claimed.set(a.id, (claimed.get(a.id) || 0) + need / 60000);
+        chain.push({ serviceId: String(item.serviceId), artistId: a.id, artistName: a.name, startAt: cursor, endAt: cursor + (item.durationMin || 0) * 60000, blocks, resources: units });
+        cursor = end;
+      }
+      if (!ok) break;
+      chains.push({ guestKey: guest.key, items: chain });
+    }
+    if (ok) return { chains, endAt: cursor };
+  }
+  return null;
+}
+
+const isSeries = (input) => input.groupMode === "series" && input.guests.length > 1;
 
 /** Every guest at the same start. Returns { chains, endAt } or null. */
 function placeAll(input, t, forceFirst = null) {
@@ -208,18 +273,20 @@ function availability(input) {
 
   for (const t of starts) {
     if (t < earliest || t % BLOCK_MS !== 0) continue;
-    const placed = placeAll(input, t);
+    const placed = isSeries(input) ? placeSeries(input, t) : placeAll(input, t);
     if (!placed) continue;
 
-    // Honest "N left": how many different artists could take the first item.
+    // Honest "N left": how many different artists could take the first item (series: could take it all).
     let remaining = 1;
     if (input.onlyAt == null) {
       const first = input.guests[0].items[0];
-      const others = input.artists.filter((a) => a.id !== placed.chains[0].items[0].artistId && canDo(a, first));
+      const chosen = placed.chains[0].items[0].artistId;
+      const wanted = prefOf(input, input.guests[0]);
+      const others = input.artists.filter((a) => a.id !== chosen && canDo(a, first));
       for (const a of others) {
         if (remaining >= REMAINING_CAP) break;
-        if (input.artistPref && input.artistPref !== a.id && input.artists.some((x) => x.id === input.artistPref && canDo(x, first))) break;
-        if (placeAll(input, t, a.id)) remaining += 1;
+        if (wanted && wanted !== a.id && input.artists.some((x) => x.id === wanted && canDo(x, first))) break;
+        if (isSeries(input) ? placeSeries(input, t, a.id) : placeAll(input, t, a.id)) remaining += 1;
       }
     }
     out.slots.push({ startAt: t, endAt: placed.endAt, remaining, chains: placed.chains });
