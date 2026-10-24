@@ -55,7 +55,7 @@ const { availability, canDo } = require("./availability");
 const { serviceKeys } = require("./skills");
 const { loadEngineInput, loadServices, BookingError } = require("./availabilityLoader");
 const { buildQuote, refundFor, noticeHoursFor } = require("./quote");
-const { BLOCK_MS, blocksFor, salonDate, daysBetween, addWorkingMinutes, SALON_TZ } = require("./time");
+const { BLOCK_MS, blocksFor, salonDate, salonInstant, daysBetween, addWorkingMinutes, SALON_TZ } = require("./time");
 const { manageToken, hashManageToken } = require("./bookingToken");
 const payments = require("./payments");
 const { notify } = require("./notify");
@@ -781,6 +781,157 @@ async function approveRequest(id, { by = "staff", byUserId = null, now = new Dat
   return { ok: true, appt: updated };
 }
 
+// ─── Confirming a request that has no time yet (audit item 3) ────────────────
+
+const clockIst = (d) => new Date(d).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: SALON_TZ }).replace(/\s/g, "").toLowerCase();
+
+/**
+ * Plan what confirming a request at `startMs` with `artist` looks like: the items
+ * with their windows and the artist, the end of the booking, and whether a lock can
+ * be taken. Pure (no database), so it is unit-tested.
+ *
+ *  - A PACKAGE request (offer page, D64) is held for the package's whole time, as the
+ *    owner set it, rounded up to 15 minutes. The matched services are only slices of
+ *    that time: its blocks are shared out between them by their usual length, so that
+ *    the items together fill the package exactly. Every other piece of code that
+ *    rebuilds locks from the items (move, change of artist, leave) then keeps the
+ *    whole time without knowing anything about packages.
+ *  - Any other request keeps each service's own time, back to back, with its buffer.
+ *  - A package with no stored time, or with no service matched on the menu, cannot be
+ *    locked: it still confirms, takes no lock, and says so (`lock.warning`).
+ *
+ * Items run one after the other (one artist cannot do two at once), across guests.
+ *
+ * @returns {{guests: object[], startAt: Date, endAt: Date, lock: {taken: boolean, warning?: string}}}
+ */
+function planRequestTime(appt, artist, startMs) {
+  const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
+  const guests = appt.guests.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i })) }));
+  const items = guests.flatMap((g) => g.items);
+  const pkg = appt.source?.offerPackage?.name ? appt.source.offerPackage : null;
+  const pkgMinutes = Number(pkg?.durationMinutes);
+  const hasPkgTime = Number.isFinite(pkgMinutes) && pkgMinutes > 0;
+
+  let lock = { taken: items.length > 0 };
+  if (pkg && (!hasPkgTime || !items.length)) {
+    lock = { taken: false, warning: !hasPkgTime ? "No lock taken: this package has no time set, so the artist's calendar is not blocked. Check their day by hand." : "No lock taken: none of this package's services are on the service list, so the artist's calendar is not blocked. Check their day by hand." };
+  }
+
+  if (pkg && lock.taken) {
+    const total = Math.ceil(pkgMinutes / 15);
+    const weights = items.map((i) => i.durationMin || DEFAULT_DURATION_MINUTES);
+    const sum = weights.reduce((n, w) => n + w, 0);
+    const exact = weights.map((w) => (w * total) / sum);
+    const blocks = exact.map(Math.floor);
+    let left = total - blocks.reduce((n, b) => n + b, 0);
+    exact
+      .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+      .sort((a, b) => b.frac - a.frac || a.i - b.i)
+      .forEach(({ i }) => {
+        if (left-- > 0) blocks[i]++;
+      });
+    items.forEach((it, n) => {
+      it.durationMin = blocks[n] * 15;
+      it.bufferMin = 0;
+    });
+  } else {
+    for (const it of items) it.durationMin = it.durationMin || DEFAULT_DURATION_MINUTES;
+  }
+
+  let cursor = startMs;
+  for (const it of items) {
+    it.startAt = new Date(cursor);
+    it.endAt = new Date(cursor + it.durationMin * 60_000);
+    it.artistId = artist._id;
+    it.artistName = artist.name;
+    cursor += blocksFor(it.durationMin + (it.bufferMin || 0));
+  }
+  let end = cursor;
+  if (!lock.taken && hasPkgTime) end = Math.max(end, startMs + pkgMinutes * 60_000);
+  return { guests, startAt: new Date(startMs), endAt: new Date(end), lock };
+}
+
+/** Insert the plan's firm locks, or report who holds any of them. Runs inside the caller's transaction. */
+async function takePlannedLocks(draft, plan, artist, session, now) {
+  if (!plan.lock.taken) return { blocks: 0, taken: [] };
+  const docs = lockDocsFor(draft, FIRM);
+  if (!docs.length) return { blocks: 0, taken: [] };
+  await SlotLock.deleteMany(expiredHoldsFilter(draft, now), { session });
+  const taken = await SlotLock.find(
+    { kind: "artist", artistId: artist._id, blockStart: { $in: docs.filter((d) => d.kind === "artist").map((d) => d.blockStart) } },
+    null,
+    { session }
+  ).lean();
+  if (taken.length) return { blocks: 0, taken };
+  await SlotLock.insertMany(docs, { session, ordered: true });
+  return { blocks: docs.filter((d) => d.kind === "artist").length, taken: [] };
+}
+
+async function slotTakenBy(artist, locks) {
+  const who = await ownersOf(locks);
+  const names = who.map((o) => (o.ref ? `${o.name} (${o.ref}${o.startAt ? `, ${clockIst(o.startAt)}` : ""})` : o.name)).join(", ");
+  const e = new BookingError("SLOT_TAKEN", `${artist.name} is already booked then: ${names}. Pick another time or artist.`, 409);
+  e.conflicts = who;
+  return e;
+}
+
+/**
+ * Confirm a request that has no time yet (request-lite and WhatsApp-ad requests) at a
+ * date, time and ARTIST staff chose. In ONE transaction: lapsed holds go, the
+ * artist's blocks are checked, the firm locks are inserted and the status changes —
+ * the same pattern as approveRequest and createWalkin (CLAUDE.md, "Booking
+ * integrity"). Another booking in the way is 409 SLOT_TAKEN naming who; nothing is
+ * written. See planRequestTime for what is locked.
+ *
+ * @param {object} [extraSet]  more fields to set in the same update (e.g. the manage-link key)
+ * @returns {Promise<{ok: true, appt, lock: {taken: boolean, blocks?: number, minutes?: number, warning?: string}} | {ok: false, error: "CONFLICT"}>}
+ */
+async function confirmRequestAtTime(id, { date, time, artistId, extraSet = {}, by = "staff", byUserId = null, now = new Date() }) {
+  const Artist = require("../models/Artist");
+  if (!artistId) throw new BookingError("VALIDATION", "Choose the artist who will do this booking.");
+  const artist = await Artist.findOne({ _id: artistId, isActive: true }, { name: 1 }).lean();
+  if (!artist) throw new BookingError("VALIDATION", "That artist is not active.");
+  const startMs = salonInstant(date, time).getTime();
+  if (!Number.isFinite(startMs) || startMs % BLOCK_MS !== 0) {
+    throw new BookingError("VALIDATION", "Pick a time on the quarter hour, for example 11:00 or 11:15.");
+  }
+
+  const session = await mongoose.startSession();
+  let updated = null;
+  let lock = null;
+  try {
+    await session.withTransaction(async () => {
+      updated = null;
+      const appt = await Appointment.findOne({ _id: id, status: "requested" }, null, { session }).lean();
+      if (!appt) return;
+      const plan = planRequestTime(appt, artist, startMs);
+      const draft = { ...appt, guests: plan.guests, startAt: plan.startAt, endAt: plan.endAt };
+      const { blocks, taken } = await takePlannedLocks(draft, plan, artist, session, now);
+      if (taken.length) throw Object.assign(new Error("slot taken"), { takenLocks: taken });
+      updated = await Appointment.findOneAndUpdate(
+        { _id: appt._id, status: "requested" },
+        {
+          $set: { status: "confirmed", startAt: plan.startAt, endAt: plan.endAt, guests: plan.guests, lockConflict: false, ...(plan.lock.taken ? {} : { noLockReason: plan.lock.warning }), ...extraSet },
+          $push: { statusHistory: { from: "requested", to: "confirmed", at: now, by, byUserId } },
+        },
+        { returnDocument: "after", session, runValidators: true }
+      ).lean();
+      lock = plan.lock.taken ? { taken: true, blocks, minutes: blocks * 15 } : { taken: false, warning: plan.lock.warning };
+    });
+  } catch (err) {
+    if (err?.takenLocks) throw await slotTakenBy(artist, err.takenLocks);
+    if (duplicateKey(err) === "slot") {
+      const now2 = await SlotLock.find({ kind: "artist", artistId: artist._id, blockStart: { $gte: new Date(startMs), $lt: new Date(startMs + 24 * 3600_000) } }).lean();
+      throw await slotTakenBy(artist, now2.length ? now2 : []);
+    }
+    throw err;
+  } finally {
+    await session.endSession();
+  }
+  if (!updated) return { ok: false, error: "CONFLICT" };
+  return { ok: true, appt: updated, lock };
+}
+
 /**
  * Close a booking: decline, cancel, expire or no-show. In one transaction the
  * status changes (conditional on the status staff saw), the locks go (the time
@@ -1437,8 +1588,10 @@ function manageRules(appt, settings, now = new Date()) {
   const { refund, kept } = refundFor(appt, "customer", settings, now);
   const notice = noticeHoursFor(appt, settings);
   const cutoff = appt.startAt ? new Date(new Date(appt.startAt).getTime() - notice * 3600e3) : null;
+  // A package request holds the package's whole time (planRequestTime). The online engine would
+  // re-plan it from the services' own times and shrink the lock, so those are moved by reception.
   const canReschedule =
-    open && appt.status !== "pending_payment" && (appt.rescheduleCount || 0) < (settings.maxOnlineReschedules ?? 2) && cutoff && now < cutoff;
+    open && appt.status !== "pending_payment" && !appt.source?.offerPackage?.name && (appt.rescheduleCount || 0) < (settings.maxOnlineReschedules ?? 2) && cutoff && now < cutoff;
   return {
     canCancel: Boolean(open),
     canReschedule: Boolean(canReschedule),
@@ -1612,6 +1765,9 @@ module.exports = {
   expireBookings,
   sendReminders,
   approveRequest,
+  confirmRequestAtTime,
+  planRequestTime,
+  takePlannedLocks,
   releaseBySalon,
   closeBooking,
   createWalkin,

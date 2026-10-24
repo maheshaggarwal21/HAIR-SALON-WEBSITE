@@ -78,7 +78,15 @@ beforeEach(async () => {
   const lata = (await Artist.collection.insertOne({ name: "Lata", phone: "123", gender: "female", isActive: true, commission: { type: "percentage", value: 0 }, createdAt: new Date(), updatedAt: new Date() })).insertedId;
   ids = { svc: String(svc._id), mansi: String(mansi._id), ravi: String(ravi._id), lata: String(lata) };
   await User.collection.insertOne({ name: "Owner", email: "o@example.com", role: "owner", isActive: true, permissions: [], telegramChatId: "555" });
+  // The morning job also warns the owner when the 15-minute timer is stale or has never run
+  // (audit item 7). These tests are about the day sheets and the summary, so the timer is alive.
+  await timerAliveAt(morningOf());
 });
+
+/** A bookings-tick that last ran 5 minutes before `instant`. */
+async function timerAliveAt(instant) {
+  await require("../models/JobRun").updateOne({ name: "bookings-tick" }, { $set: { lastRunAt: new Date(instant.getTime() - 5 * 60_000) } }, { upsert: true });
+}
 
 async function book(name, phone, artistId, hhmm) {
   const res = await fetch(`${base}/bookings/staff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone, for: "her", serviceIds: [ids.svc], startAt: at(hhmm), artistId }) });
@@ -158,6 +166,7 @@ test("nothing is sent on a day the salon is closed", async () => {
     while (time.weekdayKey(d) !== "tue") d = time.addDays(d, 1);
     return d;
   })();
+  await timerAliveAt(time.salonInstant(closedDay, "08:15"));
   const out = await morning.morningRun(time.salonInstant(closedDay, "08:15"));
   assert.equal(out.closed, true);
   assert.equal(sent.length, 0);

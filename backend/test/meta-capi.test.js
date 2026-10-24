@@ -29,7 +29,7 @@ const UA = "Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36";
 let stub;
 let calls = [];
 let respond;
-let metaCapi, Service, Appointment, SiteSettings;
+let metaCapi, Service, Appointment, SiteSettings, Artist, artist;
 let server;
 let base;
 let svc;
@@ -57,6 +57,7 @@ before(async () => {
   await startDb();
   metaCapi = require("../utils/metaCapi");
   Service = require("../models/Service");
+  Artist = require("../models/Artist");
   Appointment = require("../models/Appointment");
   SiteSettings = require("../models/SiteSettings");
   await Appointment.init();
@@ -84,6 +85,8 @@ beforeEach(async () => {
   calls = [];
   respond = () => ({ status: 200, body: { events_received: 1 } });
   Object.assign(process.env, CONFIG);
+  // Confirming a request needs an artist (audit item 3).
+  artist = await Artist.create({ name: "Mansi Kumari", phone: "9888800001", commission: 40, gender: "female" });
   svc = await Service.create({ name: "Hair Spa", price: 1600, publicPrice: 800, slug: "hair-spa", isActive: true, showOnWebsite: true, bookingMode: "request", audience: "her", displayCategory: "Hair", durationMinutes: 60, durationConfirmed: true });
   const s = (await SiteSettings.getSingleton()).toObject();
   for (let n = 3; n < 17; n++) {
@@ -137,7 +140,7 @@ test("an offer-page request sends Lead, and reception's Confirm sends Schedule, 
   assert.deepEqual(lead.custom_data, { currency: "INR", value: 800, content_name: "Hair Spa" });
   assertNoContactDetails(calls[0].body);
 
-  const done = await call("POST", `/bookings/${appt._id}/confirm`, { date: DAY, time: "12:30" });
+  const done = await call("POST", `/bookings/${appt._id}/confirm`, { artistId: String(artist._id), date: DAY, time: "12:30" });
   assert.equal(done.status, 200);
   assert.equal(calls.length, 2);
   const schedule = events()[1];
@@ -168,7 +171,7 @@ test("a website request-lite booking confirmed by reception sends Schedule too",
     requestedWindow: { date: DAY, window: "morning" }, pricing: { subtotal: 800, total: 800 },
     source: { channel: "web", pixel: { fbp: FBP, userAgent: UA } },
   });
-  assert.equal((await call("POST", `/bookings/${lite._id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
+  assert.equal((await call("POST", `/bookings/${lite._id}/confirm`, { artistId: String(artist._id), date: DAY, time: "11:00" })).status, 200);
   assert.deepEqual(events().map((e) => [e.event_name, e.event_id]), [["Schedule", lite.ref]]);
 });
 

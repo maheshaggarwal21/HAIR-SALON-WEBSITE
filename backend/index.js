@@ -38,6 +38,8 @@ const MongoStore = require("connect-mongo").default;
 const { authenticate, authorize, authorizePermission } = require("./middleware/authMiddleware");
 const { PERMISSIONS } = require("./constants/permissions");
 const whatsapp = require("./utils/whatsapp");
+const { sessionSecret } = require("./utils/sessionSecret");
+const { timersHealth } = require("./utils/timerHealth");
 
 // Say loudly, once per cold start, which WhatsApp settings are missing (names only, never values).
 if (process.env.NODE_ENV === "production") {
@@ -350,8 +352,24 @@ app.use("/api/display", require("./routes/counterDisplay"));
 app.use(cookieParser());
 
 // ── Session middleware (stored in MongoDB) ────────────────────────────────────
-app.use(session({
-  secret: process.env.SESSION_SECRET || "dev-secret-change-in-prod",
+/**
+ * Audit item 6: no public fallback secret in production (utils/sessionSecret.js).
+ * Everything mounted ABOVE this point — the Razorpay webhook, /api/public,
+ * /api/cron, the counter display — never needed a session and keeps working.
+ * Everything below needs one, so without a secret it answers 503 (fail closed).
+ * /api/health and "/" stay up so the problem can be seen: health says "missing".
+ */
+const SESSION_SECRET = sessionSecret();
+if (!SESSION_SECRET) {
+  console.error("[session] SESSION_SECRET is not set in production — staff login and every staff route will answer 503 until it is added. Public booking, the Razorpay webhook and cron are unaffected.");
+  app.use((req, res, next) => {
+    if (req.path === "/" || req.path === "/api/health") return next();
+    console.error(`[session] SESSION_SECRET is not set — refusing ${req.method} ${req.path}`);
+    return res.status(503).json({ error: "SESSION_SECRET_MISSING", message: "Staff sign-in is switched off until the server is configured. Tell the owner." });
+  });
+}
+if (SESSION_SECRET) app.use(session({
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   /**
@@ -928,8 +946,12 @@ app.get("/api/health", async (_req, res) => {
       // Reports only whether the value exists, never the value itself — so a
       // misconfigured webhook can be diagnosed without dashboard access.
       webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ? "set" : "NOT SET",
+      // "ok" or "missing" — never the value (audit item 6).
+      sessionSecret: SESSION_SECRET ? "ok" : "missing",
       // Names of missing WhatsApp settings only, so "why was nobody messaged?" can be answered without the dashboard.
       whatsapp: whatsapp.configStatus(),
+      // Is the outside 15-minute timer alive? { ok, minutesAgo } — age only, no secrets or error text (audit item 7).
+      timers: await timersHealth(),
     });
   } catch (err) {
     res.status(500).json({
