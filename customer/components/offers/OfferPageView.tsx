@@ -12,12 +12,18 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { OfferSlideshow, type Slide } from "@/components/offers/OfferSlideshow";
 import { WaRequestForm } from "@/components/offers/WaRequestForm";
 import { offerTill, rupees } from "@/lib/format";
 import type { OfferPageData, SiteInfo } from "@/lib/types";
 
 export function OfferPageView({ offer, site }: { offer: OfferPageData; site: SiteInfo | null }) {
   const live = offer.state === "live";
+  // The reel (if the owner chose one) leads, then the pictures in her order; older pages fall back to their one picture.
+  const slides: Slide[] = [
+    ...(offer.reel ? [{ kind: offer.reel.mediaType, src: offer.reel.mediaUrl, poster: offer.reel.thumbnailUrl } as Slide] : []),
+    ...(offer.images?.length ? offer.images : offer.image ? [offer.image] : []).map((src): Slide => ({ kind: "image", src })),
+  ];
   return (
     <main className="flex-1 pb-24 md:pb-0">
       <section className={`offer-theme-${offer.theme} bg-[linear-gradient(135deg,var(--offer-a),var(--offer-b))] px-4 py-16 text-ivory md:px-16 md:py-28`}>
@@ -36,16 +42,7 @@ export function OfferPageView({ offer, site }: { offer: OfferPageData; site: Sit
               {live ? `On until ${offerTill(offer.endDate)}.` : offer.state === "scheduled" ? `Starts ${offerTill(offer.startDate)}.` : `This offer ended on ${offerTill(offer.endDate)}.`}
             </p>
           </div>
-          {(offer.reel || offer.image) && (
-            <div className="overflow-hidden rounded-[var(--radius-media)] bg-black/20">
-              {offer.reel?.mediaType === "video" ? (
-                <video src={offer.reel.mediaUrl} poster={offer.reel.thumbnailUrl ?? undefined} autoPlay muted loop playsInline preload="metadata" className="aspect-[4/5] w-full object-cover" />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={offer.reel?.mediaUrl ?? offer.image ?? ""} alt="" className="aspect-[4/5] w-full object-cover" loading="eager" />
-              )}
-            </div>
-          )}
+          {slides.length > 0 && <OfferSlideshow slides={slides} />}
         </div>
       </section>
 

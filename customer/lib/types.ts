@@ -206,6 +206,8 @@ export interface OfferPageData {
   price: number | null;
   priceNote: string | null;
   image: string | null;
+  /** Up to 5 pictures or posters for the slideshow, in the owner's order (D63). */
+  images: string[];
   reel: { mediaType: "video" | "image"; mediaUrl: string; thumbnailUrl: string | null } | null;
   startDate: string;
   endDate: string;

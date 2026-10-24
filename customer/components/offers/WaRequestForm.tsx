@@ -193,7 +193,7 @@ export function WaRequestForm({
         </div>
       )}
 
-      <fieldset>
+      <fieldset className="min-w-0">
         <legend className={label}>Day</legend>
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {days.map((d) => {
@@ -220,7 +220,7 @@ export function WaRequestForm({
       </fieldset>
 
       {date && (
-        <fieldset>
+        <fieldset className="min-w-0">
           <legend className={label}>Time</legend>
           {times.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
