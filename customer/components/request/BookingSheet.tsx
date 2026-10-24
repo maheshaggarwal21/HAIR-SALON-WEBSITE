@@ -88,10 +88,17 @@ function loadCheckout(): Promise<boolean> {
 }
 
 async function post<T>(path: string, body: unknown): Promise<{ ok: boolean; status: number; data: T & { error?: string; message?: string; alternatives?: { startAt: string; time: string }[] } }> {
-  const res = await fetch(`/api/public${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
+  try {
+    const res = await fetch(`/api/public${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  } catch {
+    // Offline or blocked: say so, instead of throwing and leaving a button stuck on "Sending…".
+    return { ok: false, status: 0, data: { error: "NETWORK", message: "You seem to be offline. Check your connection and try again." } as never };
+  }
 }
+
+const SECURITY_CHECK_FAILED = "We couldn't finish the security check. Refresh the page and try again, or message us on WhatsApp to book.";
 
 /** The clock, for event handlers and timers only (never read during render). */
 const wallClock = () => Date.now();
@@ -134,6 +141,10 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** The security check could not finish (blocked, errored or too slow). */
+  const [tsFailed, setTsFailed] = useState(false);
+  /** Offer the WhatsApp fallback under the message: a code cannot be sent right now. */
+  const [needsWa, setNeedsWa] = useState(false);
   const [alts, setAlts] = useState<{ startAt: string; time: string }[]>([]);
   const [made, setMade] = useState<{ booking: PublicBooking; manageToken: string; order: { id: string; amount: number; currency: string; keyId: string | null } | null } | null>(null);
   const [done, setDone] = useState<PublicBooking | null>(null);
@@ -311,11 +322,15 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
     if (!/^[6-9]\d{9}$/.test(digits)) return setError("Enter a 10-digit mobile number.");
     setBusy(true);
     setError("");
+    setNeedsWa(false);
     const r = await post<{ sent: boolean }>("/otp/send", { phone: digits, ...(tsToken ? { turnstileToken: tsToken } : {}) });
     setTsReset((n) => n + 1);
     setTsToken(null);
     setBusy(false);
-    if (!r.ok) return setError(r.data.message || "Couldn't send a code. Try again.");
+    if (!r.ok) {
+      setNeedsWa(r.data.error === "OTP_UNAVAILABLE" || r.data.error === "TURNSTILE_FAILED");
+      return setError(r.data.message || "Couldn't send a code. Try again.");
+    }
     setCodeSent(true);
     setNowMs(wallClock());
     setResendAt(wallClock() + 30_000);
@@ -468,6 +483,11 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
   const holdLeft = made?.booking.holdExpiresAt ? Math.max(0, Date.parse(made.booking.holdExpiresAt) - nowMs) : 0;
   const resendIn = Math.max(0, Math.ceil((resendAt - nowMs) / 1000));
   const waitingForTurnstile = Boolean(TURNSTILE_SITE_KEY) && !tsToken;
+  const onTsToken = (t: string | null) => {
+    setTsToken(t);
+    if (t) setTsFailed(false);
+  };
+  const onTsFail = () => setTsFailed(true);
   const isRequestMode = quote?.mode === "request";
   const salonWa = whatsappHref(site.contact.whatsapp, made ? `Hi, about my booking ${made.booking.ref}.` : undefined);
 
@@ -774,12 +794,12 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
                     </label>
                   )}
                   <div className="mt-4">
-                    <Turnstile onToken={setTsToken} resetKey={tsReset} />
+                    <Turnstile onToken={onTsToken} onFail={onTsFail} resetKey={tsReset} />
                   </div>
                   <div className="mt-4 flex gap-3">
                     {!codeSent ? (
                       <Button className="w-full" disabled={busy || waitingForTurnstile} onClick={sendCode}>
-                        {busy ? "Sending…" : "Send code"}
+                        {busy ? "Sending…" : waitingForTurnstile && !tsFailed ? "Checking…" : "Send code"}
                       </Button>
                     ) : (
                       <>
@@ -836,7 +856,7 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
                     </span>
                   </label>
                   <div className="mt-4">
-                    <Turnstile onToken={setTsToken} resetKey={tsReset} />
+                    <Turnstile onToken={onTsToken} onFail={onTsFail} resetKey={tsReset} />
                   </div>
                 </>
               )}
@@ -869,8 +889,13 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
           )}
 
           <p aria-live="polite" className="mt-4 min-h-[1.25rem] text-[14px] font-medium text-danger">
-            {error}
+            {error || (tsFailed && waitingForTurnstile ? SECURITY_CHECK_FAILED : "")}
           </p>
+          {(needsWa || (tsFailed && waitingForTurnstile)) && salonWa && (
+            <a href={salonWa} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[14px] font-semibold underline underline-offset-4">
+              Message us on WhatsApp
+            </a>
+          )}
         </div>
 
         {/* Footer */}
