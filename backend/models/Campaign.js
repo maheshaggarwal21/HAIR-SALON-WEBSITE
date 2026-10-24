@@ -97,7 +97,7 @@ const campaignSchema = new mongoose.Schema(
       /** Small poster for the pop-up (Vercel Blob or any https link). */
       image: { type: String, default: null },
       ctaLabel: { type: String, trim: true, maxlength: 30, default: "See the offer" },
-      /** A page on this site ("/offers/karva-chauth") or an https link. */
+      /** A page on this site ("/offers/now" or an offer's own page) or an https link. */
       ctaHref: { type: String, trim: true, maxlength: 300, required: true },
     },
     popup: {

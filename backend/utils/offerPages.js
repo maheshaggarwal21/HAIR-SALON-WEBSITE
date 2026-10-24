@@ -20,7 +20,7 @@ const { matchLine } = require("./posterMatch");
 const { OfferError } = require("./offers");
 
 /** Addresses that are already pages or routes on the site. */
-const RESERVED_SLUGS = new Set(["now", "karva-chauth", "api", "new", "edit"]);
+const RESERVED_SLUGS = new Set(["now", "api", "new", "edit"]);
 
 const withPage = { active: true, "page.slug": { $type: "string" } };
 

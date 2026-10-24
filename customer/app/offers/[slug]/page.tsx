@@ -1,7 +1,8 @@
 /**
  * `/offers/<slug>`: one offer's landing page, by its address (D62). For ad links and testing.
  * Works for a live, scheduled or ended offer (the page says which); a paused or unknown address
- * is a 404. `/offers/karva-chauth` and `/offers/now` are their own pages and win over this one.
+ * is a 404. `/offers/now` is its own page and wins over this one. (The old hand-built
+ * `/offers/karva-chauth` page was removed on 24 Oct 2026, so that address is free for an offer again.)
  *
  * Ad tag: `?c=karwa` rides along into the request (read by the form; the server tidies it).
  */

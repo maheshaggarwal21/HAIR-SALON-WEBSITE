@@ -32,6 +32,12 @@ export function OfferPageView({ offer, site }: { offer: OfferPageData; site: Sit
             {offer.eyebrow && <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--offer-glow)] md:text-[13px]">{offer.eyebrow}</p>}
             <h1 className="mt-4 font-serif text-[40px] leading-[1.02] tracking-[-0.02em] md:text-[72px]">{offer.headline}</h1>
             {offer.offerText && <p className="mt-6 max-w-[560px] text-[18px] leading-[1.6] text-ivory/90">{offer.offerText}</p>}
+            {offer.price == null && offer.packages?.length > 0 && (
+              <p className="mt-6 flex items-baseline gap-3">
+                <span className="text-[16px] text-ivory/80">Packages from</span>
+                <span className="tabular font-serif text-[40px] leading-none text-[var(--offer-glow)] md:text-[56px]">{rupees(Math.min(...offer.packages.map((p) => p.price)))}</span>
+              </p>
+            )}
             {offer.price != null && (
               <p className="mt-6 flex items-baseline gap-3">
                 <span className="tabular font-serif text-[48px] leading-none text-[var(--offer-glow)] md:text-[64px]">{rupees(offer.price)}</span>

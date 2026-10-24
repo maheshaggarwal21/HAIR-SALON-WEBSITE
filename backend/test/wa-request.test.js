@@ -489,3 +489,14 @@ test("a package with no service recognised still books: nothing scheduled, the p
   const done = await Appointment.findById(id).lean();
   assert.equal(done.endAt - done.startAt, 90 * 60_000);
 });
+
+test("the old Karva Chauth page is gone, so its address is free for an offer; the site's other own addresses stay reserved", async () => {
+  const ok = await call("POST", "/website/campaigns", offerBody({ page: { slug: "karva-chauth", serviceIds: [String(svc._id)] } }));
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.equal((await page("karva-chauth")).body.offer.slug, "karva-chauth");
+  for (const slug of ["now", "api", "new", "edit"]) {
+    const r = await call("POST", "/website/campaigns", offerBody({ name: `x-${slug}`, page: { slug, serviceIds: [String(svc._id)] } }));
+    assert.equal(r.status, 400, slug);
+    assert.match(r.body.error, /already a page on the website/);
+  }
+});
