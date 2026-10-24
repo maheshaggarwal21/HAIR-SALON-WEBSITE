@@ -9,7 +9,9 @@
  * Rate limits (3 per phone per 15 min, 10 per IP per hour) and Turnstile are
  * applied by the route before send() runs.
  *
- * Delivery: WhatsApp only (D7, D52) until MSG91's DLT registration clears. Outside
+ * Delivery: WhatsApp only (D7, D52) until MSG91's DLT registration clears, by Meta or by
+ * AiSensy's `otp_code` campaign, chosen with OTP_PROVIDER (utils/whatsapp.js). The code is
+ * never written to a log in production; a failure logs the status and a masked number. Outside
  * production with no WhatsApp configured the code is printed to the server
  * console (channel "dev"), so the booking flow can be tested end to end. In
  * production an undeliverable code is an error the customer sees ("message us
@@ -30,14 +32,20 @@ const hashCode = (salt, code) => crypto.createHash("sha256").update(`${salt}:${c
  * @returns {Promise<{ok: true, channel: string, expiresAt: Date} | {ok: false, error: string}>}
  */
 async function send(phone, purpose = "booking", now = new Date()) {
+  // randomInt is cryptographically secure; padStart keeps leading zeros ("000042"), so the code is always 6 characters.
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+  // Last guard before anything leaves the server: never send a code that is not exactly 6 digits.
+  if (!/^\d{6}$/.test(code)) throw new Error("OTP code must be exactly 6 digits");
   const delivery = await whatsapp.sendTemplate({ phone, type: "otp", params: { code } });
   const channel = delivery.channel === "dev" ? "dev" : "whatsapp";
   if (delivery.status !== "sent" && channel !== "dev") {
-    console.error(`[otp] WhatsApp code to ${phone.slice(0, 2)}******${phone.slice(-2)} not sent: ${delivery.error}`);
+    // Only the status goes in the log (the part before any ":" of the provider's reply), and a masked number.
+    const status = String(delivery.error ?? "unknown").split(":")[0].slice(0, 80);
+    console.error(`[otp] WhatsApp code to ${phone.slice(0, 2)}******${phone.slice(-2)} not sent (${whatsapp.otpProvider()}): ${status}`);
     return { ok: false, error: "OTP_UNAVAILABLE" };
   }
-  if (channel === "dev") console.warn(`[otp] DEV code for +91${phone}: ${code}`);
+  // Local development with no provider only: the one place a code is printed, so the flow can be tried. Never in production.
+  if (channel === "dev" && process.env.NODE_ENV !== "production") console.warn(`[otp] DEV code for ${phone.slice(0, 2)}******${phone.slice(-2)}: ${code}`);
 
   const salt = crypto.randomBytes(16).toString("hex");
   const expiresAt = new Date(now.getTime() + CODE_TTL_MS);

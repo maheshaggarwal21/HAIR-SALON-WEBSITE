@@ -7,6 +7,10 @@
  * The token it produces is checked by the API (backend/utils/turnstile.js); the
  * widget alone decides nothing. Without a site key (local dev) it renders
  * nothing and reports "no token", and the dev API skips the check.
+ *
+ * `onFail` fires when the check cannot finish (the script is blocked, Cloudflare reports an
+ * error, or no token arrives in 15 seconds), so the page can say so instead of leaving a
+ * button greyed out with no explanation.
  */
 
 import { useEffect, useRef } from "react";
@@ -22,6 +26,7 @@ declare global {
   }
 }
 
+const GIVE_UP_MS = 15_000;
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 let scriptPromise: Promise<void> | null = null;
 
@@ -41,14 +46,23 @@ function loadScript() {
   return scriptPromise;
 }
 
-export function Turnstile({ onToken, resetKey }: { onToken: (token: string | null) => void; resetKey?: number }) {
+export function Turnstile({ onToken, onFail, resetKey }: { onToken: (token: string | null) => void; onFail?: () => void; resetKey?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const callback = useRef(onToken);
+  const failed = useRef(onFail);
+  const gaveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     callback.current = onToken;
-  }, [onToken]);
+    failed.current = onFail;
+  }, [onToken, onFail]);
+
+  /** (Re)start the 15-second clock for a token; a token, or leaving the page, stops it. */
+  const startClock = () => {
+    if (gaveUp.current) clearTimeout(gaveUp.current);
+    gaveUp.current = setTimeout(() => failed.current?.(), GIVE_UP_MS);
+  };
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !box.current) return;
@@ -60,14 +74,26 @@ export function Turnstile({ onToken, resetKey }: { onToken: (token: string | nul
           sitekey: TURNSTILE_SITE_KEY,
           action: "request",
           appearance: "interaction-only",
-          callback: (t: string) => callback.current(t),
+          callback: (t: string) => {
+            if (gaveUp.current) clearTimeout(gaveUp.current);
+            callback.current(t);
+          },
           "expired-callback": () => callback.current(null),
-          "error-callback": () => callback.current(null),
+          "error-callback": () => {
+            if (gaveUp.current) clearTimeout(gaveUp.current);
+            callback.current(null);
+            failed.current?.();
+          },
         });
+        startClock();
       })
-      .catch(() => callback.current(null));
+      .catch(() => {
+        callback.current(null);
+        failed.current?.();
+      });
     return () => {
       cancelled = true;
+      if (gaveUp.current) clearTimeout(gaveUp.current);
       if (widgetId.current && window.turnstile) window.turnstile.remove(widgetId.current);
       widgetId.current = null;
     };
@@ -78,6 +104,7 @@ export function Turnstile({ onToken, resetKey }: { onToken: (token: string | nul
     if (resetKey && widgetId.current && window.turnstile) {
       window.turnstile.reset(widgetId.current);
       callback.current(null);
+      startClock();
     }
   }, [resetKey]);
 

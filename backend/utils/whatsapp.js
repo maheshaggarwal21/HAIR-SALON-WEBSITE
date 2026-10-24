@@ -12,11 +12,12 @@
  * Callers (notify.js, otp.js, public.js) only know `sendTemplate`, `isConfigured`
  * and `templateFor`. Switching provider is a settings change, not a code change.
  *
- * ── The one-time code (OTP) stays on Meta ────────────────────────────────────
- * AiSensy's API has not been checked against an authentication template's copy-code
- * button, so `otp` always goes through Meta, whatever WHATSAPP_PROVIDER says, and
- * is never held back by DRY_RUN or redirected by TEST_PHONE (a customer is waiting
- * for that code).
+ * ── The one-time code (OTP) has its own switch ──────────────────────────────
+ * OTP_PROVIDER=meta (default) | aisensy picks who sends the code, independently of
+ * WHATSAPP_PROVIDER, so it can be moved and rolled back on its own. On AiSensy it is the
+ * `otp_code` campaign: the code goes in templateParams AND in the copy-code button.
+ * The code is never held back by DRY_RUN or redirected by TEST_PHONE (a customer is
+ * waiting for it) and is never written to a log in production.
  *
  * ── Safe testing ─────────────────────────────────────────────────────────────
  *   DRY_RUN=true     nothing leaves the server: the message is checked, logged and
@@ -78,14 +79,20 @@ const LINKS = new Set(["link", "map", "salon_link"]);
 
 const PROVIDERS = ["meta", "aisensy"];
 const AISENSY_URL = "https://backend.aisensy.com/campaign/t1/api";
+// The one-time code uses AiSensy's v2 endpoint (the shape its "Test API Campaign" gives for the code template).
+const AISENSY_OTP_URL = "https://backend.aisensy.com/campaign/t1/api/v2";
+const OTP_CAMPAIGN = "otp_code";
 
 function provider() {
   const p = String(process.env.WHATSAPP_PROVIDER || "meta").trim().toLowerCase();
   return PROVIDERS.includes(p) ? p : "meta";
 }
 
-/** The provider that really sends this type: the code (otp) is Meta-only. */
-const providerFor = (type) => (type === "otp" ? "meta" : provider());
+/** OTP_PROVIDER: who sends the one-time code. Anything but "aisensy" is Meta. */
+const otpProvider = () => (String(process.env.OTP_PROVIDER || "meta").trim().toLowerCase() === "aisensy" ? "aisensy" : "meta");
+
+/** The provider that really sends this type. */
+const providerFor = (type) => (type === "otp" ? otpProvider() : provider());
 
 /** DRY_RUN: "true"/"1" on, "false"/"0" off, unset → on for AiSensy only (see header). */
 function isDryRun(type = "") {
@@ -135,12 +142,15 @@ function templateFor(type) {
 /** Why this type cannot be sent right now, or null when the provider is ready for it. */
 function notReady(type) {
   if (providerFor(type) === "aisensy") {
-    if (!PARAMS[type]) return `no campaign for ${type}`;
+    if (type !== "otp" && !PARAMS[type]) return `no campaign for ${type}`;
     return process.env.AISENSY_KEY ? null : "aisensy_not_configured";
   }
   if (!isConfigured()) return "meta_not_configured";
   return templateFor(type) ? null : `no template for ${type}`;
 }
+
+/** Can a one-time code be sent right now? The site only offers online booking when this is true. */
+const canSendOtp = () => notReady("otp") === null;
 
 /** Can a real send happen for this type right now? notify.js asks before resending held-back messages. */
 function canSend(type) {
@@ -154,21 +164,24 @@ function canSend(type) {
  */
 function configStatus() {
   const prov = provider();
+  const otpProv = otpProvider();
   const missing = [];
-  if (String(process.env.WHATSAPP_PROVIDER || "").trim() && !PROVIDERS.includes(String(process.env.WHATSAPP_PROVIDER).trim().toLowerCase())) {
-    missing.push("WHATSAPP_PROVIDER (unknown value)");
+  for (const [name, value] of [["WHATSAPP_PROVIDER", process.env.WHATSAPP_PROVIDER], ["OTP_PROVIDER", process.env.OTP_PROVIDER]]) {
+    if (String(value || "").trim() && !PROVIDERS.includes(String(value).trim().toLowerCase())) missing.push(`${name} (unknown value)`);
   }
-  if (prov === "aisensy" && !process.env.AISENSY_KEY) missing.push("AISENSY_KEY");
-  // The code is Meta-only whichever provider is chosen; everything else follows the provider.
-  const { token, phoneNumberId } = metaConfig();
-  if (!token) missing.push("META_WA_TOKEN");
-  if (!phoneNumberId) missing.push("META_WA_PHONE_NUMBER_ID");
-  if (!templateFor("otp")) missing.push("WHATSAPP_TEMPLATE_OTP");
+  if ((prov === "aisensy" || otpProv === "aisensy") && !process.env.AISENSY_KEY) missing.push("AISENSY_KEY");
+  // Meta settings are needed only for what Meta still sends.
+  if (prov === "meta" || otpProv === "meta") {
+    const { token, phoneNumberId } = metaConfig();
+    if (!token) missing.push("META_WA_TOKEN");
+    if (!phoneNumberId) missing.push("META_WA_PHONE_NUMBER_ID");
+  }
+  if (otpProv === "meta" && !templateFor("otp")) missing.push("WHATSAPP_TEMPLATE_OTP");
   if (prov === "meta") {
     for (const type of Object.keys(PARAMS)) if (!templateFor(type)) missing.push(`WHATSAPP_TEMPLATE_${type.toUpperCase()}`);
   }
   const tp = testPhone();
-  return { provider: prov, dryRun: isDryRun("booking_confirmed"), testPhone: !tp.on ? "not set" : tp.phone ? "set" : "INVALID", missing };
+  return { provider: prov, otpProvider: otpProv, dryRun: isDryRun("booking_confirmed"), testPhone: !tp.on ? "not set" : tp.phone ? "set" : "INVALID", missing };
 }
 
 /**
@@ -264,15 +277,46 @@ async function sendMeta({ to, type, params, template }) {
 }
 
 /**
- * AiSensy campaign API: POST {apiKey, campaignName, destination "+91…", userName, templateParams}.
- * HTTP 200 is success. Its error codes are not documented, so a failure keeps the status and
- * the start of the body (with the key blanked out) for whoever reads the log.
+ * The JSON body AiSensy gets. Ordinary messages: {apiKey, campaignName, destination, userName,
+ * templateParams}. The one-time code mirrors AiSensy's "Test API Campaign" shape for that template:
+ * the code (a string) in templateParams AND in the copy-code button's text, plus its empty fields.
+ * @returns {{ok: true, body: object} | {ok: false, error: string}}
+ */
+function aisensyBody({ to, type, params }) {
+  const common = { apiKey: process.env.AISENSY_KEY || "", destination: `+91${to}`, source: "website" };
+  if (type === "otp") {
+    const code = String(params.code ?? "");
+    if (!/^\d{6}$/.test(code)) return { ok: false, error: "the code must be 6 digits" };
+    return {
+      ok: true,
+      body: {
+        ...common,
+        campaignName: OTP_CAMPAIGN,
+        userName: "Customer",
+        templateParams: [code],
+        media: {},
+        buttons: [{ type: "button", sub_type: "url", index: 0, parameters: [{ type: "text", text: code }] }],
+        carouselCards: [],
+        location: {},
+        attributes: {},
+        paramsFallbackValue: {},
+      },
+    };
+  }
+  const built = buildParams(type, params);
+  if (!built.ok) return built;
+  return { ok: true, body: { ...common, campaignName: PARAMS[type].campaign, userName: clean(params.name || "Customer"), templateParams: built.values } };
+}
+
+/**
+ * AiSensy campaign API. HTTP 200 is success. Its error codes are not documented, so a failure keeps
+ * the status and the start of the body, with the API key and the one-time code blanked out.
  */
 async function sendAiSensy({ to, type, params }) {
-  const built = buildParams(type, params);
+  const built = aisensyBody({ to, type, params });
   if (!built.ok) return { status: "failed", error: built.error, channel: "whatsapp" };
-  const key = process.env.AISENSY_KEY || "";
-  const url = process.env.AISENSY_API_URL || AISENSY_URL;
+  const url = process.env.AISENSY_API_URL || (type === "otp" ? AISENSY_OTP_URL : AISENSY_URL);
+  const secrets = [process.env.AISENSY_KEY, type === "otp" ? String(params.code) : null].filter(Boolean);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -280,19 +324,12 @@ async function sendAiSensy({ to, type, params }) {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apiKey: key,
-        campaignName: PARAMS[type].campaign,
-        destination: `+91${to}`,
-        userName: clean(params.name || "Customer"),
-        source: "website",
-        templateParams: built.values,
-      }),
+      body: JSON.stringify(built.body),
       signal: controller.signal,
     });
     const text = await res.text().catch(() => "");
     if (!res.ok) {
-      const body = (key ? text.split(key).join("***") : text).replace(/\s+/g, " ").slice(0, 300);
+      const body = secrets.reduce((t, secret) => t.split(secret).join("***"), text).replace(/\s+/g, " ").slice(0, 300);
       return { status: "failed", error: `HTTP ${res.status}${body ? `: ${body}` : ""}`, channel: "whatsapp" };
     }
     let id = null;
@@ -346,7 +383,7 @@ async function sendTemplate({ phone, type, params = {} }) {
   const reason = notReady(type);
   if (reason) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn(`[whatsapp] ${reason} — DEV message to ${masked(to)} [${type}]`, params);
+      console.warn(`[whatsapp] ${reason} — DEV message to ${masked(to)} [${type}]`, type === "otp" ? "(code hidden)" : params);
       return { status: "skipped", error: reason, channel: "dev" };
     }
     return { status: "skipped", error: reason, channel: "whatsapp" };
@@ -354,4 +391,4 @@ async function sendTemplate({ phone, type, params = {} }) {
   return prov === "aisensy" ? sendAiSensy({ to, type, params }) : sendMeta({ to, type, params, template: templateFor(type) });
 }
 
-module.exports = { bareAmount, tidyReason, prepare, sendTemplate, isConfigured, templateFor, ORDER, PARAMS, buildParams, normalisePhone, configStatus, canSend, isDryRun };
+module.exports = { canSendOtp, otpProvider, bareAmount, tidyReason, prepare, sendTemplate, isConfigured, templateFor, ORDER, PARAMS, buildParams, normalisePhone, configStatus, canSend, isDryRun };
