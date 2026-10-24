@@ -228,14 +228,17 @@ test("Confirm (with the time edited) sends booking_confirmed; the booking is the
   assert.equal(await NotificationLog.countDocuments({ type: "booking_confirmed" }), 1);
 });
 
-test("Decline sends booking_declined once", async () => {
+test("Decline sends request_declined (no refund wording) once", async () => {
   const a = (await request()).body;
   const id = (await Appointment.findOne({ ref: a.ref }))._id;
   assert.equal((await call("POST", `/bookings/${id}/decline`, { reason: "Fully booked" })).status, 200);
   assert.equal((await Appointment.findById(id)).status, "declined");
-  assert.equal(await NotificationLog.countDocuments({ appointmentId: id, type: "booking_declined" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ appointmentId: id, type: "request_declined" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ type: "booking_declined" }), 0, "the refund wording is not used for an unpaid request");
   assert.equal((await call("POST", `/bookings/${id}/decline`, {})).status, 409);
-  assert.equal(await NotificationLog.countDocuments({ type: "booking_declined" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ type: "request_declined" }), 1);
+  const sent = await NotificationLog.findOne({ type: "request_declined" }).lean();
+  assert.equal(sent.to, "9876500001");
 });
 
 test("a website request-lite booking is still handled by phone: confirming it sends no WhatsApp", async () => {
@@ -364,7 +367,7 @@ test("the paid booking's data and rules are untouched: an unpaid wa request hold
   const a = await Appointment.findOne().lean();
   assert.equal(a.deposit.razorpayOrderId, null);
   assert.equal(a.holdExpiresAt, null);
-  assert.equal(a.manageTokenHash, null);
+  assert.ok(a.manageTokenHash, "it does carry the link key, so the link in its WhatsApp works");
 });
 
 // ─── the picture slideshow (D63) ────────────────────────────────────────────
@@ -499,4 +502,40 @@ test("the old Karva Chauth page is gone, so its address is free for an offer; th
     assert.equal(r.status, 400, slug);
     assert.match(r.body.error, /already a page on the website/);
   }
+});
+
+// ─── the link in the customer's WhatsApp opens their request ────────────────
+
+test("the 'view your request' link in the WhatsApp message works: it opens the request, with the package and the time asked for", async () => {
+  const tokens = require("../utils/bookingToken");
+  await seedPackageMenu();
+  await makePk();
+  const r = await post("/public/requests/wa", { offerSlug: "pkgs", packageSlug: "package-1", date: DAY, time: "11:00", name: "Asha Kaur", phone: phone() });
+  const a = await Appointment.findOne({ ref: r.body.ref }).lean();
+  assert.ok(a.manageTokenHash, "the link key is saved at creation, like every other booking");
+  const link = await NotificationLog.findOne({ appointmentId: a._id, type: "request_received" }).lean();
+  const token = link.params.link.split("/booking/")[1];
+  assert.equal(token, tokens.manageToken(a._id), "the link in the message is for this booking");
+  const view = await call("GET", `/public/booking/${token}`);
+  assert.equal(view.status, 200, JSON.stringify(view.body));
+  assert.equal(view.body.booking.status, "requested");
+  assert.deepEqual(view.body.booking.package, { name: "Package 1", price: 3500, services: ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips"] });
+  assert.deepEqual(view.body.booking.requestedFor, { date: DAY, time: "11:00" });
+  // a plain (non-package) request works the same way
+  const plain = await request();
+  const pa = await Appointment.findOne({ ref: plain.body.ref }).lean();
+  const pv = await call("GET", `/public/booking/${tokens.manageToken(pa._id)}`);
+  assert.equal(pv.status, 200);
+  assert.equal(pv.body.booking.package, null);
+  assert.equal((await call("GET", "/public/booking/" + "x".repeat(40))).status, 404, "a made-up link is still refused");
+});
+
+test("a request made before its link key was saved gets one when reception confirms it", async () => {
+  const tokens = require("../utils/bookingToken");
+  const r = await request();
+  const id = (await Appointment.findOne({ ref: r.body.ref }))._id;
+  await Appointment.collection.updateOne({ _id: id }, { $unset: { manageTokenHash: "" } });
+  assert.equal((await call("GET", `/public/booking/${tokens.manageToken(id)}`)).status, 404, "an older request has a dead link");
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
+  assert.equal((await call("GET", `/public/booking/${tokens.manageToken(id)}`)).status, 200, "after confirming, the link in its WhatsApp messages works");
 });

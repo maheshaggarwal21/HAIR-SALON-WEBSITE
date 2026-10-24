@@ -178,8 +178,14 @@ export interface PublicBooking {
   payment: { kind: "full" | "deposit"; amount: number; status: string };
 }
 
+/** A request made on an offer page: when it was asked for, and the package chosen (D62/D64). */
+export interface ManageExtras {
+  requestedFor: { date: string; time: string | null } | null;
+  package: { name: string; price: number; services: string[] } | null;
+}
+
 export interface ManageView {
-  booking: PublicBooking;
+  booking: PublicBooking & Partial<ManageExtras>;
   rules: {
     canCancel: boolean;
     canReschedule: boolean;

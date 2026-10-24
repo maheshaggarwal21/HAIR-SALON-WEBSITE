@@ -33,6 +33,8 @@ const { mongoRateLimit, hit } = require("../middleware/mongoRateLimit");
 const { alertNewRequest } = require("../utils/bookingAlerts");
 const { isValidDate, salonDate } = require("../utils/time");
 const wa = require("../utils/waRequest");
+const mongoose = require("mongoose");
+const { manageToken, hashManageToken } = require("../utils/bookingToken");
 const offerPages = require("../utils/offerPages");
 
 const router = express.Router();
@@ -187,7 +189,11 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
     );
     // A package is ONE price, as printed on the poster. Anything else: the menu prices added up.
     const subtotal = pkg ? pkg.price : items.reduce((n, i) => n + i.publicPrice, 0);
+    // The link in the customer's WhatsApp (/booking/<token>) is found by this saved key, exactly as for every other booking.
+    const _id = new mongoose.Types.ObjectId();
     const appt = await createWithUniqueRef({
+      _id,
+      manageTokenHash: hashManageToken(manageToken(_id)),
       mode: "request",
       status: "requested",
       customerId: customer._id,

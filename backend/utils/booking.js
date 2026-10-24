@@ -841,7 +841,8 @@ async function closeBooking(id, { from, to, side = "salon", reason = null, by = 
   if (notifyCustomer && (engineBooking || waDeclined) && updated.source?.channel !== "walkin" && ["cancelled", "declined", "expired"].includes(to)) {
     await notify({
       key: `${updated._id}:${to}`,
-      type: to === "cancelled" ? "booking_cancelled" : "booking_declined",
+      // A declined WhatsApp-ad request (D62) is unpaid, so it gets its own wording with no refund line.
+      type: to === "cancelled" ? "booking_cancelled" : waDeclined ? "request_declined" : "booking_declined",
       to: updated.contact,
       appointmentId: updated._id,
       params: { name: updated.name, ref: updated.ref, refund: updated.refund?.amount || 0 },
