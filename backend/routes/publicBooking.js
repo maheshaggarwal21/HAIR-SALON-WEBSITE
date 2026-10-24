@@ -46,12 +46,12 @@ const bookingToken = require("../utils/bookingToken");
 const otp = require("../utils/otp");
 const payments = require("../utils/payments");
 const booking = require("../utils/booking");
+const { cleanUtm } = require("../utils/utm");
 
 const router = express.Router();
 
 const HOUR = 60 * 60 * 1000;
 const MAX_ITEMS_PER_GUEST = 8;
-const UTM_FIELDS = ["source", "medium", "campaign", "content", "fbclid"];
 
 /** public.js helpers, loaded lazily: public.js requires this file while it is still loading. */
 const pub = () => require("./public");
@@ -255,15 +255,6 @@ const APPOINTMENT_FIELDS = [
   "bookingToken", "phone", "name", "guests", "packageSlug", "startAt", "artistSlug",
   "payment", "policyAccepted", "whatsappOptIn", "notes", "utm", "turnstileToken",
 ];
-
-function cleanUtm(utm) {
-  if (!utm || typeof utm !== "object") return null;
-  const out = {};
-  for (const k of UTM_FIELDS) {
-    if (typeof utm[k] === "string" && utm[k].trim()) out[k] = utm[k].trim().slice(0, k === "fbclid" ? 255 : 100);
-  }
-  return Object.keys(out).length ? out : null;
-}
 
 /** The booking's public face: no list prices, no internal notes, no staff phones. */
 function publicBooking(appt) {

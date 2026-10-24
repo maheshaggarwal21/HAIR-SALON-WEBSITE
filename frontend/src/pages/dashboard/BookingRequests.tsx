@@ -39,6 +39,7 @@ import {
   Ban,
 } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
+import HeldMessages from "@/pages/dashboard/HeldMessages";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 const IST = "Asia/Kolkata";
@@ -251,6 +252,8 @@ export default function BookingRequests() {
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
+
+      <HeldMessages />
 
       {/* Tabs */}
       <div className="flex gap-2 mb-5 overflow-x-auto">

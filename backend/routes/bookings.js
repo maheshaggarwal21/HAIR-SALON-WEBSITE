@@ -45,6 +45,7 @@ const booking = require("../utils/booking");
 const { approveRequest, closeBooking } = booking;
 const { dayBoard } = require("../utils/board");
 const Customer = require("../models/Customer");
+const NotificationLog = require("../models/NotificationLog");
 
 const router = express.Router();
 
@@ -581,6 +582,40 @@ router.post("/unblock", authorizePermission(PERMISSIONS.BOOKINGS_MANAGE), blockV
     return res.json(out);
   } catch (err) {
     return sendBookingError(res, err, "unblock the time");
+  }
+});
+
+// ─── Messages that did not go out ────────────────────────────────────────────
+/**
+ * WhatsApp messages from the last 7 days that failed, or were held back because WhatsApp
+ * is not set up (they are resent on their own while still useful; see utils/notify.js).
+ * Without this list a customer who was never told looks exactly like one who was.
+ * Test-mode messages (DRY_RUN) are only counted, not listed.
+ */
+router.get("/messages", authorizePermission(PERMISSIONS.BOOKINGS_VIEW), async (_req, res) => {
+  try {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const base = { channel: { $ne: "telegram" }, createdAt: { $gte: since } };
+    const [rows, dryRun] = await Promise.all([
+      NotificationLog.find({ ...base, status: { $in: ["failed", "skipped"] }, error: { $ne: "dry_run" } }, { type: 1, status: 1, error: 1, attempts: 1, to: 1, appointmentId: 1, createdAt: 1 })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+      NotificationLog.countDocuments({ ...base, status: "skipped", error: "dry_run" }),
+    ]);
+    const appts = new Map(
+      (await Appointment.find({ _id: { $in: rows.map((r) => r.appointmentId).filter(Boolean) } }, { ref: 1, name: 1 }).lean()).map((a) => [String(a._id), a])
+    );
+    return res.json({
+      messages: rows.map((r) => {
+        const a = r.appointmentId ? appts.get(String(r.appointmentId)) : null;
+        return { _id: r._id, type: r.type, status: r.status, error: r.error, attempts: r.attempts, to: r.to, ref: a?.ref ?? null, name: a?.name ?? null, at: r.createdAt };
+      }),
+      dryRun,
+    });
+  } catch (err) {
+    console.error("[bookings] messages error:", err);
+    return res.status(500).json({ error: "Failed to load messages" });
   }
 });
 
