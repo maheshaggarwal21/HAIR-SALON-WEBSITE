@@ -162,6 +162,22 @@ campaignSchema.methods.statusOn = function (today) {
   return "live";
 };
 
+/**
+ * Where "See the offer" goes. The staff form pre-fills "Button goes to" with the full menu
+ * (/services), so most offers were saved with that even when they have a page of their own,
+ * and the bar sent customers to the menu instead of the offer. An offer with a page address
+ * now always goes to /offers/<address> unless the owner chose something specific (a menu
+ * filter such as /services?for=her, or an outside link). "/services" and "/offers/now" count
+ * as "didn't choose": the first is the form's default, the second is the same offer.
+ */
+const GENERIC_CTA = new Set(["", "/services", "/offers/now"]);
+campaignSchema.methods.ctaTarget = function () {
+  const href = (this.content?.ctaHref || "").trim();
+  const slug = this.page?.slug;
+  if (slug && GENERIC_CTA.has(href.replace(/\/+$/, ""))) return `/offers/${slug}`;
+  return href;
+};
+
 /** Public fields only (CLAUDE.md, Privacy). */
 campaignSchema.methods.toPublic = function () {
   return {
@@ -177,7 +193,7 @@ campaignSchema.methods.toPublic = function () {
       body: this.content?.body ?? null,
       image: this.content?.image ?? null,
       ctaLabel: this.content?.ctaLabel || "See the offer",
-      ctaHref: this.content.ctaHref,
+      ctaHref: this.ctaTarget(),
     },
     popup: { delaySeconds: this.popup?.delaySeconds ?? 6, frequency: this.popup?.frequency ?? "day" },
   };
