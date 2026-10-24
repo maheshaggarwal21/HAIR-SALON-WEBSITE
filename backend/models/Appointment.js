@@ -176,6 +176,12 @@ const appointmentSchema = new mongoose.Schema(
     },
     /** Walk-in forced over a lock (E2): staff must move one of the two. */
     lockConflict: { type: Boolean, default: false },
+    /**
+     * Set when a request was confirmed WITHOUT taking a slot lock (a package with no stored time, or
+     * none of its services on the menu), with the reason. Reception sees it on the Requests page,
+     * because the artist's calendar is not blocked for this booking (audit item 3).
+     */
+    noLockReason: { type: String },
     holdExpiresAt: { type: Date, default: null },
     requestExpiresAt: { type: Date, default: null },
     /** When the owner was nudged that this request passed its SLA (routes/cron.js). */

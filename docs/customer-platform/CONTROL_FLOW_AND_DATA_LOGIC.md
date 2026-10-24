@@ -469,8 +469,36 @@ Until Phase 2 ships, the website collects requests without checking live availab
   with NO slot locks and no deposit.
 - Telegram alert to owner + WhatsApp (or manual call) to the customer. Staff confirms by
   phone/WhatsApp and records the final time in the staff app ("Confirm with time"), which
-  sets `startAt/endAt` and status `confirmed`. No locks until Phase 2.
+  sets `startAt/endAt` and status `confirmed`.
 - The website must say "request" everywhere in this mode, never "booked" or "confirmed".
+
+**Confirming with a time takes slot locks (D66, audit item 3).** Request-lite and WhatsApp-ad
+requests used to be confirmed with no `SlotLock` rows, so the website could sell the same artist
+at the same time. Now `POST /api/bookings/:id/confirm` (date + time + artist) calls
+`confirmRequestAtTime` (`utils/booking.js`), which in ONE transaction deletes lapsed holds,
+checks the artist's 15-minute blocks, inserts the firm locks with `lockDocsFor` and sets
+`status: confirmed`:
+- **The artist is required** (400 without one) and must be active; the time must be on a quarter hour.
+- **What is locked.** A *package* request (offer page, D64) is held for the package's whole
+  `source.offerPackage.durationMinutes`, rounded up to 15 minutes. The services the server matched
+  on the menu are shared out across that time by their usual lengths, so the items together fill it
+  exactly; because every other place that rebuilds locks reads the items (move, change of artist,
+  leave), the whole time is kept without those places knowing about packages. Any other request
+  keeps each service's own time, back to back with its buffer.
+- **Conflict.** Another booking, a block, or a live online hold in the way is `409 SLOT_TAKEN` naming
+  who (`conflicts[]`, same shape as the walk-in); nothing is written. Two receptionists racing for the
+  same artist and time: exactly one wins.
+- **Safety net.** A package with no stored time, or none of whose services are on the menu, still
+  confirms but takes no lock; the response has `lock: {taken: false, warning}` and the request keeps
+  `noLockReason`, shown on the Requests page.
+- **Released or moved by:** cancel (salon or customer), no-show, move, change of artist and leave
+  reassignment (all rebuild or delete by `appointmentId`). A confirmed request cannot be declined and
+  is never expired by the hold sweep. Customers cannot reschedule a package request online (the engine
+  would re-plan it from the services' own times and shrink the lock); reception moves it.
+- The Today board shows the request in that artist's column for the whole window.
+- Existing confirmed future requests: `scripts/reportUnlockedRequests.js` (read-only) lists those
+  with no locks and no artist; `scripts/backfillRequestLocks.js` creates the locks for those that
+  have an artist (dry run unless `--apply`) and lists the rest.
 
 ---
 
@@ -899,6 +927,7 @@ Customer site: `NEXT_PUBLIC_API_BASE` · `NEXT_PUBLIC_TURNSTILE_SITE_KEY` ·
 | D63 | Offer page slideshow and poster reading. (1) `Campaign.page.images` holds up to 5 https pictures in the owner's order; the public offer page returns `images` (older offers fall back to their one picture or the pop-up poster) and the page shows them as a slideshow, a reel first when one is chosen; `page.image` stays equal to the first picture. (2) `POST /api/website/campaigns/read-poster {imageUrl}` (website.manage) sends the poster picture LINK to an AI vision model with a fixed JSON answer shape, through the provider's official SDK (`utils/posterReader.js`): OpenAI Responses API (`gpt-6.1-sol`, strict JSON schema) when `OPENAI_API_KEY` is set, otherwise Claude (`claude-opus-5-5`, `output_config.format`) when `ANTHROPIC_API_KEY` is set; `POSTER_READER_PROVIDER` forces one, and naming a provider with no key means none, never a silent switch and returns a DRAFT: each package's name, price, crossed-out price and service lines, each line matched by plain word matching to the active, priced menu (`utils/posterMatch.js`): clear matches are pre-selected, ambiguous or unknown lines are left for the owner and never forced. Reading saves nothing and writes only an audit row with counts; the owner reviews every line and adds bundles in the staff app, and `prepareOfferLines` re-checks every price against the menu when the offer is saved. Off without either key; 20 reads per person per day; a refusal, a cut-off, an unreadable answer, a refused key, used-up credit or a wrong model name each give a plain message with no provider detail and the owner can still type bundles by hand. The poster's crossed-out price is shown but never copied: the site works out any saving from menu prices | Owner, 24 Oct 2026 |
 | D64 | Poster packages are display packages, not online bundles. A package on an offer page (`Campaign.page.packages`, up to 8) is a name, ONE whole-rupee total price, the services listed under it by name (as printed, owner-editable, up to 30), and a time it takes (15 to 480 min, default 120). There is NO rule tying the price to the menu and no per-service prices anywhere: poster packages include services that are not on the service list, and the online-bundle rules (price below the parts, hidden otherwise, charged as items minus the discount) would drop or ignore them. The server finds, on every save, which listed names are on the service list (clear name match, `utils/posterMatch.js`) and keeps their ids as `serviceIds`; a browser can never set them. The poster reader (D63) now returns only package name, price and services, each service marked found / several similar / not on the list; it does not create bundles. A customer on the offer page must choose one package; `POST /requests/wa` takes `packageSlug` and copies the package's name, price, services and time from the offer into `Appointment.source.offerPackage`, sets `pricing.total` to the package price (no discount applied), schedules only the recognised services, and validates the requested time against the package's own duration. The staff Requests card shows the offer, the package, its one price and the services as printed; confirming gives the booking at least the package's duration. Bundles built by hand in Offers (D59) are unchanged | Owner, 24 Oct 2026 |
 | D65 | Meta "started booking" event and the Conversions API (T3.7). (1) Browser pixel: `InitiateCheckout` once per opening of the booking or request sheet and on the first touch inside an offer-page / ad request form (pointer or focus, once per page view), so "started but didn't book" can be retargeted; Lead and Schedule carry `value` (server total) and `currency: INR`. (2) Server: `utils/metaCapi.js` sends Lead (web request-lite and offer/ad request saved; engine booking settled as `requested`) and Schedule (engine booking settled as `confirmed`; reception confirming a web or offer/ad request) with `event_id` = booking ref, the browser's eventID, so Meta counts each once. (3) Matching data is ONLY what the pixel already sees: `_fbp`/`_fbc` (sent by the site as `X-Meta-Fbp`/`X-Meta-Fbc` headers because the API rejects unknown body fields and the two apps deploy separately; the cookies are the fallback), the user agent, and the live request's IP. Ids and user agent are kept in `Appointment.source.pixel` for later confirmations; the IP is never stored. An ad click's `fbclid` stands in for `_fbc` when the pixel was blocked. No name, phone or email, hashed or not, which replaces the earlier "hashed phone, only with consent" plan: the privacy page's promise stands, so no extra consent is needed. (4) Off until `META_PIXEL_ID` + `META_CAPI_TOKEN` are set on the backend; `META_CAPI_TEST_CODE` sends to Events Manager → Test events. Awaited before the response, 4 s timeout, never throws; Meta's own (event_name, event_id) de-duplication makes a webhook and a browser both confirming harmless | Owner request, 25 Oct 2026 |
+| D66 | Confirming a request that has no time yet takes firm slot locks (audit item 3). Owner decision: the artist is REQUIRED, and a package request locks the package's WHOLE duration (`durationMinutes`, rounded up to 15 min) for that artist. Done in one transaction (`confirmRequestAtTime`); conflicts are 409 SLOT_TAKEN naming who. The matched services are scaled to fill the package time so that move / change of artist / leave keep it. A package with no stored time or no matched services confirms with `lock.taken = false` and a warning (`noLockReason`) instead of failing. Online reschedule is switched off for package requests. Until the owner enters real package times, every package is 120 minutes (the form default). A confirmed request's `endAt` now ends on a 15-minute boundary. Existing confirmed requests without locks are listed by `scripts/reportUnlockedRequests.js` and fixed with `scripts/backfillRequestLocks.js --apply` after review. |
 
 ### Owner answers (T0.2, 14 Oct 2026)
 Q2/Q3 are superseded by D18: ₹500 deposit/cancellation fee on every online booking; no free-cancellation window unless the owner adds one.

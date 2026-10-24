@@ -87,6 +87,9 @@ interface BookingRequest {
   requestExpiresAt?: string | null;
   deposit?: { kind: string; amount: number; status: string } | null;
   refund?: { amount: number; status: string; error: string | null } | null;
+  /** Confirmed WITHOUT blocking the artist's calendar (a package with no time set, or none of its services on the menu). */
+  noLock?: boolean;
+  noLockReason?: string | null;
 }
 
 interface RequestWindow {
@@ -325,6 +328,15 @@ export default function BookingRequests() {
   );
 }
 
+/** 90 → "1 h 30 min", 120 → "2 hours" */
+function durationLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m} min`;
+  if (!m) return `${h} hour${h === 1 ? "" : "s"}`;
+  return `${h} h ${m} min`;
+}
+
 // ── One request ──────────────────────────────────────────────────────────────
 function RequestCard({
   request: r,
@@ -479,9 +491,16 @@ function RequestCard({
               <div className="text-xs text-stone-500">Approve by {istDateTime(r.requestExpiresAt)}, or it expires and is refunded.</div>
             </div>
           ) : r.status === "confirmed" && r.startAt ? (
-            <div className="flex items-center gap-2 text-emerald-700 font-medium">
-              <CalendarCheck className="w-4 h-4" /> {istDateTime(r.startAt)}
-              {r.endAt && <span className="font-normal text-stone-400">→ {istTime(r.endAt)}</span>}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CalendarCheck className="w-4 h-4" /> {istDateTime(r.startAt)}
+                {r.endAt && <span className="font-normal text-stone-400">→ {istTime(r.endAt)}</span>}
+              </div>
+              {r.noLock && (
+                <div className="rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs text-amber-800">
+                  {r.noLockReason || "No lock taken: the artist's calendar is not blocked for this booking."}
+                </div>
+              )}
             </div>
           ) : r.requestedWindow.date ? (
             <div className={isPast ? "text-red-600" : "text-stone-900"}>
@@ -585,9 +604,9 @@ function RequestCard({
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-xs font-semibold uppercase tracking-wider text-stone-500">Date</label>
             <input type="date" value={date} min={todayIST()} onChange={(e) => setDate(e.target.value)} className={inputClass} />
-            <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 ml-2">Artist</label>
-            <select value={artistId} onChange={(e) => setArtistId(e.target.value)} className={inputClass}>
-              <option value="">Decide at the desk</option>
+            <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 ml-2">Artist (required)</label>
+            <select value={artistId} onChange={(e) => setArtistId(e.target.value)} className={inputClass} aria-required="true">
+              <option value="">Choose an artist…</option>
               {artists.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
@@ -627,8 +646,9 @@ function RequestCard({
           </div>
           <div className="flex gap-2">
             <button
-              disabled={!date || !time || busy}
-              onClick={() => act("confirm", "POST", { date, time, artistId: artistId || null })}
+              disabled={!date || !time || !artistId || busy}
+              title={!artistId ? "Choose the artist who will do this booking" : undefined}
+              onClick={() => act("confirm", "POST", { date, time, artistId })}
               className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-40 hover:bg-emerald-700"
             >
               {busy && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -638,8 +658,8 @@ function RequestCard({
               Back
             </button>
           </div>
-          <p className="text-xs text-stone-400">
-            This doesn't block the artist's calendar yet — check their day before confirming.{" "}
+          <p className="text-xs text-stone-500">
+            Confirming holds this artist's time{r.package?.durationMinutes ? ` for the whole package (${durationLabel(r.package.durationMinutes)})` : ""}, so the website can't sell it again. If someone is already booked then, you'll be told who and nothing is saved.{" "}
             {isWa ? "The customer gets a WhatsApp confirmation with this time." : "Tell the customer the time on WhatsApp; the website doesn't message them for this kind of request."}
           </p>
         </div>

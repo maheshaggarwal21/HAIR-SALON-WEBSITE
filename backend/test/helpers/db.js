@@ -25,6 +25,9 @@ const { MongoMemoryReplSet } = require("mongodb-memory-server");
 let replSet = null;
 
 async function startDb() {
+  // Tests that load index.js must never lean on the dev fallback for the session
+  // secret (audit item 6); a real value is set unless the caller chose one.
+  if (!process.env.SESSION_SECRET) process.env.SESSION_SECRET = "test-session-secret";
   replSet = await MongoMemoryReplSet.create({
     replSet: { count: 1, storageEngine: "wiredTiger" },
   });

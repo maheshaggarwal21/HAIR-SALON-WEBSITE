@@ -16,6 +16,9 @@
  * with a per-artist-per-day key; the owner's summary claims a per-owner-per-day
  * key and only counts as done once Telegram accepted it, so a failed send is
  * retried by the next call. Never throws for one bad recipient.
+ *
+ * It also checks that the outside 15-minute timer is alive and tells the owner
+ * if not (utils/timerHealth.js, audit item 7).
  */
 
 const Appointment = require("../models/Appointment");
@@ -26,6 +29,7 @@ const telegram = require("./telegram");
 const { notify } = require("./notify");
 const { dayBoard } = require("./board");
 const { salonDate } = require("./time");
+const { alertOwnerIfTimerStale } = require("./timerHealth");
 
 const FIRM = ["confirmed", "checked_in"];
 /** The day sheet's client list is one WhatsApp variable: one line, and short enough to read. */
@@ -139,11 +143,13 @@ async function ownerSummary(board, date) {
 
 async function morningRun(now = new Date()) {
   const date = salonDate(now);
+  // Audit item 7: also on closed days — the 15-minute timer runs every day. Never throws.
+  const timer = await alertOwnerIfTimerStale(now);
   const board = await dayBoard(date, now);
-  if (board.closed) return { date, closed: true, artistsMessaged: 0, ownerSummaries: 0 };
+  if (board.closed) return { date, closed: true, artistsMessaged: 0, ownerSummaries: 0, ...timer };
   const artists = await artistSheets(board, date);
   const owner = await ownerSummary(board, date);
-  return { date, closed: false, ...artists, ...owner };
+  return { date, closed: false, ...artists, ...owner, ...timer };
 }
 
 module.exports = { morningRun, sheetLine };
