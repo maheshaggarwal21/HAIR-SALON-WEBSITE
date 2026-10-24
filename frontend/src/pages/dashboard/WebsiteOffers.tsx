@@ -789,6 +789,11 @@ export default function WebsiteOffers() {
             <div className="sm:col-span-2">
               <label className={labelClass}>Button goes to</label>
               <input list="offer-links" value={editing.content.ctaHref} onChange={(e) => setContent({ ctaHref: e.target.value })} placeholder="/offers/now" className={inputClass} />
+              {editing.page?.slug && ["", "/services", "/offers/now"].includes(editing.content.ctaHref.trim()) && (
+                <p className="mt-1 text-xs text-stone-500">
+                  This offer has its own page, so the button opens <span className="font-mono text-stone-700">/offers/{editing.page.slug}</span>. Type another link here only if you want it to go somewhere else.
+                </p>
+              )}
               <datalist id="offer-links">
                 <option value="/offers/now">The offer that is on today</option>
                 <option value="/services">Full menu</option>
