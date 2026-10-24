@@ -76,6 +76,8 @@ interface BookingRequest {
   channel?: string | null;
   campaign?: string | null;
   offer?: { slug: string; headline: string | null; price: number | null; priceNote: string | null } | null;
+  /** The package the customer chose on an offer page (D64): its name, ONE price and the services as printed on the poster. */
+  package?: { name: string; price: number; services: string[]; durationMinutes: number | null } | null;
   /** A request with no money taken. */
   unpaid?: boolean;
   createdAt: string;
@@ -420,6 +422,21 @@ function RequestCard({
       <div className="grid sm:grid-cols-2 gap-4 mt-4">
         {/* What */}
         <div>
+          {r.package ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-semibold text-stone-900">{r.package.name}</span>
+                <span className="tabular-nums text-lg font-semibold text-stone-900">{rupees(r.package.price)}</span>
+              </div>
+              <ul className="mt-1.5 list-disc pl-5 text-sm text-stone-700 space-y-0.5">
+                {r.package.services.map((n, idx) => (
+                  <li key={idx}>{n}</li>
+                ))}
+              </ul>
+              <div className="mt-1.5 text-xs text-stone-500">The package price from the offer. Nothing is charged yet: give it when you bill.</div>
+            </div>
+          ) : (
+            <>
           <ul className="text-sm text-stone-700 space-y-1">
             {r.items.map((i, idx) => (
               <li key={idx} className="flex justify-between gap-3">
@@ -437,7 +454,10 @@ function RequestCard({
             </span>
             <span className="tabular-nums">{rupees(r.total)}</span>
           </div>
-          <div className="text-xs text-stone-400 mt-1">About {Math.round(totalMins / 15) * 15} min in total</div>
+            </>
+          )}
+          {!r.package && <div className="text-xs text-stone-400 mt-1">About {Math.round(totalMins / 15) * 15} min in total</div>}
+          {r.package?.durationMinutes ? <div className="text-xs text-stone-400 mt-1">Allow about {Math.round(r.package.durationMinutes / 15) * 15} min</div> : null}
           {r.deposit && (
             <div className="text-xs text-sky-700 mt-1">
               {r.deposit.kind === "full" ? "Paid in full" : "Deposit"} {rupees(r.deposit.amount)} online ({r.deposit.status})
@@ -478,13 +498,13 @@ function RequestCard({
           {r.offer && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <div className="font-semibold">Offer: {r.offer.headline || r.offer.slug}</div>
-              {r.offer.price != null && (
+              {r.offer.price != null && !r.package && (
                 <div>
                   Offer price {rupees(r.offer.price)}
                   {r.offer.priceNote ? ` ${r.offer.priceNote}` : ""}
                 </div>
               )}
-              <div className="mt-0.5 text-amber-800/80">Menu prices above. Give this offer's discount at billing; nothing is applied automatically.</div>
+              <div className="mt-0.5 text-amber-800/80">{r.package ? "They chose the package above. Give its price at billing; nothing is applied automatically." : "Menu prices above. Give this offer's discount at billing; nothing is applied automatically."}</div>
             </div>
           )}
           {(r.utm?.source || r.utm?.campaign) && (

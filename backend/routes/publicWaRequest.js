@@ -38,7 +38,7 @@ const offerPages = require("../utils/offerPages");
 const router = express.Router();
 const HOUR = 60 * 60 * 1000;
 const MAX_ITEMS = 8;
-const FIELDS = new Set(["services", "offerSlug", "campaign", "date", "time", "name", "phone", "website"]);
+const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "date", "time", "name", "phone", "website"]);
 
 const ipLimit = mongoRateLimit({ name: "wa-request-ip", windowMs: HOUR, max: 10 });
 
@@ -54,6 +54,7 @@ const validators = [
   body("services").optional().isArray({ max: MAX_ITEMS }).withMessage(`Choose up to ${MAX_ITEMS} services.`),
   body("services.*").isMongoId().withMessage("Unknown service."),
   body("offerSlug").optional({ nullable: true }).isString().matches(/^[a-z0-9-]{1,60}$/).withMessage("Unknown offer."),
+  body("packageSlug").optional({ nullable: true }).isString().matches(/^[a-z0-9-]{1,40}$/).withMessage("Unknown package."),
   body("campaign").optional({ nullable: true }).isString().isLength({ max: 60 }),
   body("date").custom(isValidDate).withMessage("Choose a date."),
   body("time").matches(wa.TIME_RE).withMessage("Choose a time."),
@@ -88,7 +89,9 @@ const summary = (appt, duplicate = false) => ({
   status: appt.status,
   date: appt.requestedWindow?.date,
   time: appt.requestedWindow?.time,
-  items: appt.guests.flatMap((g) => g.items.map((i) => ({ name: i.name }))),
+  // A package request names the package and its services as printed (D64); others, the booked services.
+  ...(appt.source?.offerPackage ? { package: { name: appt.source.offerPackage.name, price: appt.source.offerPackage.price } } : {}),
+  items: appt.source?.offerPackage ? appt.source.offerPackage.services.map((name) => ({ name })) : appt.guests.flatMap((g) => g.items.map((i) => ({ name: i.name }))),
   duplicate,
 });
 
@@ -117,24 +120,42 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
         return res.status(400).json({ error: "OFFER_UNAVAILABLE", message: "That offer isn't running right now." });
       }
     }
-    const wantedIds = offerDoc ? offerDoc.page.serviceIds.map(String) : [...new Set(b.services || [])];
-    if (!wantedIds.length) return res.status(400).json({ error: "VALIDATION", message: "Choose at least one service.", fields: ["services"] });
+    // A package on the offer page (D64): the customer picks one; its name, ONE price and listed
+    // services come from the offer, never from the browser. No menu price rule applies.
+    const offerPackages = offerDoc?.page?.packages || [];
+    let pkg = null;
+    if (offerPackages.length) {
+      pkg = offerPackages.find((p) => p.slug === b.packageSlug) || null;
+      if (!pkg) return res.status(400).json({ error: "VALIDATION", message: "Choose a package.", fields: ["packageSlug"] });
+    } else if (b.packageSlug) {
+      return res.status(400).json({ error: "VALIDATION", message: "That package isn't available any more.", fields: ["packageSlug"] });
+    }
 
-    const found = await Service.find({ ...PUBLIC_SERVICE_FILTER, _id: { $in: wantedIds } }).lean();
-    const byId = new Map(applyOffers(found, await liveOffers()).map((s) => [String(s._id), s]));
-    if (wantedIds.some((id) => !byId.has(id))) {
-      return res.status(400).json({ error: "SERVICE_UNAVAILABLE", message: "One of those services isn't available online. Refresh and try again." });
+    let items;
+    if (pkg) {
+      // The lines the server recognised on the service list, so the booking can show on the Today board. The rest stay as text.
+      const known = pkg.serviceIds?.length ? await Service.find({ _id: { $in: pkg.serviceIds }, isActive: true }).lean() : [];
+      items = known.map((s) => ({ serviceId: s._id, name: s.publicName || s.name, publicPrice: s.publicPrice ?? 0, listPrice: s.price ?? null, durationMin: s.durationMinutes ?? null, bufferMin: s.bufferMinutes ?? 0 }));
+    } else {
+      const wantedIds = offerDoc ? offerDoc.page.serviceIds.map(String) : [...new Set(b.services || [])];
+      if (!wantedIds.length) return res.status(400).json({ error: "VALIDATION", message: "Choose at least one service.", fields: ["services"] });
+
+      const found = await Service.find({ ...PUBLIC_SERVICE_FILTER, _id: { $in: wantedIds } }).lean();
+      const byId = new Map(applyOffers(found, await liveOffers()).map((s) => [String(s._id), s]));
+      if (wantedIds.some((id) => !byId.has(id))) {
+        return res.status(400).json({ error: "SERVICE_UNAVAILABLE", message: "One of those services isn't available online. Refresh and try again." });
+      }
+      if (wantedIds.some((id) => byId.get(id).bookingMode === "walkin_only")) {
+        return res.status(400).json({ error: "SERVICE_UNAVAILABLE", message: "One of those services is walk-in only." });
+      }
+      items = wantedIds.map((id) => {
+        const s = byId.get(id);
+        return { serviceId: s._id, name: s.publicName || s.name, publicPrice: s.publicPrice, listPrice: s.price, durationMin: s.durationMinutes ?? null, bufferMin: s.bufferMinutes ?? 0 };
+      });
     }
-    if (wantedIds.some((id) => byId.get(id).bookingMode === "walkin_only")) {
-      return res.status(400).json({ error: "SERVICE_UNAVAILABLE", message: "One of those services is walk-in only." });
-    }
-    const items = wantedIds.map((id) => {
-      const s = byId.get(id);
-      return { serviceId: s._id, name: s.publicName || s.name, publicPrice: s.publicPrice, listPrice: s.price, durationMin: s.durationMinutes ?? null, bufferMin: s.bufferMinutes ?? 0 };
-    });
 
     // ── The time: real, in the future, inside opening hours, with room for the services ──
-    const problem = wa.slotProblem(settings, b.date, b.time, wa.minutesFor(items));
+    const problem = wa.slotProblem(settings, b.date, b.time, pkg ? pkg.durationMinutes || 120 : wa.minutesFor(items));
     if (problem) return res.status(400).json({ error: "OUTSIDE_HOURS", message: problem, fields: ["time"] });
 
     // ── The same person sending the same slot twice is one request ──
@@ -164,7 +185,8 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
       { $set: { name: b.name }, $setOnInsert: { createdFrom: "web", firstTouch: { utm, at: now } } },
       { upsert: true, returnDocument: "after", setDefaultsOnInsert: true, runValidators: true }
     );
-    const subtotal = items.reduce((n, i) => n + i.publicPrice, 0);
+    // A package is ONE price, as printed on the poster. Anything else: the menu prices added up.
+    const subtotal = pkg ? pkg.price : items.reduce((n, i) => n + i.publicPrice, 0);
     const appt = await createWithUniqueRef({
       mode: "request",
       status: "requested",
@@ -184,6 +206,7 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
         offerHeadline: offerDoc ? offerDoc.page.headline || offerDoc.content?.headline || null : null,
         offerPrice: offerDoc ? offerDoc.page.price ?? null : null,
         offerPriceNote: offerDoc ? offerDoc.page.priceNote ?? null : null,
+        ...(pkg ? { offerPackage: { slug: pkg.slug, name: pkg.name, price: pkg.price, services: [...pkg.services], durationMinutes: pkg.durationMinutes || 120 } } : {}),
         promoCode: null,
       },
       policyVersion: settings.policyVersion,

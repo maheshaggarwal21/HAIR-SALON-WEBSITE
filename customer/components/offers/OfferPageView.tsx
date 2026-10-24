@@ -60,7 +60,8 @@ export function OfferPageView({ offer, site }: { offer: OfferPageData; site: Sit
                 <WaRequestForm
                   site={site}
                   offerSlug={offer.slug}
-                  fixedServices={offer.services}
+                  packages={offer.packages?.length ? offer.packages : undefined}
+                  fixedServices={offer.packages?.length ? undefined : offer.services}
                   minutesNeeded={Math.max(60, offer.services.length * 30)}
                 />
               </div>

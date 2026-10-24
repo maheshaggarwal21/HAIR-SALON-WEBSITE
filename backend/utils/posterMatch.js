@@ -94,7 +94,9 @@ function matchLine(line, menu) {
     .filter((x) => x.score >= POSSIBLE)
     .sort((x, y) => y.score - x.score || x.s.name.length - y.s.name.length)
     .slice(0, 4);
-  const view = (x) => ({ serviceId: String(x.s._id), name: x.s.publicName || x.s.name, price: x.s.publicPrice, score: Math.round(x.score * 100) / 100 });
+  // "covers": every word of the printed line is in this menu name (so "Bleach" is covered by "Bleach (Full Body)").
+  const covers = (x) => lt.length > 0 && [x.s.name, x.s.publicName].filter(Boolean).some((n) => { const nt = tokens(n); return lt.every((t) => nt.some((m) => sameToken(t, m))); });
+  const view = (x) => ({ serviceId: String(x.s._id), name: x.s.publicName || x.s.name, price: x.s.publicPrice, score: Math.round(x.score * 100) / 100, covers: covers(x) });
   const [best, next] = scored;
   const clear = best && best.score >= CLEAR && (!next || best.score - next.score >= 0.12 || best.score === 1);
   return { line, match: clear ? view(best) : null, candidates: scored.map(view) };

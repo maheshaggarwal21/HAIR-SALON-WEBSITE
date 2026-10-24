@@ -314,7 +314,7 @@ test("/offers/<slug> works directly and says if the offer is scheduled or has en
 test("the page shows only public facts: words, price, services; no internal name, no staff data", async () => {
   await make();
   const o = (await page("karwa")).body.offer;
-  assert.deepEqual(Object.keys(o).sort(), ["endDate", "eyebrow", "headline", "image", "images", "offerText", "price", "priceNote", "reel", "services", "slug", "startDate", "state", "theme"]);
+  assert.deepEqual(Object.keys(o).sort(), ["endDate", "eyebrow", "headline", "image", "images", "offerText", "packages", "price", "priceNote", "reel", "services", "slug", "startDate", "state", "theme"]);
   assert.deepEqual(o.services, [{ id: String(svc._id), name: "Hair Spa" }]);
   assert.ok(!JSON.stringify(o).includes("Karva Chauth 2026"));
 });
@@ -391,4 +391,101 @@ test("an offer page keeps up to 5 pictures in order; a 6th is refused; older sin
   assert.deepEqual((await page("old-one")).body.offer.images, ["https://blob.example/old.jpg"]);
   await make({ name: "Bare", page: { slug: "bare-one", serviceIds: [String(svc._id)] } });
   assert.deepEqual((await page("bare-one")).body.offer.images, []);
+});
+
+// ─── poster packages on an offer page (D64) ─────────────────────────────────
+
+const PKGS = [
+  { name: "Package 1", price: 3500, services: ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips", "Hair Spa"], durationMinutes: 180 },
+  { name: "Package 2", price: 4500, services: ["Pedicure", "Haircut"] },
+];
+async function seedPackageMenu() {
+  const c = { isActive: true, showOnWebsite: true, bookingMode: "request", audience: "her", displayCategory: "Hair", durationMinutes: 30, durationConfirmed: true };
+  const blow = await Service.create({ ...c, name: "Blow Dry", price: 600, publicPrice: 300, slug: "blow-dry" });
+  const upper = await Service.create({ ...c, name: "Upper Lip Threading", price: 60, publicPrice: 30, slug: "upper-lip" });
+  return { blow, upper };
+}
+const makePk = (over = {}) => make({ page: { slug: "pkgs", packages: PKGS, ...over } });
+
+test("packages: one price each, the services as listed, no price rule, no per-service prices; the server finds which are on the service list", async () => {
+  const { blow, upper } = await seedPackageMenu();
+  const made = await makePk({ packages: [{ ...PKGS[0], serviceIds: ["000000000000000000000001"], price: 1 }, { ...PKGS[1], price: 999999 }] });
+  assert.equal(made.page.packages.length, 2);
+  const saved = await Campaign.findById(made._id).lean();
+  const p1 = saved.page.packages[0];
+  assert.equal(p1.price, 1, "any price is accepted: it is not tied to the menu");
+  assert.deepEqual(p1.services, ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips"], "blanks and repeats dropped, wording kept");
+  assert.deepEqual(p1.serviceIds.map(String).sort(), [String(svc._id), String(blow._id), String(upper._id)].sort(), "the server found the ones on the list; a browser-sent id was ignored");
+  assert.equal(p1.slug, "package-1");
+  const o = (await page("pkgs")).body.offer;
+  assert.deepEqual(o.packages, [{ slug: "package-1", name: "Package 1", price: 1, services: ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips"], durationMinutes: 180 }, { slug: "package-2", name: "Package 2", price: 999999, services: ["Pedicure", "Haircut"], durationMinutes: 120 }]);
+  assert.ok(!JSON.stringify(o).match(/serviceIds/), "the public page carries no service ids");
+});
+
+test("packages: bad ones are refused plainly; an offer page needs a package OR a service", async () => {
+  const bad = (packages) => call("POST", "/website/campaigns", offerBody({ name: `x${Math.random()}`, page: { slug: `bad-${Math.floor(Math.random() * 1e6)}`, packages } }));
+  assert.equal((await bad([{ name: "", price: 100, services: ["A"] }])).status, 400);
+  assert.equal((await bad([{ name: "P", price: 0, services: ["A"] }])).status, 400);
+  assert.equal((await bad([{ name: "P", price: 12.5, services: ["A"] }])).status, 400);
+  assert.equal((await bad([{ name: "P", price: 100, services: [] }])).status, 400);
+  assert.equal((await bad(Array.from({ length: 9 }, (_, i) => ({ name: `P${i}`, price: 100, services: ["A"] })))).status, 400);
+  const none = await call("POST", "/website/campaigns", offerBody({ page: { slug: "nothing", serviceIds: [] } }));
+  assert.equal(none.status, 400);
+  const ok = await call("POST", "/website/campaigns", offerBody({ page: { slug: "pkonly", serviceIds: [], packages: [{ name: "P", price: 100, services: ["A"] }] } }));
+  assert.equal(ok.status, 201, "packages alone are enough for a page");
+});
+
+test("a request names the package the customer chose: its name, ONE price and the services as listed; the browser sets none of it", async () => {
+  await seedPackageMenu();
+  await makePk();
+  const forged = await post("/public/requests/wa", { offerSlug: "pkgs", packageSlug: "package-1", date: DAY, time: "11:00", name: "Asha Kaur", phone: phone(), total: 1, price: 1, services: ["x"] });
+  assert.equal(forged.status, 400, "a browser cannot send a price, a total or its own services");
+  const r = await post("/public/requests/wa", { offerSlug: "pkgs", packageSlug: "package-1", date: DAY, time: "11:00", name: "Asha Kaur", phone: phone() });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.deepEqual(r.body.package, { name: "Package 1", price: 3500 });
+  assert.deepEqual(r.body.items.map((i) => i.name), ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips"]);
+  const a = await Appointment.findOne({ ref: r.body.ref }).lean();
+  assert.deepEqual([a.pricing.subtotal, a.pricing.discount, a.pricing.total], [3500, 0, 3500], "the package price, nothing discounted");
+  assert.deepEqual(a.source.offerPackage, { slug: "package-1", name: "Package 1", price: 3500, services: ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips"], durationMinutes: 180 });
+  assert.deepEqual(a.guests[0].items.map((i) => i.name).sort(), ["Blow Dry", "Hair Spa", "Upper Lip Threading"], "only the ones on the service list become scheduled items (so the Today board can show them); Kanpeki Facial stays text");
+  const row = (await call("GET", "/bookings/requests?status=requested")).body.requests[0];
+  assert.deepEqual(row.package, { name: "Package 1", price: 3500, services: ["Hair Spa", "Blow Dry", "Kanpeki Facial", "Upperlips"], durationMinutes: 180 });
+  assert.equal(row.total, 3500);
+});
+
+test("a package must be chosen, and only a real one", async () => {
+  await seedPackageMenu();
+  await makePk();
+  const base = { offerSlug: "pkgs", date: DAY, time: "11:00", name: "Asha Kaur" };
+  assert.equal((await post("/public/requests/wa", { ...base, phone: phone() })).status, 400, "none chosen");
+  assert.equal((await post("/public/requests/wa", { ...base, phone: phone(), packageSlug: "package-9" })).status, 400, "unknown");
+  await make({ name: "Plain", page: { slug: "plain", serviceIds: [String(svc._id)] } });
+  const stray = await post("/public/requests/wa", { offerSlug: "plain", packageSlug: "package-1", date: DAY, time: "11:00", name: "Asha Kaur", phone: phone() });
+  assert.equal(stray.status, 400, "a package named on an offer that has none");
+  assert.equal(await Appointment.countDocuments(), 0);
+});
+
+test("a package's own time decides which start times work, and how long the confirmed booking lasts", async () => {
+  await seedPackageMenu();
+  await makePk();
+  const late = await post("/public/requests/wa", { offerSlug: "pkgs", packageSlug: "package-1", date: DAY, time: "19:00", name: "Asha Kaur", phone: phone() });
+  assert.equal(late.status, 400, "3 hours from 7 pm runs past closing");
+  assert.match(late.body.message, /too late/);
+  const r = await post("/public/requests/wa", { offerSlug: "pkgs", packageSlug: "package-1", date: DAY, time: "10:00", name: "Asha Kaur", phone: phone() });
+  const id = (await Appointment.findOne({ ref: r.body.ref }))._id;
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "10:00" })).status, 200);
+  const done = await Appointment.findById(id).lean();
+  assert.ok(done.endAt - done.startAt >= 180 * 60_000, "the booking lasts the package's 3 hours even though only 2 services are scheduled items");
+});
+
+test("a package with no service recognised still books: nothing scheduled, the package text carries everything", async () => {
+  await make({ page: { slug: "unknown-only", packages: [{ name: "Mystery", price: 1999, services: ["Zzyzx Ritual", "Quux Glow"], durationMinutes: 90 }] } });
+  const r = await post("/public/requests/wa", { offerSlug: "unknown-only", packageSlug: "mystery", date: DAY, time: "11:00", name: "Asha Kaur", phone: phone() });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const a = await Appointment.findOne({ ref: r.body.ref }).lean();
+  assert.deepEqual([a.guests[0].items.length, a.pricing.total, a.source.offerPackage.services], [0, 1999, ["Zzyzx Ritual", "Quux Glow"]]);
+  const id = a._id;
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
+  const done = await Appointment.findById(id).lean();
+  assert.equal(done.endAt - done.startAt, 90 * 60_000);
 });

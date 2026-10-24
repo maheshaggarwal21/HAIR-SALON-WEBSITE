@@ -57,6 +57,27 @@ const bundleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * A package on an offer page (D64), as printed on the poster: a name, ONE total price, and the
+ * services listed under it by name. No per-service prices, and no rule tying the price to the
+ * menu: some poster services are not on the menu at all. The price is shown and recorded with a
+ * request; reception gives it at billing. `serviceIds` are only the lines the server recognised
+ * on the menu (set on save, never by a browser) so a booking can show up on the Today board.
+ */
+const pagePackageSchema = new mongoose.Schema(
+  {
+    slug: { type: String, required: true, match: /^[a-z0-9-]{1,40}$/ },
+    name: { type: String, required: true, trim: true, maxlength: 60 },
+    price: { type: Number, required: true, min: 1, max: 1000000, validate: wholeRupees },
+    /** The services under it, as printed (the owner can edit the wording). */
+    services: { type: [{ type: String, trim: true, maxlength: 80 }], validate: { validator: (v) => v.length >= 1 && v.length <= 30, message: "A package lists 1 to 30 services" } },
+    /** How long it takes in all; sets the earliest closing-time check and the booking's end. */
+    durationMinutes: { type: Number, default: 120, min: 15, max: 480 },
+    serviceIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }], default: [] },
+  },
+  { _id: false }
+);
+
 const campaignSchema = new mongoose.Schema(
   {
     /** Internal name for the staff list, e.g. "Karva Chauth 2026". */
@@ -113,7 +134,9 @@ const campaignSchema = new mongoose.Schema(
       },
       /** A synced Instagram reel, shown first in the slideshow. */
       reelId: { type: mongoose.Schema.Types.ObjectId, ref: "Reel", default: null },
-      /** What the booking form on the page pre-selects (and books). */
+      /** The poster's packages (D64): name, one price, the services listed under it. Up to 8. */
+      packages: { type: [pagePackageSchema], default: [], validate: { validator: (v) => v.length <= 8, message: "At most 8 packages on an offer page" } },
+      /** What the booking form on the page pre-selects (and books) when there are no packages. */
       serviceIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }], default: [] },
     },
   },
