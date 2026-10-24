@@ -14,6 +14,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { OfferSlideshow, type Slide } from "@/components/offers/OfferSlideshow";
 import { WaRequestForm } from "@/components/offers/WaRequestForm";
+import { ViewContent } from "@/components/analytics/ViewContent";
 import { offerTill, rupees } from "@/lib/format";
 import type { OfferPageData, SiteInfo } from "@/lib/types";
 
@@ -26,6 +27,7 @@ export function OfferPageView({ offer, site }: { offer: OfferPageData; site: Sit
   ];
   return (
     <main className="flex-1 pb-24 md:pb-0">
+      <ViewContent name={offer.headline} />
       <section className={`offer-theme-${offer.theme} bg-[linear-gradient(135deg,var(--offer-a),var(--offer-b))] px-4 py-16 text-ivory md:px-16 md:py-28`}>
         <div className="mx-auto grid max-w-site gap-10 md:grid-cols-[1.1fr_0.9fr] md:items-center">
           <div>

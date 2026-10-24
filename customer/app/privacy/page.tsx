@@ -28,7 +28,7 @@ export default async function PrivacyPage() {
           </>
         )}
       </ul>
-      <p>We don&apos;t collect health information, except the date of a colour patch test so we know when you&apos;re clear to colour. We don&apos;t use advertising or tracking cookies on this website.</p>
+      <p>We don&apos;t collect health information, except the date of a colour patch test so we know when you&apos;re clear to colour. We use the Meta (Facebook and Instagram) advertising pixel on this website. It tells Meta which pages you looked at and when you contacted us, sent a request or booked, so we can measure and improve our ads. We don&apos;t send it your name, mobile number or anything you type into our forms. You can block it with your browser&apos;s tracking settings or an ad blocker; the website works the same without it.</p>
 
       <h2>Why we use it</h2>
       <ul>
@@ -36,13 +36,13 @@ export default async function PrivacyPage() {
         <li>To keep records of the services and payments at the salon.</li>
         {live && <li>To send you the messages about your booking, and nothing else: the code, your confirmation, a reminder 24 hours and 2 hours before, and any change, cancellation or refund. These don&apos;t need your marketing consent.</li>}
         <li>To send you offers on WhatsApp — only if you said yes. You can say stop at any time.</li>
-        <li>To understand which ads and posts bring customers, as totals, not to follow you around the internet.</li>
+        <li>To understand which ads and posts bring customers, and to show our ads to people likely to be interested, through the Meta pixel.</li>
       </ul>
 
       <h2>Who else handles it</h2>
       <p>
         We use companies that run parts of the service for us: website and server hosting (Vercel), our database (MongoDB Atlas), a spam check on forms (Cloudflare Turnstile),
-        payments (Razorpay), messages to the salon owner (Telegram) and WhatsApp messages to you through Meta&apos;s WhatsApp Business platform (and AiSensy, for offers you have opted in to). They only use
+        payments (Razorpay), advertising measurement (Meta pixel), messages to the salon owner (Telegram) and WhatsApp messages to you through Meta&apos;s WhatsApp Business platform (and AiSensy, for offers you have opted in to). They only use
         your information to provide that service to us. We don&apos;t sell your information.
       </p>
 

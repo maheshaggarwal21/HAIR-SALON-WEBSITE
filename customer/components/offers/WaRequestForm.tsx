@@ -18,6 +18,7 @@ import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { addDays, clock, dayParts, isOpenOn, nowMinutesIST, rupees, todayIST, whatsappHref } from "@/lib/format";
 import type { OfferPackage, SiteInfo } from "@/lib/types";
+import { trackOnce } from "@/lib/pixel";
 
 const DAYS_SHOWN = 14;
 const STEP = 30;
@@ -127,6 +128,8 @@ export function WaRequestForm({
         return;
       }
       setResult(data as Result);
+      const r = data as Result;
+      if (!r.duplicate) trackOnce("Lead", r.ref, { content_name: r.package?.name ?? r.items[0]?.name ?? "Request" });
     } catch {
       setError("You seem to be offline. Check your connection and try again.");
     } finally {

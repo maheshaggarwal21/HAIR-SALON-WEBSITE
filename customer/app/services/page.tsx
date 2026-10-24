@@ -3,6 +3,7 @@
 import type { Metadata } from "next";
 import { getServices } from "@/lib/api";
 import { MenuBrowser } from "@/components/menu/MenuBrowser";
+import { ViewContent } from "@/components/analytics/ViewContent";
 
 export const metadata: Metadata = {
   title: "Services & prices",
@@ -14,6 +15,7 @@ export default async function ServicesPage() {
   const [her, him, all] = await Promise.all([getServices("her"), getServices("him"), getServices()]);
   return (
     <main className="flex-1 bg-ivory px-4 pb-28 pt-12 md:px-16 md:pb-32 md:pt-20">
+      <ViewContent name="Service menu" />
       <div className="mx-auto max-w-site">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted md:text-[13px]">The menu</p>
         <h1 className="mt-4 font-serif text-[44px] leading-none tracking-[-0.02em] md:text-[72px]">

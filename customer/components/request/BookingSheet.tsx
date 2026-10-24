@@ -29,6 +29,7 @@ import { ArrowLeft, CalendarPlus, MapPin, Minus, Plus, X } from "lucide-react";
 import type { ManageView, PublicArtist, PublicBooking, PublicPackage, Quote, ServiceCard as Card, SiteInfo, Slot } from "@/lib/types";
 import { addDays, dayParts, isOpenOn, rupees, todayIST, whatsappHref } from "@/lib/format";
 import { TURNSTILE_SITE_KEY } from "@/lib/config";
+import { trackOnce } from "@/lib/pixel";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { ServiceCard } from "@/components/ui/ServiceCard";
@@ -136,6 +137,16 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
   const [alts, setAlts] = useState<{ startAt: string; time: string }[]>([]);
   const [made, setMade] = useState<{ booking: PublicBooking; manageToken: string; order: { id: string; amount: number; currency: string; keyId: string | null } | null } | null>(null);
   const [done, setDone] = useState<PublicBooking | null>(null);
+
+  // Meta Pixel: setDone is reached from the payment handler AND the payment
+  // watcher, so the event hangs off the state, once per ref. A booking the salon
+  // still has to approve is a Lead; only a confirmed one is a Schedule.
+  useEffect(() => {
+    if (!done) return;
+    const params = { content_name: done.guests[0]?.items[0]?.name ?? "Booking" };
+    if (done.status === "confirmed") trackOnce("Schedule", done.ref, params);
+    else if (done.status === "requested") trackOnce("Lead", done.ref, params);
+  }, [done]);
   /** Wall clock for the hold countdown and resend timer, set from the interval (never read during render). */
   const [nowMs, setNowMs] = useState(0);
   const [appliedOpen, setAppliedOpen] = useState<Date | null>(null);
