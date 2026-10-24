@@ -66,7 +66,7 @@ async function dayBoard(date, now = new Date()) {
     const mine = timeOffs.filter((t) => String(t.artistId) === id);
     const items = [];
     for (const ap of appts) {
-      for (const g of ap.guests) {
+      for (const [gi, g] of ap.guests.entries()) {
         for (const i of g.items) {
           if (String(i.artistId) !== id || !i.startAt) continue;
           items.push({
@@ -75,7 +75,13 @@ async function dayBoard(date, now = new Date()) {
             status: ap.status,
             mode: ap.mode,
             channel: ap.source?.channel || null,
-            name: g.name || ap.name,
+            // One row per person (D67): a second person with no name of their own is not shown as the booker.
+            name: g.name || (gi === 0 ? ap.name : `${ap.name} (guest ${gi + 1})`),
+            guestKey: g.guestKey,
+            guestName: g.name || null,
+            groupSize: ap.guests.length,
+            groupMode: ap.groupMode || "parallel",
+            artistName: i.artistName || null,
             contact: ap.contact,
             service: i.name,
             price: i.publicPrice,

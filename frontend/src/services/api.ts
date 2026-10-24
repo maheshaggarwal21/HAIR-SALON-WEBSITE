@@ -293,6 +293,8 @@ export interface AssignmentDraftResult {
     artistId: string | null;
     startTime: string | null;
     endTime: string | null;
+    /** Which person of a group booking this row is for (display only). */
+    guestName?: string | null;
   }>;
   assignmentStatus: "pending" | "completed" | "not_required";
   lockUntilAssigned: boolean;

@@ -18,6 +18,8 @@ interface DraftRow {
   serviceEntryId: string;
   serviceName: string;
   servicePrice: number;
+  /** Which person of a group booking this row is for (display only). */
+  guestName: string | null;
   artistId: string;
   startTime: string;
   endTime: string;
@@ -150,6 +152,7 @@ export default function VisitAssignmentPage() {
             serviceEntryId: s.serviceEntryId,
             serviceName: s.serviceName,
             servicePrice: s.servicePrice,
+            guestName: s.guestName || null,
             artistId: s.artistId || "",
             startTime: s.startTime || "",
             endTime: s.endTime || "",
@@ -341,6 +344,7 @@ export default function VisitAssignmentPage() {
                   <div className="flex items-start gap-2 text-stone-800 min-w-0">
                     <Scissors className="w-4 h-4" />
                     <span className="font-semibold wrap-break-word">{row.serviceName}</span>
+                    {row.guestName && <span className="text-sm text-stone-500 wrap-break-word">· for {row.guestName}</span>}
                   </div>
                   <span className="text-sm text-stone-500">INR {row.servicePrice.toLocaleString("en-IN")}</span>
                 </div>

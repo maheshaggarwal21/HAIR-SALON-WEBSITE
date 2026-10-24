@@ -61,6 +61,12 @@ const visitSchema = new mongoose.Schema(
         },
         name: { type: String, required: true },
         price: { type: Number, required: true, min: 0 },
+        /**
+         * DISPLAY ONLY (D67): which person of a group booking this row is for, shown in the
+         * assignment step. Only set for bookings of 2+ people. Nothing reads it for money,
+         * artists or analytics; no default, so every other visit keeps exactly its old shape.
+         */
+        guestName: { type: String },
         // Snapshot of durationMinutes at the time of visit creation.
         // Null for services that had no duration set, or older visits.
         // Snapshotting protects historical accuracy — if the admin edits

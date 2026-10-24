@@ -851,37 +851,141 @@ function planRequestTime(appt, artist, startMs) {
   return { guests, startAt: new Date(startMs), endAt: new Date(end), lock };
 }
 
-/** Insert the plan's firm locks, or report who holds any of them. Runs inside the caller's transaction. */
-async function takePlannedLocks(draft, plan, artist, session, now) {
-  if (!plan.lock.taken) return { blocks: 0, taken: [] };
-  const docs = lockDocsFor(draft, FIRM);
-  if (!docs.length) return { blocks: 0, taken: [] };
-  await SlotLock.deleteMany(expiredHoldsFilter(draft, now), { session });
-  const taken = await SlotLock.find(
-    { kind: "artist", artistId: artist._id, blockStart: { $in: docs.filter((d) => d.kind === "artist").map((d) => d.blockStart) } },
-    null,
-    { session }
-  ).lean();
-  if (taken.length) return { blocks: 0, taken };
-  await SlotLock.insertMany(docs, { session, ordered: true });
-  return { blocks: docs.filter((d) => d.kind === "artist").length, taken: [] };
+// ─── The one write path for a booking's plan (group bookings, D67) ───────────
+
+const lockKeyOf = (d) => `${d.kind}|${d.artistId}|${d.resourceUnit ?? 0}|${new Date(d.blockStart).getTime()}`;
+
+/** "everyone has the same artist" → "series"; anything else → "parallel". A single guest is "parallel". */
+function groupModeOf(guests) {
+  if (guests.length < 2) return "parallel";
+  const ids = new Set(guests.flatMap((g) => g.items.map((i) => String(i.artistId || ""))));
+  return ids.size === 1 && !ids.has("") ? "series" : "parallel";
 }
 
-async function slotTakenBy(artist, locks) {
-  const who = await ownersOf(locks);
+/**
+ * 409 SLOT_TAKEN that says WHO is in the way (same shape as the walk-in). Staff only: the
+ * customer-facing callers pass `anonymous` and get the plain "just taken" error instead,
+ * because another customer's name must never reach a customer (CLAUDE.md, privacy).
+ */
+async function slotTakenError(attempted, ownId, { anonymous = false } = {}) {
+  if (anonymous) return slotTaken([]);
+  const artistDocs = (attempted?.docs || []).filter((d) => d.kind === "artist");
+  if (!artistDocs.length) return new BookingError("SLOT_TAKEN", "Someone took that time just now. Try again.", 409);
+  const taken = await SlotLock.find({
+    kind: "artist",
+    artistId: { $in: [...new Set(artistDocs.map((d) => d.artistId))] },
+    blockStart: { $in: artistDocs.map((d) => d.blockStart) },
+    appointmentId: { $ne: ownId },
+  }).lean();
+  if (!taken.length) return new BookingError("SLOT_TAKEN", "Someone took that time just now. Try again.", 409);
+  const who = await ownersOf(taken);
+  const nameOf = new Map((attempted.guests || []).flatMap((g) => g.items.map((i) => [String(i.artistId), i.artistName])));
+  const artists = [...new Set(taken.filter((l) => l.kind === "artist").map((l) => nameOf.get(String(l.artistId)) || "That artist"))].join(", ");
   const names = who.map((o) => (o.ref ? `${o.name} (${o.ref}${o.startAt ? `, ${clockIst(o.startAt)}` : ""})` : o.name)).join(", ");
-  const e = new BookingError("SLOT_TAKEN", `${artist.name} is already booked then: ${names}. Pick another time or artist.`, 409);
+  const e = new BookingError("SLOT_TAKEN", `${artists} is already booked then: ${names}. Pick another time or artist.`, 409);
   e.conflicts = who;
   return e;
 }
 
 /**
+ * THE way a booking's plan is changed after it exists: confirm a request at a time, move it,
+ * change one guest's artist, reassign for leave, customer reschedule. In ONE transaction it
+ * deletes the booking's old locks and lapsed holds, takes the new locks (lockDocsFor), saves
+ * the guests/items and bumps `planRev`. The unique index on SlotLock is what refuses a clash;
+ * the caller gets 409 SLOT_TAKEN naming who is in the way. Nothing else may write a booking's
+ * locks after creation. (createBooking / confirmPayment / approveRequest / createWalkin write
+ * theirs while creating or settling a booking, with the same lockDocsFor.)
+ *
+ * @param {string} id
+ * @param {object} o
+ * @param {string[]} o.statuses    the booking must be in one of these (else CONFLICT)
+ * @param {string}  [o.toStatus]   also change the status (confirm a request)
+ * @param {object|function} o.plan {guests, startAt, endAt, groupMode?, skipLocks?, noLockReason?, set?},
+ *                                 or a function of the booking as read INSIDE the transaction, so it
+ *                                 can never overwrite a change made a moment ago
+ * @param {number}  [o.expectRev]  plan was built from a copy at this planRev; if it moved → CONFLICT
+ * @param {object}  [o.where]      extra equality conditions (e.g. rescheduleCount)
+ * @param {object}  [o.set]        extra fields to $set     @param {object} [o.inc] extra $inc
+ * @param {boolean} [o.anonymous]  customer-facing: do not name who is in the way
+ * @returns {Promise<{ok: true, appt, before, blocks} | {ok: false, error: "CONFLICT"}>}
+ */
+async function applyGroupPlan(id, { statuses, toStatus = null, plan, expectRev = null, lock = null, unitFor, set = {}, inc = {}, where = {}, reason = null, by = "staff", byUserId = null, now = new Date(), anonymous = false }) {
+  const session = await mongoose.startSession();
+  let out = null;
+  let attempted = null;
+  try {
+    await session.withTransaction(async () => {
+      out = null;
+      attempted = null;
+      const cur = await Appointment.findOne({ _id: id, status: { $in: statuses }, ...where }, null, { session }).lean();
+      if (!cur) return;
+      if (expectRev != null && (cur.planRev || 0) !== expectRev) return;
+      const p = typeof plan === "function" ? await plan(cur) : plan;
+      if (!p) return;
+      const draft = { ...cur, guests: p.guests, startAt: p.startAt, endAt: p.endAt };
+      const state = lock || (cur.status === "requested" && cur.requestExpiresAt ? { state: "hold", expiresAt: cur.requestExpiresAt } : FIRM);
+
+      await SlotLock.deleteMany({ appointmentId: cur._id }, { session });
+      let blocks = 0;
+      if (!p.skipLocks) {
+        const docs = lockDocsFor(draft, state, unitFor);
+        attempted = { docs, guests: p.guests };
+        // One artist cannot do two people at the same moment: say so, instead of a bare duplicate-key error.
+        const seen = new Set();
+        for (const d of docs) {
+          const k = lockKeyOf(d);
+          if (seen.has(k)) {
+            const who = p.guests.flatMap((g) => g.items).find((i) => String(i.artistId) === String(d.artistId))?.artistName || "That artist";
+            throw new BookingError("SLOT_TAKEN", `${who} would be doing two people at the same time. Put them one after another, or pick another artist.`, 409);
+          }
+          seen.add(k);
+        }
+        if (docs.length) {
+          await SlotLock.deleteMany(expiredHoldsFilter(draft, now), { session });
+          await SlotLock.insertMany(docs, { session, ordered: true });
+        }
+        blocks = docs.filter((d) => d.kind === "artist").length;
+      }
+      const updated = await Appointment.findOneAndUpdate(
+        { _id: cur._id, status: cur.status, ...where },
+        {
+          $set: {
+            guests: p.guests,
+            startAt: p.startAt,
+            endAt: p.endAt,
+            lockConflict: false,
+            ...(toStatus ? { status: toStatus } : {}),
+            ...(p.groupMode ? { groupMode: p.groupMode } : {}),
+            ...(p.skipLocks && p.noLockReason ? { noLockReason: p.noLockReason } : {}),
+            ...(p.set || {}),
+            ...set,
+          },
+          ...(p.skipLocks ? {} : { $unset: { noLockReason: "" } }),
+          $inc: { planRev: 1, ...inc },
+          $push: { statusHistory: { from: cur.status, to: toStatus || cur.status, at: now, by, byUserId, reason } },
+        },
+        { returnDocument: "after", session, runValidators: true }
+      ).lean();
+      // Never leave the booking without its locks: undo the delete above.
+      if (!updated) throw Object.assign(new Error("changed"), { changed: true });
+      out = { ok: true, appt: updated, before: cur, blocks };
+    });
+  } catch (err) {
+    if (err?.changed) return { ok: false, error: "CONFLICT" };
+    if (duplicateKey(err) === "slot") throw await slotTakenError(attempted, id, { anonymous });
+    throw err;
+  } finally {
+    await session.endSession();
+  }
+  return out || { ok: false, error: "CONFLICT" };
+}
+
+/**
  * Confirm a request that has no time yet (request-lite and WhatsApp-ad requests) at a
- * date, time and ARTIST staff chose. In ONE transaction: lapsed holds go, the
- * artist's blocks are checked, the firm locks are inserted and the status changes —
- * the same pattern as approveRequest and createWalkin (CLAUDE.md, "Booking
- * integrity"). Another booking in the way is 409 SLOT_TAKEN naming who; nothing is
- * written. See planRequestTime for what is locked.
+ * date, time and ARTIST staff chose (audit item 3, D66). Goes through applyGroupPlan: lapsed
+ * holds go, the artist's blocks are checked, the firm locks are inserted and the status
+ * changes in ONE transaction. Another booking in the way is 409 SLOT_TAKEN naming who;
+ * nothing is written. See planRequestTime for what is locked.
  *
  * @param {object} [extraSet]  more fields to set in the same update (e.g. the manage-link key)
  * @returns {Promise<{ok: true, appt, lock: {taken: boolean, blocks?: number, minutes?: number, warning?: string}} | {ok: false, error: "CONFLICT"}>}
@@ -896,40 +1000,22 @@ async function confirmRequestAtTime(id, { date, time, artistId, extraSet = {}, b
     throw new BookingError("VALIDATION", "Pick a time on the quarter hour, for example 11:00 or 11:15.");
   }
 
-  const session = await mongoose.startSession();
-  let updated = null;
-  let lock = null;
-  try {
-    await session.withTransaction(async () => {
-      updated = null;
-      const appt = await Appointment.findOne({ _id: id, status: "requested" }, null, { session }).lean();
-      if (!appt) return;
-      const plan = planRequestTime(appt, artist, startMs);
-      const draft = { ...appt, guests: plan.guests, startAt: plan.startAt, endAt: plan.endAt };
-      const { blocks, taken } = await takePlannedLocks(draft, plan, artist, session, now);
-      if (taken.length) throw Object.assign(new Error("slot taken"), { takenLocks: taken });
-      updated = await Appointment.findOneAndUpdate(
-        { _id: appt._id, status: "requested" },
-        {
-          $set: { status: "confirmed", startAt: plan.startAt, endAt: plan.endAt, guests: plan.guests, lockConflict: false, ...(plan.lock.taken ? {} : { noLockReason: plan.lock.warning }), ...extraSet },
-          $push: { statusHistory: { from: "requested", to: "confirmed", at: now, by, byUserId } },
-        },
-        { returnDocument: "after", session, runValidators: true }
-      ).lean();
-      lock = plan.lock.taken ? { taken: true, blocks, minutes: blocks * 15 } : { taken: false, warning: plan.lock.warning };
-    });
-  } catch (err) {
-    if (err?.takenLocks) throw await slotTakenBy(artist, err.takenLocks);
-    if (duplicateKey(err) === "slot") {
-      const now2 = await SlotLock.find({ kind: "artist", artistId: artist._id, blockStart: { $gte: new Date(startMs), $lt: new Date(startMs + 24 * 3600_000) } }).lean();
-      throw await slotTakenBy(artist, now2.length ? now2 : []);
-    }
-    throw err;
-  } finally {
-    await session.endSession();
-  }
-  if (!updated) return { ok: false, error: "CONFLICT" };
-  return { ok: true, appt: updated, lock };
+  let planned = null;
+  const done = await applyGroupPlan(id, {
+    statuses: ["requested"],
+    toStatus: "confirmed",
+    plan: (cur) => {
+      planned = planRequestTime(cur, artist, startMs);
+      return { guests: planned.guests, startAt: planned.startAt, endAt: planned.endAt, groupMode: groupModeOf(planned.guests), skipLocks: !planned.lock.taken, noLockReason: planned.lock.warning };
+    },
+    set: extraSet,
+    by,
+    byUserId,
+    now,
+  });
+  if (!done.ok) return done;
+  const lock = planned.lock.taken ? { taken: true, blocks: done.blocks, minutes: done.blocks * 15 } : { taken: false, warning: planned.lock.warning };
+  return { ok: true, appt: done.appt, lock };
 }
 
 /**
@@ -1202,11 +1288,15 @@ async function createWalkin({ name, phone = null, gender = null, artistId, servi
 }
 
 /**
- * Move a booking to another time and/or artist (T2.17). One transaction:
- * release the old locks, take the new ones; if anyone holds a new block the
- * whole move is refused and nothing changes. Items keep their order and
- * durations; `artistId` moves every item to that artist, otherwise each keeps
- * its own. Staff may move outside the online rules (lead time, share).
+ * Move a booking to another time (T2.17). It SHIFTS: every item and the booking's
+ * start/end move by the same amount (new start − old start), so each item keeps its
+ * offset. A parallel group stays parallel; a group served by one artist one after
+ * another stays in series (D67). In one transaction the old locks go and the new ones
+ * are taken; if anyone holds a new block the whole move is refused (409, naming who)
+ * and nothing changes. Staff may move outside the online rules (lead time, share).
+ *
+ * `artistId` moves a ONE-person booking to that artist. For 2+ people it is refused:
+ * change one person's artist with changeGuestArtist.
  */
 async function moveBooking(id, { startAt, artistId = null, reason = null, by = "staff", byUserId = null, now = new Date() }) {
   const Artist = require("../models/Artist");
@@ -1215,43 +1305,39 @@ async function moveBooking(id, { startAt, artistId = null, reason = null, by = "
   const start = Math.floor(new Date(startAt).getTime() / BLOCK_MS) * BLOCK_MS;
   if (!Number.isFinite(start)) throw new BookingError("VALIDATION", "Pick a time.");
 
-  const session = await mongoose.startSession();
-  let updated = null;
-  let before = null;
-  try {
-    await session.withTransaction(async () => {
-      updated = null;
-      const appt = await Appointment.findOne({ _id: id, status: { $in: ["confirmed", "requested", "checked_in"] } }, null, { session }).lean();
-      if (!appt) return;
-      before = { startAt: appt.startAt, artists: [...new Set(appt.guests.flatMap((g) => g.items.map((i) => i.artistName)))] };
-      // Guests run in parallel from the same start (D9); each guest's items chain.
-      const guests = appt.guests.map((g) => ({
-        ...g,
-        items: rechain(g.items.map((i) => (artist ? { ...i, artistId: artist._id, artistName: artist.name } : i)), start),
-      }));
-      const endAt = guests.flatMap((g) => g.items).reduce((m, i) => Math.max(m, i.startAt.getTime() + blocksFor((i.durationMin || 0) + (i.bufferMin || 0))), start);
-      const lock = appt.status === "requested" && appt.requestExpiresAt ? { state: "hold", expiresAt: appt.requestExpiresAt } : FIRM;
-      const draft = { ...appt, guests, startAt: new Date(start), endAt: new Date(endAt) };
+  const done = await applyGroupPlan(id, {
+    statuses: ["confirmed", "requested", "checked_in"],
+    reason: "moved",
+    by,
+    byUserId,
+    now,
+    plan: (cur) => {
+      if (artist && cur.guests.length > 1) {
+        throw new BookingError("VALIDATION", "Change the artist one person at a time. Moving a group only changes the time.");
+      }
+      const timed = cur.startAt && cur.guests.every((g) => g.items.every((i) => i.startAt));
+      let guests;
+      let endMs;
+      if (timed) {
+        const delta = start - new Date(cur.startAt).getTime();
+        const shift = (d) => new Date(new Date(d).getTime() + delta);
+        guests = cur.guests.map((g) => ({
+          ...g,
+          items: g.items.map((i) => ({ ...i, startAt: shift(i.startAt), endAt: i.endAt ? shift(i.endAt) : i.endAt, ...(artist ? { artistId: artist._id, artistName: artist.name } : {}) })),
+        }));
+        endMs = new Date(cur.endAt).getTime() + delta;
+      } else {
+        // A request that was never given a time: lay its items out from the new start.
+        guests = cur.guests.map((g) => ({ ...g, items: rechain(g.items.map((i) => (artist ? { ...i, artistId: artist._id, artistName: artist.name } : i)), start) }));
+        endMs = guests.flatMap((g) => g.items).reduce((m, i) => Math.max(m, i.startAt.getTime() + blocksFor((i.durationMin || 0) + (i.bufferMin || 0))), start);
+      }
+      return { guests, startAt: new Date(start), endAt: new Date(endMs) };
+    },
+  });
+  if (!done.ok) return done;
 
-      await SlotLock.deleteMany({ appointmentId: appt._id }, { session });
-      await SlotLock.deleteMany(expiredHoldsFilter(draft, now), { session });
-      await SlotLock.insertMany(lockDocsFor(draft, lock), { session, ordered: true });
-      updated = await Appointment.findOneAndUpdate(
-        { _id: appt._id, status: appt.status },
-        {
-          $set: { guests, startAt: draft.startAt, endAt: draft.endAt, lockConflict: false },
-          $push: { statusHistory: { from: appt.status, to: appt.status, at: now, by, byUserId, reason: "moved" } },
-        },
-        { returnDocument: "after", session, runValidators: true }
-      );
-    });
-  } catch (err) {
-    if (duplicateKey(err) === "slot") throw new BookingError("SLOT_TAKEN", "That time isn't free for this artist.", 409);
-    throw err;
-  } finally {
-    await session.endSession();
-  }
-  if (!updated) return { ok: false, error: "CONFLICT" };
+  const updated = done.appt;
+  const before = { startAt: done.before.startAt, artists: [...new Set(done.before.guests.flatMap((g) => g.items.map((i) => i.artistName)))] };
   const talkable = updated.status === "confirmed" && updated.source?.channel !== "walkin" && updated.contact !== "walk-in";
   const timeChanged = new Date(before.startAt).getTime() !== new Date(updated.startAt).getTime();
   const artistsNow = [...new Set(updated.guests.flatMap((g) => g.items.map((i) => i.artistName)))];
@@ -1277,6 +1363,107 @@ async function moveBooking(id, { startAt, artistId = null, reason = null, by = "
     });
   }
   return { ok: true, appt: updated, before };
+}
+
+/**
+ * Change ONE guest's artist (D67): only that guest's items are re-picked, times stay as
+ * they were. `artistId` null = pick like the engine (a free artist who can do every
+ * service, working then, not already doing someone else in this booking); a named artist
+ * must be active and able to do every service of that guest. Goes through applyGroupPlan:
+ * 409 SLOT_TAKEN naming who when the artist is busy. `groupMode` follows the artists.
+ *
+ * @returns {Promise<{ok: true, appt, changed: boolean, from: string[], to: string[]} | {ok: false, error: "CONFLICT"}>}
+ */
+async function changeGuestArtist(id, guestKey, artistId, { by = "staff", byUserId = null, now = new Date() } = {}) {
+  const Service = require("../models/Service");
+  const appt = await Appointment.findOne({ _id: id, status: { $in: ["confirmed", "requested", "checked_in"] } }).lean();
+  if (!appt) return { ok: false, error: "CONFLICT" };
+  const guest = appt.guests.find((g) => g.guestKey === guestKey);
+  if (!guest) throw new BookingError("NOT_FOUND", "That person isn't on this booking.", 404);
+  if (!guest.items.length || guest.items.some((i) => !i.startAt)) throw new BookingError("VALIDATION", "This booking has no times yet. Confirm it first.");
+
+  const services = new Map((await Service.find({ _id: { $in: guest.items.map((i) => i.serviceId) } }).lean()).map((d) => [String(d._id), d]));
+  const keysOf = (i) => ({ serviceId: String(i.serviceId), ...(services.get(String(i.serviceId)) ? serviceKeys(services.get(String(i.serviceId))) : {}) });
+  // Every active artist as the engine sees them (skills, hours, what is booked), without THIS booking's own locks.
+  const dates = [...new Set(guest.items.map((i) => salonDate(new Date(i.startAt))))];
+  const inputs = new Map();
+  for (const date of dates) inputs.set(date, (await loadEngineInput({ date, guests: [], services: new Map(), now, staff: true, excludeAppointmentId: appt._id })).input);
+  const pool = inputs.get(dates[0]).artists;
+
+  let picks; // item index → engine artist
+  let expectRev = null;
+  if (artistId) {
+    const a = pool.find((x) => x.id === String(artistId));
+    if (!a) throw new BookingError("VALIDATION", "That artist is not active.");
+    const cannot = guest.items.find((i) => !canDo(a, keysOf(i)));
+    if (cannot) throw new BookingError("VALIDATION", `${a.name} can't do ${cannot.name}.`);
+    picks = guest.items.map(() => a);
+  } else {
+    // Auto-pick. Depends on what else is booked, so it is only valid for this version of the booking.
+    expectRev = appt.planRev || 0;
+    const taken = new Set();
+    for (const g of appt.guests) {
+      if (g.guestKey === guestKey) continue;
+      for (const i of g.items) {
+        if (!i.artistId || !i.startAt) continue;
+        const from = new Date(i.startAt).getTime();
+        for (let b = from; b < from + blocksFor((i.durationMin || 0) + (i.bufferMin || 0)); b += BLOCK_MS) taken.add(`${i.artistId}|${b}`);
+      }
+    }
+    picks = [];
+    for (const item of guest.items) {
+      const input = inputs.get(salonDate(new Date(item.startAt)));
+      const from = new Date(item.startAt).getTime();
+      const to = from + blocksFor((item.durationMin || 0) + (item.bufferMin || 0));
+      const blocks = [];
+      for (let b = from; b < to; b += BLOCK_MS) blocks.push(b);
+      const already = new Set(picks.map((p) => p.id));
+      const candidate = input.artists
+        .filter((a) => canDo(a, keysOf(item)))
+        .filter((a) => a.id !== String(item.artistId)) // they asked to CHANGE it
+        .filter((a) => a.intervals.some((iv) => iv.start <= from && to <= iv.end))
+        .filter((a) => blocks.every((b) => !input.locks.has(`${a.id}|${b}`) && !taken.has(`${a.id}|${b}`)))
+        .sort((x, y) => Number(already.has(y.id)) - Number(already.has(x.id)) || x.bookedMinutes - y.bookedMinutes || x.name.localeCompare(y.name))[0];
+      if (!candidate) throw new BookingError("SLOT_TAKEN", `Nobody else is free at ${formatInstant(item.startAt)} for ${item.name}. Choose an artist yourself or move the booking.`, 409);
+      for (const b of blocks) taken.add(`${candidate.id}|${b}`);
+      picks.push(candidate);
+    }
+  }
+
+  const from = [...new Set(guest.items.map((i) => i.artistName))];
+  const to = [...new Set(picks.map((p) => p.name))];
+  if (guest.items.every((i, n) => String(i.artistId) === picks[n].id)) return { ok: true, appt, changed: false, from, to };
+
+  const done = await applyGroupPlan(id, {
+    statuses: ["confirmed", "requested", "checked_in"],
+    expectRev,
+    reason: `guest ${guestKey} artist: ${from.join(", ")} → ${to.join(", ")}`,
+    by,
+    byUserId,
+    now,
+    plan: (cur) => {
+      const g = cur.guests.find((x) => x.guestKey === guestKey);
+      if (!g || g.items.length !== picks.length) return null;
+      const guests = cur.guests.map((x) => (x.guestKey !== guestKey ? x : { ...x, items: x.items.map((i, n) => ({ ...i, artistId: new mongoose.Types.ObjectId(picks[n].id), artistName: picks[n].name })) }));
+      return { guests, startAt: cur.startAt, endAt: cur.endAt, groupMode: groupModeOf(guests) };
+    },
+  });
+  if (!done.ok) return done;
+
+  // The booker named an artist for the FIRST person and that person now has someone else: tell them, as a move does (D48).
+  const updated = done.appt;
+  const talkable = updated.status === "confirmed" && updated.source?.channel !== "walkin" && updated.contact !== "walk-in";
+  if (talkable && updated.preferredArtistId && updated.guests[0]?.guestKey === guestKey) {
+    await Appointment.updateOne({ _id: updated._id }, { $set: { artistChangedBySalon: true } });
+    await notify({
+      key: `${updated._id}:artist_changed:${to.join(",")}:${new Date(updated.startAt).getTime()}`,
+      type: "booking_artist_changed",
+      to: updated.contact,
+      appointmentId: updated._id,
+      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: from.join(", "), newArtist: to.join(", "), reason: null, link: manageUrl(updated) },
+    });
+  }
+  return { ok: true, appt: updated, changed: true, from, to };
 }
 
 /**
@@ -1350,43 +1537,41 @@ async function reassignForLeave({ artistId, from, to, reason = null, by = "staff
 
       const Artist = require("../models/Artist");
       const names = new Map((await Artist.find({ _id: { $in: [...picks.values()].map((a) => a.id) } }, { name: 1 }).lean()).map((a) => [String(a._id), a.name]));
-      const session = await mongoose.startSession();
-      let updated = null;
+      let updated;
       try {
-        await session.withTransaction(async () => {
-          updated = null;
-          const cur = await Appointment.findOne({ _id: appt._id, status: appt.status }, null, { session }).lean();
-          if (!cur) return;
-          const guests = cur.guests.map((g, gi) => ({
-            ...g,
-            items: g.items.map((i, ii) => {
-              const pick = picks.get(`${gi}:${ii}`);
-              return pick ? { ...i, artistId: new mongoose.Types.ObjectId(pick.id), artistName: names.get(pick.id) || pick.name } : i;
-            }),
-          }));
-          const lock = cur.status === "requested" && cur.requestExpiresAt ? { state: "hold", expiresAt: cur.requestExpiresAt } : FIRM;
-          const draft = { ...cur, guests };
-          await SlotLock.deleteMany({ appointmentId: cur._id }, { session });
-          await SlotLock.insertMany(lockDocsFor(draft, lock), { session, ordered: true });
-          updated = await Appointment.findOneAndUpdate(
-            { _id: cur._id, status: cur.status },
-            {
-              $set: { guests, ...(cur.preferredArtistId ? { artistChangedBySalon: true } : {}) },
-              $push: { statusHistory: { from: cur.status, to: cur.status, at: now, by, byUserId, reason: `artist_reassigned${reason ? `: ${reason}` : ""}` } },
-            },
-            { returnDocument: "after", session, runValidators: true }
-          );
+        const done = await applyGroupPlan(appt._id, {
+          statuses: [appt.status],
+          // The picks above were made from this version of the booking.
+          expectRev: appt.planRev || 0,
+          reason: `artist_reassigned${reason ? `: ${reason}` : ""}`,
+          by,
+          byUserId,
+          now,
+          set: appt.preferredArtistId ? { artistChangedBySalon: true } : {},
+          plan: (cur) => ({
+            guests: cur.guests.map((g, gi) => ({
+              ...g,
+              items: g.items.map((i, ii) => {
+                const pick = picks.get(`${gi}:${ii}`);
+                return pick ? { ...i, artistId: new mongoose.Types.ObjectId(pick.id), artistName: names.get(pick.id) || pick.name } : i;
+              }),
+            })),
+            startAt: cur.startAt,
+            endAt: cur.endAt,
+          }),
         });
+        if (!done.ok) {
+          flagged.push({ ...brief, reason: "This booking changed while it was being moved. Check it by hand." });
+          continue;
+        }
+        updated = done.appt;
       } catch (err) {
-        if (duplicateKey(err) === "slot") {
+        if (err?.code === "SLOT_TAKEN") {
           flagged.push({ ...brief, reason: "Someone took the free time just now." });
           continue;
         }
         throw err;
-      } finally {
-        await session.endSession();
       }
-      if (!updated) continue;
 
       const oldNames = [...new Set(appt.guests.flatMap((g) => g.items.filter(itemsAffected).map((i) => i.artistName)))];
       const newNames = [...new Set([...picks.values()].map((a) => names.get(a.id) || a.name))];
@@ -1631,7 +1816,9 @@ async function rescheduleBooking(appt, { startAt, now = new Date() }) {
   const docs = await require("../models/Service").find({ _id: { $in: ids } }).lean();
   const services = new Map(docs.map((d) => [String(d._id), d]));
   const guests = appt.guests.map((g) => ({ key: g.guestKey, serviceIds: g.items.map((i) => String(i.serviceId)) }));
-  const firstArtist = appt.guests[0]?.items[0]?.artistId ? String(appt.guests[0].items[0].artistId) : null;
+  // One person keeps their artist. A group is matched afresh: naming guest 1's artist for everyone would leave
+  // no time at all (guests run in parallel). Per-person preferences come with the group engine (D67).
+  const firstArtist = appt.guests.length === 1 && appt.guests[0]?.items[0]?.artistId ? String(appt.guests[0].items[0].artistId) : null;
   const { input } = await loadEngineInput({ date, guests, services, artistId: firstArtist, now, excludeAppointmentId: appt._id, patchTestOk: true });
   const slot = availability({ ...input, onlyAt: wanted }).slots[0];
   if (!slot) throw slotTaken([]);
@@ -1649,34 +1836,26 @@ async function rescheduleBooking(appt, { startAt, now = new Date() }) {
       }),
     };
   });
-  const draft = { ...appt, guests: newGuests, startAt: new Date(slot.startAt), endAt: new Date(slot.endAt) };
-  const lock = appt.status === "requested" && appt.requestExpiresAt ? { state: "hold", expiresAt: appt.requestExpiresAt } : FIRM;
-
-  const session = await mongoose.startSession();
-  let updated = null;
+  // Same transaction as every other change of a booking's plan. The customer must never learn who
+  // holds the time they wanted, so a clash is the plain "just taken" error (anonymous).
+  let updated;
   try {
-    await session.withTransaction(async () => {
-      updated = null;
-      await SlotLock.deleteMany({ appointmentId: appt._id }, { session });
-      await SlotLock.deleteMany(expiredHoldsFilter(draft, now), { session });
-      await SlotLock.insertMany(lockDocsFor(draft, lock), { session, ordered: true });
-      updated = await Appointment.findOneAndUpdate(
-        { _id: appt._id, status: appt.status, rescheduleCount: appt.rescheduleCount || 0 },
-        {
-          $set: { guests: newGuests, startAt: draft.startAt, endAt: draft.endAt },
-          $inc: { rescheduleCount: 1 },
-          $push: { statusHistory: { from: appt.status, to: appt.status, at: now, by: "customer", reason: "rescheduled online" } },
-        },
-        { returnDocument: "after", session }
-      );
-      if (!updated) throw Object.assign(new Error("changed"), { changed: true });
+    const done = await applyGroupPlan(appt._id, {
+      statuses: [appt.status],
+      expectRev: appt.planRev || 0,
+      where: { rescheduleCount: appt.rescheduleCount || 0 },
+      inc: { rescheduleCount: 1 },
+      reason: "rescheduled online",
+      by: "customer",
+      now,
+      anonymous: true,
+      plan: { guests: newGuests, startAt: new Date(slot.startAt), endAt: new Date(slot.endAt) },
     });
+    if (!done.ok) throw new BookingError("CONFLICT", "This booking just changed. Reload the page.", 409);
+    updated = done.appt;
   } catch (err) {
-    if (duplicateKey(err) === "slot") throw slotTaken([]);
-    if (err.changed) throw new BookingError("CONFLICT", "This booking just changed. Reload the page.", 409);
+    if (err?.code === "SLOT_TAKEN") throw slotTaken([]);
     throw err;
-  } finally {
-    await session.endSession();
   }
   await Promise.all([
     notify({
@@ -1767,7 +1946,9 @@ module.exports = {
   approveRequest,
   confirmRequestAtTime,
   planRequestTime,
-  takePlannedLocks,
+  applyGroupPlan,
+  changeGuestArtist,
+  groupModeOf,
   releaseBySalon,
   closeBooking,
   createWalkin,

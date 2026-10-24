@@ -28,7 +28,7 @@
  */
 
 const express = require("express");
-const { body, query, validationResult } = require("express-validator");
+const { body, param, query, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Appointment = require("../models/Appointment");
 const Artist = require("../models/Artist");
@@ -491,6 +491,32 @@ router.post(
       return res.json({ booking: toStaffView(out.appt) });
     } catch (err) {
       return sendBookingError(res, err, "move the booking");
+    }
+  }
+);
+
+// ─── POST /:id/guests/:guestKey/artist — change ONE person's artist (D67) ─────
+router.post(
+  "/:id/guests/:guestKey/artist",
+  validateId,
+  authorizePermission(PERMISSIONS.BOOKINGS_MANAGE),
+  [param("guestKey").matches(/^g\d{1,2}$/).withMessage("Unknown person"), body("artistId").optional({ nullable: true }).isMongoId().withMessage("Unknown artist")],
+  async (req, res) => {
+    if (firstError(req, res)) return;
+    try {
+      const out = await booking.changeGuestArtist(req.params.id, req.params.guestKey, req.body.artistId || null, actor(req));
+      if (!out.ok) return conflict(res, req.params.id);
+      if (out.changed) {
+        await audit.record({
+          action: "booking.guest_artist_changed",
+          req,
+          target: { name: out.appt.name },
+          meta: { appointmentId: String(out.appt._id), ref: out.appt.ref, guestKey: req.params.guestKey, from: out.from, to: out.to, auto: !req.body.artistId },
+        });
+      }
+      return res.json({ booking: toStaffView(out.appt), changed: out.changed });
+    } catch (err) {
+      return sendBookingError(res, err, "change the artist");
     }
   }
 );

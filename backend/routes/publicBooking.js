@@ -499,7 +499,8 @@ router.get("/booking/:token/availability", manageReadLimit, [query("date").custo
       guests: appt.guests.map((g) => ({ key: g.guestKey, serviceIds: g.items.map((i) => String(i.serviceId)) })),
       services: new Map(docs.map((d) => [String(d._id), d])),
     };
-    const firstArtist = appt.guests[0]?.items[0]?.artistId ? String(appt.guests[0].items[0].artistId) : null;
+    // Same rule as rescheduleBooking: one person keeps their artist; a group is matched afresh.
+    const firstArtist = appt.guests.length === 1 && appt.guests[0]?.items[0]?.artistId ? String(appt.guests[0].items[0].artistId) : null;
     const out = await booking.findSlots({ date: req.query.date, selection, artistId: firstArtist, excludeAppointmentId: appt._id, phone: appt.contact });
     res.set("Cache-Control", "no-store");
     return res.json({ date: req.query.date, slots: out.slots });

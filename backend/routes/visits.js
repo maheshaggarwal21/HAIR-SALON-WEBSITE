@@ -405,6 +405,7 @@ async function createAppointmentVisit(req, res) {
         startTime: x.startTime,
         endTime: x.endTime,
         actualDurationMins: null,
+        ...(x.guestName ? { guestName: x.guestName } : {}),
       }));
 
       [visit] = await Visit.create(
@@ -814,6 +815,7 @@ router.get("/:id/assignment-draft", authorizePermission(PERMISSIONS.VISIT_CREATE
         artistId: s.artistId ? String(s.artistId) : null,
         startTime: s.startTime || null,
         endTime: s.endTime || null,
+        guestName: s.guestName || null,
       })),
       assignmentStatus: visit.assignmentStatus || "not_required",
       lockUntilAssigned: !!visit.lockUntilAssigned,

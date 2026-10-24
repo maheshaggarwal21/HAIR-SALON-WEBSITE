@@ -60,26 +60,24 @@ async function backfill({ apply = false, now = new Date() } = {}) {
       continue;
     }
 
-    const session = await mongoose.startSession();
     try {
-      let blocks = 0;
-      let blockedBy = 0;
-      await session.withTransaction(async () => {
-        blocks = 0;
-        blockedBy = 0;
-        const cur = await Appointment.findOne({ _id: appt._id, status: "confirmed" }, null, { session }).lean();
-        if (!cur) return;
-        const r = await booking.takePlannedLocks(draft, plan, artist, session, now);
-        if (r.taken.length) { blockedBy = r.taken.length; return; }
-        blocks = r.blocks;
-        await Appointment.updateOne({ _id: appt._id }, { $set: { guests: plan.guests, startAt: plan.startAt, endAt: plan.endAt } }, { session });
+      // The same one write path as a real confirm (applyGroupPlan): it only touches a booking that is
+      // still confirmed, and a clash rolls everything back.
+      const done = await booking.applyGroupPlan(appt._id, {
+        statuses: ["confirmed"],
+        reason: "locks added for a booking confirmed before request locks existed",
+        by: "script",
+        now,
+        plan: (cur) => {
+          // Re-plan from the booking as it is right now, not from the copy read above.
+          const fresh = booking.planRequestTime(cur, artist, new Date(cur.startAt).getTime());
+          return { guests: fresh.guests, startAt: fresh.startAt, endAt: fresh.endAt, groupMode: booking.groupModeOf(fresh.guests), skipLocks: !fresh.lock.taken };
+        },
       });
-      if (blockedBy) out.skipped.push({ ...brief, reason: `${artist.name} is already booked in that time (${blockedBy} block(s))` });
-      else if (blocks) out.locked.push({ ...brief, artist: artist.name, blocks });
+      if (done.ok) out.locked.push({ ...brief, artist: artist.name, blocks: done.blocks });
+      else out.skipped.push({ ...brief, reason: "the booking changed while the script ran" });
     } catch (err) {
-      out.skipped.push({ ...brief, reason: `could not lock: ${err.message}` });
-    } finally {
-      await session.endSession();
+      out.skipped.push({ ...brief, reason: err.message });
     }
   }
   return out;
