@@ -60,6 +60,7 @@ const { manageToken, hashManageToken } = require("./bookingToken");
 const payments = require("./payments");
 const { notify } = require("./notify");
 const { alertBooking, formatInstant, whenText } = require("./bookingAlerts");
+const { groupLimitMessage } = require("./groupLimit");
 const metaCapi = require("./metaCapi");
 
 const ACTIVE = ["pending_payment", "requested", "confirmed"];
@@ -307,7 +308,7 @@ async function createBooking(o) {
     throw new BookingError("OUTSIDE_HOURS", `Choose a date within the next ${settings.horizonDays} days.`);
   }
   if (selection.guests.length > settings.maxGuests) {
-    throw new BookingError("VALIDATION", `Book up to ${settings.maxGuests} people at a time.`);
+    throw new BookingError("VALIDATION", groupLimitMessage(settings.maxGuests));
   }
 
   // E11 / E12 — the phone's other open bookings. Lapsed unpaid holds don't count.

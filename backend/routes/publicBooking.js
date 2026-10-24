@@ -38,6 +38,7 @@ const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const SiteSettings = require("../models/SiteSettings");
 const { mongoRateLimit, hit, peek } = require("../middleware/mongoRateLimit");
+const { groupLimitMessage } = require("../utils/groupLimit");
 const { verifyTurnstile } = require("../utils/turnstile");
 const { clientIp } = require("../utils/audit");
 const { salonDate, isValidDate, daysBetween } = require("../utils/time");
@@ -147,7 +148,7 @@ router.get(
       }
       const settings = await SiteSettings.getSingleton();
       if (raw.length > settings.maxGuests) {
-        return res.status(400).json({ error: "VALIDATION", message: `Book up to ${settings.maxGuests} people at a time.` });
+        return res.status(400).json({ error: "VALIDATION", message: groupLimitMessage(settings.maxGuests) });
       }
       const ahead = daysBetween(salonDate(), req.query.date);
       if (ahead < 0 || ahead > settings.horizonDays) {
@@ -194,7 +195,7 @@ router.post("/quote", only(["guests", "packageSlug"]), perIpMinute("quote"), [
   try {
     const settings = (await SiteSettings.getSingleton()).toObject();
     if (req.body.guests.length > settings.maxGuests) {
-      return res.status(400).json({ error: "VALIDATION", message: `Book up to ${settings.maxGuests} people at a time.` });
+      return res.status(400).json({ error: "VALIDATION", message: groupLimitMessage(settings.maxGuests) });
     }
     const pkg = await resolvePackage(req.body.packageSlug);
     const selection = await booking.prepareSelection(req.body.guests, pkg);

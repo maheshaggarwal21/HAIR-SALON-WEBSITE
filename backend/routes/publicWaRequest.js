@@ -33,6 +33,7 @@ const { mongoRateLimit, hit } = require("../middleware/mongoRateLimit");
 const { alertNewRequest } = require("../utils/bookingAlerts");
 const { isValidDate, salonDate } = require("../utils/time");
 const wa = require("../utils/waRequest");
+const { groupLimitMessage } = require("../utils/groupLimit");
 const mongoose = require("mongoose");
 const { manageToken, hashManageToken } = require("../utils/bookingToken");
 const offerPages = require("../utils/offerPages");
@@ -131,7 +132,7 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
     // ── How many people (D67). Omitted or 1 = the request exactly as it always was. ──
     const people = b.people == null ? 1 : Number(b.people);
     if (people > settings.maxGuests) {
-      return res.status(400).json({ error: "VALIDATION", message: `Book up to ${settings.maxGuests} people at a time.`, fields: ["people"] });
+      return res.status(400).json({ error: "VALIDATION", message: groupLimitMessage(settings.maxGuests), fields: ["people"] });
     }
     const guestNames = Array.isArray(b.guestNames) ? b.guestNames.map((n) => String(n ?? "").trim()) : [];
     if (guestNames.length > people - 1) {
