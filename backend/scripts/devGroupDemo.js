@@ -8,8 +8,14 @@
  *     cd backend && node scripts/devGroupDemo.js
  *
  * Test data: owner login owner@demo.test / Demo@12345; artists Mansi, Ravi, Neha and Skin Sana
- * (skin only); the offer page /offers/karwa with two packages; two confirmed group bookings today
- * (one side by side, one with a single artist one after another); one 3-person request waiting.
+ * (skin only), all taking online bookings; instant services (Hair Spa, Blow Dry, Fruit Facial); the
+ * offer page /offers/karwa with two packages; two confirmed group bookings today (one side by side,
+ * one with a single artist one after another); one 3-person request waiting.
+ *
+ * Online booking works too: the code for the phone check is printed here ("[otp] DEV code ..."), and
+ * payment is a fake. After "Book and pay" (the Razorpay window will not open), settle it by opening
+ *     http://localhost:4100/pay/<the booking reference>
+ * Messages that would go to customers are listed at http://localhost:4100/messages.
  */
 for (const k of ["TELEGRAM_BOT_TOKEN", "META_WA_TOKEN", "META_WA_PHONE_NUMBER_ID", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET", "CUSTOMER_SITE_URL", "REVALIDATE_SECRET", "BLOB_READ_WRITE_TOKEN", "CRON_SECRET", "OWNER_EMAIL", "OWNER_PASSWORD", "TURNSTILE_SECRET_KEY", "META_CAPI_TOKEN"]) process.env[k] = "";
 Object.assign(process.env, { NODE_ENV: "development", PORT: "4000", PUBLIC_TOKEN_SECRET: "demo", SESSION_SECRET: "demo-secret" });
@@ -29,18 +35,25 @@ Object.assign(process.env, { NODE_ENV: "development", PORT: "4000", PUBLIC_TOKEN
   await m("SiteSettings").getSingleton();
   await m("User").collection.insertOne({ name: "Salon Owner", email: "owner@demo.test", passwordHash: hash, role: "owner", isActive: true, permissions: [], createdAt: now, updatedAt: now });
 
-  const c = { isActive: true, showOnWebsite: true, durationConfirmed: true, bookingMode: "request", audience: "her", displayCategory: "Hair" };
+  // Fake Razorpay: orders are made up, nothing leaves this machine. This also switches "online booking" on.
+  require("../utils/payments").setClientForTests({
+    orders: { create: async (o) => ({ id: `order_demo_${Math.random().toString(36).slice(2, 10)}`, amount: o.amount, currency: o.currency, notes: o.notes }) },
+    payments: { refund: async () => ({ id: "rfnd_demo", status: "processed" }) },
+  });
+
+  const c = { isActive: true, showOnWebsite: true, durationConfirmed: true, bookingMode: "instant", audience: "her", displayCategory: "Hair" };
   const Service = m("Service");
   const [spa, blow] = await Service.create([
     { ...c, name: "Hair Spa", price: 1600, publicPrice: 800, slug: "hair-spa", durationMinutes: 60 },
     { ...c, name: "Blow Dry", price: 600, publicPrice: 300, slug: "blow-dry", durationMinutes: 30 },
   ]);
   await Service.create({ ...c, name: "Fruit Facial", price: 1800, publicPrice: 900, slug: "fruit-facial", displayCategory: "Skin", durationMinutes: 60 });
+  const prof = (slug, name) => ({ slug, displayName: name, visible: true, level: "senior", specialties: ["Hair"] });
   const [mansi, ravi, neha] = await m("Artist").create([
-    { name: "Mansi Kumari", phone: "9888800001", commission: 40, gender: "female", onlineBookable: true },
-    { name: "Ravi", phone: "9888800002", commission: 30, gender: "male", onlineBookable: true },
-    { name: "Neha", phone: "9888800003", commission: 30, gender: "female", onlineBookable: true },
-    { name: "Skin Sana", phone: "9888800004", commission: 30, gender: "female", onlineBookable: true, skillMode: "custom", skillAll: false, skillCategories: ["Skin"] },
+    { name: "Mansi Kumari", phone: "9888800001", commission: 40, gender: "female", onlineBookable: true, publicProfile: prof("mansi", "Mansi") },
+    { name: "Ravi", phone: "9888800002", commission: 30, gender: "male", onlineBookable: true, publicProfile: prof("ravi", "Ravi") },
+    { name: "Neha", phone: "9888800003", commission: 30, gender: "female", onlineBookable: true, publicProfile: prof("neha", "Neha") },
+    { name: "Skin Sana", phone: "9888800004", commission: 30, gender: "female", onlineBookable: true, skillMode: "custom", skillAll: false, skillCategories: ["Skin"], publicProfile: { ...prof("skin-sana", "Sana"), specialties: ["Skin"] } },
   ]);
 
   const base = "http://127.0.0.1:4000/api";
@@ -88,5 +101,23 @@ Object.assign(process.env, { NODE_ENV: "development", PORT: "4000", PUBLIC_TOKEN
     body: JSON.stringify({ offerSlug: "karwa", packageSlug: "package-1", date: day, time: "11:00", name: "Meena Gupta", phone: "9876500103", people: 3, guestNames: ["Nisha", "Pooja"], campaign: "karwa" }),
   });
   console.log("group request:", req.status, (await req.json()).ref);
-  console.log("\nDEMO READY  API http://localhost:4000   login owner@demo.test / Demo@12345");
+  // A tiny helper on :4100 to settle the fake payment and to see what would have been sent to customers.
+  const NotificationLog = m("NotificationLog");
+  const Appointment = m("Appointment");
+  require("http").createServer(async (q, res) => {
+    res.setHeader("content-type", "application/json");
+    try {
+      const pay = /^\/pay\/(EXP-[A-Z0-9]{5})$/.exec(q.url);
+      if (pay) {
+        const a = await Appointment.findOne({ ref: pay[1] }).lean();
+        if (!a?.deposit?.razorpayOrderId) return res.end(JSON.stringify({ error: "no such booking waiting for payment" }));
+        const out = await booking.confirmPayment({ orderId: a.deposit.razorpayOrderId, paymentId: `pay_demo_${a.ref}`, amount: a.deposit.amount });
+        return res.end(JSON.stringify({ outcome: out.outcome, ref: a.ref }));
+      }
+      res.end(JSON.stringify(await NotificationLog.find({}, { type: 1, to: 1, status: 1, params: 1, _id: 0 }).sort({ createdAt: 1 }).lean(), null, 1));
+    } catch (e) {
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  }).listen(4100);
+  console.log("\nDEMO READY  API http://localhost:4000   login owner@demo.test / Demo@12345   helper http://localhost:4100");
 })().catch((e) => { console.error(e); process.exit(1); });

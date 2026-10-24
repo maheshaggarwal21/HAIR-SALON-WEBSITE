@@ -622,7 +622,7 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
                 {cfg.maxGuests > 1 && (
                   <div className="rounded-[var(--radius-card)] border border-line p-4">
                     <div className="font-semibold">Me and others</div>
-                    <div className="text-[14px] text-ink-muted">Up to {cfg.maxGuests} people at the same time, with different artists</div>
+                    <div className="text-[14px] text-ink-muted">Up to {cfg.maxGuests} people. Choose each person&apos;s artist, or one artist for everyone, one after another.</div>
                     <div className="mt-3 flex items-center gap-3">
                       <button
                         type="button"
