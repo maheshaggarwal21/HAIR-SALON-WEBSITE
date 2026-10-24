@@ -80,7 +80,15 @@ interface ReelRow {
 
 const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, images: [], packages: [], reelId: null, serviceIds: [] });
 const slugify = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+/**
+ * While the owner is TYPING an address a dash at the end must stay (she is about to type the next
+ * word); it is only trimmed when she leaves the box and when the offer is saved.
+ */
+const typingAddress = (v: string) => v.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+/, "").slice(0, 60);
+const finishedAddress = (v: string | null) => (v == null ? null : v.replace(/-+$/, ""));
 const SITE = "https://www.thexpertshair.com";
+/** Addresses the website already uses for its own pages. The server refuses them too (utils/offerPages.js). */
+const RESERVED_ADDRESSES = ["now", "karva-chauth", "api", "new", "edit"];
 const MAX_PICTURES = 5;
 
 interface ServicePrice {
@@ -463,7 +471,7 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
             <label className={labelClass}>Page address</label>
             <div className="flex items-center gap-2">
               <span className="text-sm text-stone-500 whitespace-nowrap">…/offers/</span>
-              <input value={slug} onChange={(e) => setPage({ slug: slugify(e.target.value) })} maxLength={60} placeholder="karwa" className={inputClass} />
+              <input value={slug} onChange={(e) => setPage({ slug: typingAddress(e.target.value) })} onBlur={() => setPage({ slug: finishedAddress(page.slug) })} maxLength={60} placeholder="karwa" className={inputClass} />
             </div>
             {slug.length >= 3 && (
               <div className="mt-2 space-y-0.5 text-xs text-stone-500">
@@ -584,6 +592,7 @@ function priceProblem(o: Offer, menu: MenuService[]): string | null {
   }
   if (o.page?.slug !== null && o.page?.slug !== undefined) {
     if (o.page.slug.length < 3) return "The page address needs at least 3 letters or numbers.";
+    if (RESERVED_ADDRESSES.includes(o.page.slug)) return `"${o.page.slug}" is already a page on the website. Change the page address, for example to ${o.page.slug}-2026.`;
     for (const k of o.page.packages ?? []) {
       if (!k.name.trim()) return "Give each package on the offer page a name.";
       if (!(Number.isInteger(Number(k.price)) && Number(k.price) >= 1)) return `${k.name}: enter the package price in whole rupees.`;
@@ -625,7 +634,7 @@ export default function WebsiteOffers() {
     setError("");
     try {
       const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page } = editing;
-      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, image: page.images?.[0] ?? null } };
+      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, slug: finishedAddress(page.slug), image: page.images?.[0] ?? null } };
       await api(_id ? `/campaigns/${_id}` : "/campaigns", { method: _id ? "PATCH" : "POST", body: JSON.stringify(body) });
       setEditing(null);
       await load();
@@ -683,7 +692,7 @@ export default function WebsiteOffers() {
         )}
       </div>
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && !editing && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {editing && (
         <section className="bg-white rounded-xl border border-stone-200/80 shadow-sm p-5 mb-6 space-y-5">
@@ -830,6 +839,12 @@ export default function WebsiteOffers() {
           <OfferPageEditor offer={editing} menu={menu} reels={reels} onChange={set} />
 
           {problem && <p className="text-sm text-red-600">{problem}</p>}
+          {/* The server's reason for refusing a save, right where the Save button is (it used to show far above, unseen). */}
+          {error && (
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              Not saved: {error}
+            </p>
+          )}
 
           <div className="flex justify-end gap-2">
             <button onClick={() => setEditing(null)} className="h-10 px-4 rounded-lg border border-stone-200 text-sm text-stone-700 hover:bg-stone-50">

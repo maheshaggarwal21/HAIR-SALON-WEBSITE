@@ -616,7 +616,7 @@ const campaignValidators = (partial) => {
       .matches(/^[a-z0-9][a-z0-9-]{2,59}$/)
       .withMessage("The page address is 3 to 60 letters, numbers or dashes")
       .custom((v) => !offerPages.RESERVED_SLUGS.has(v))
-      .withMessage("That page address is already used by the site"),
+      .withMessage("That page address is already a page on the website. Choose another one, for example by adding -2026 to the end."),
     body("page.headline").optional({ nullable: true }).isString().trim().isLength({ max: 90 }),
     body("page.offerText").optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
     body("page.price").optional({ nullable: true }).isInt({ min: 1, max: 1000000 }).withMessage("The page price is whole rupees").toInt(),
