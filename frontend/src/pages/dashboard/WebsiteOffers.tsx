@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Megaphone, Pause, Pencil, Play, Plus, Save, Search, Trash2, X } from "lucide-react";
 import MediaInput from "@/components/website/MediaInput";
+import PosterReader from "@/components/website/PosterReader";
 
 const API = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -55,7 +56,10 @@ interface OfferPage {
   offerText: string | null;
   price: number | null;
   priceNote: string | null;
+  /** Kept in step with images[0]; older offers only have this one. */
   image: string | null;
+  /** Up to 5 pictures or posters, shown as a slideshow on the page, in this order (D63). */
+  images: string[];
   reelId: string | null;
   serviceIds: string[];
 }
@@ -65,9 +69,10 @@ interface ReelRow {
   mediaType?: string;
 }
 
-const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, reelId: null, serviceIds: [] });
+const blankPage = (): OfferPage => ({ slug: null, headline: null, offerText: null, price: null, priceNote: null, image: null, images: [], reelId: null, serviceIds: [] });
 const slugify = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const SITE = "https://www.thexpertshair.com";
+const MAX_PICTURES = 5;
 
 interface ServicePrice {
   serviceId: string;
@@ -251,6 +256,14 @@ function PricesEditor({ offer, menu, onChange }: { offer: Offer; menu: MenuServi
         <p className="text-sm text-stone-500 mt-1">
           Several services sold together at one lower price. The website lists the bundle with what is in it and the total if booked separately, and the customer books and pays for it in one go.
         </p>
+        <div className="mt-3">
+          <PosterReader
+            menu={menu}
+            onAddBundles={(more) => onChange({ bundles: [...offer.bundles, ...more] })}
+            canAddPicture={offer.page?.slug != null && (offer.page.images?.length ?? 0) < MAX_PICTURES}
+            onAddPicture={(url) => onChange({ page: { ...(offer.page ?? blankPage()), images: [...(offer.page?.images ?? []), url] } })}
+          />
+        </div>
         <div className="mt-3 space-y-3">
           {offer.bundles.map((b, i) => {
             const items = b.serviceIds.map((id) => byId.get(id));
@@ -316,7 +329,40 @@ function PricesEditor({ offer, menu, onChange }: { offer: Offer; menu: MenuServi
 }
 
 /** What stops the offer being saved, in plain words (the server checks again). */
-/** The offer's own page: address, words, picture or reel, price line and the services to pre-select. */
+/**
+ * One new picture: upload it or paste its link, then press Add. It is added only on the button,
+ * so typing a link letter by letter never adds half a link.
+ */
+function AddPicture({ label, onAdd }: { label: string; onAdd: (url: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const ok = Boolean(draft && /^https:\/\/\S+$/.test(draft));
+  return (
+    <div className="mt-2 rounded-xl border border-dashed border-stone-300 p-3 space-y-2">
+      <MediaInput label={label} folder="offers" value={draft} onChange={setDraft} hint="A wide or tall poster both work. The whole picture is shown, nothing is cropped." />
+      <button
+        type="button"
+        disabled={!ok}
+        onClick={() => {
+          if (draft) onAdd(draft);
+          setDraft(null);
+        }}
+        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-stone-900 text-white text-xs font-semibold disabled:opacity-40 hover:bg-stone-800"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add picture
+      </button>
+    </div>
+  );
+}
+
+/** A copy of the list with one item moved from one place to another. */
+function move<T>(list: T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+/** The offer's own page: address, words, pictures or reel, price line and the services to pre-select. */
 function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu: MenuService[]; reels: ReelRow[]; onChange: (patch: Partial<Offer>) => void }) {
   const page = offer.page ?? blankPage();
   const on = page.slug !== null;
@@ -386,9 +432,35 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
             This price is shown on the page and recorded with the request. It is <b>not applied</b> to anything: the receptionist gives the discount by hand when she bills.
           </p>
 
-          <MediaInput label="Picture for the page (optional)" folder="offers" value={page.image} onChange={(u) => setPage({ image: u })} hint="A wide image works best. If you pick a reel below it plays instead." />
           <div>
-            <label className={labelClass}>Or play one of your Instagram reels</label>
+            <label className={labelClass}>Pictures and posters (up to {MAX_PICTURES})</label>
+            <p className="text-xs text-stone-500 mb-2">They play as a slideshow at the top of the page, in this order. Visitors can swipe through them.</p>
+            <ul className="space-y-2">
+              {page.images.map((u, i) => (
+                <li key={`${u}-${i}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                  <img src={u} alt="" className="h-14 w-11 shrink-0 rounded-md object-cover border border-stone-200 bg-stone-100" />
+                  <div className="min-w-0 flex-1 basis-40">
+                    <div className="text-xs font-semibold text-stone-700">Picture {i + 1}</div>
+                    <div className="truncate text-[11px] text-stone-500">{u}</div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button type="button" disabled={i === 0} onClick={() => setPage({ images: move(page.images, i, i - 1) })} className="h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-semibold text-stone-700 disabled:opacity-30 hover:bg-stone-50">
+                      Earlier
+                    </button>
+                    <button type="button" disabled={i === page.images.length - 1} onClick={() => setPage({ images: move(page.images, i, i + 1) })} className="h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-semibold text-stone-700 disabled:opacity-30 hover:bg-stone-50">
+                      Later
+                    </button>
+                    <button type="button" aria-label={`Remove picture ${i + 1}`} onClick={() => setPage({ images: page.images.filter((_, j) => j !== i) })} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-stone-400 hover:bg-white hover:text-red-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {page.images.length < MAX_PICTURES && <AddPicture label={page.images.length ? "Add another picture" : "Add a picture"} onAdd={(u) => setPage({ images: [...page.images, u] })} />}
+          </div>
+          <div>
+            <label className={labelClass}>Start the slideshow with one of your Instagram reels (optional)</label>
             <select value={page.reelId ?? ""} onChange={(e) => setPage({ reelId: e.target.value || null })} className={inputClass}>
               <option value="">No reel</option>
               {reels.map((r) => (
@@ -472,7 +544,7 @@ export default function WebsiteOffers() {
     setError("");
     try {
       const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page } = editing;
-      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page };
+      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, image: page.images?.[0] ?? null } };
       await api(_id ? `/campaigns/${_id}` : "/campaigns", { method: _id ? "PATCH" : "POST", body: JSON.stringify(body) });
       setEditing(null);
       await load();
@@ -718,7 +790,7 @@ export default function WebsiteOffers() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [], page: { ...blankPage(), ...(o.page ?? {}), serviceIds: (o.page?.serviceIds ?? []).map(String) } })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
+                  <button onClick={() => setEditing({ ...o, servicePrices: o.servicePrices ?? [], bundles: o.bundles ?? [], page: { ...blankPage(), ...(o.page ?? {}), images: o.page?.images?.length ? o.page.images : o.page?.image ? [o.page.image] : [], serviceIds: (o.page?.serviceIds ?? []).map(String) } })} aria-label="Edit offer" className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100">
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
