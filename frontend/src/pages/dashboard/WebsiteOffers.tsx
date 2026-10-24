@@ -265,6 +265,9 @@ function PricesEditor({ offer, menu, onChange }: { offer: Offer; menu: MenuServi
         <p className="text-sm text-stone-500 mt-1">
           Several services sold together at one lower price. The website lists the bundle with what is in it and the total if booked separately, and the customer books and pays for it in one go.
         </p>
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Have a poster with packages? The poster reader is just below, under <b>"Fill the packages from a poster"</b>. It fills packages on the offer page, not bundles here.
+        </p>
         <div className="mt-3 space-y-3">
           {offer.bundles.map((b, i) => {
             const items = b.serviceIds.map((id) => byId.get(id));
@@ -362,7 +365,7 @@ const TIMES: [number, string][] = [[60, "About 1 hour"], [90, "About 1½ hours"]
  * listed under it, one per line. No prices per service and no rule about the menu. Customers
  * choose one when they ask for a time, and the receptionist sees exactly that package.
  */
-function PackagesEditor({ packages, onChange, canAddPicture, onAddPicture }: { packages: PagePackage[]; onChange: (p: PagePackage[]) => void; canAddPicture: boolean; onAddPicture: (url: string) => void }) {
+function PackagesEditor({ packages, onChange }: { packages: PagePackage[]; onChange: (p: PagePackage[]) => void }) {
   const set = (i: number, patch: Partial<PagePackage>) => onChange(packages.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const MAX = 8;
   return (
@@ -371,7 +374,6 @@ function PackagesEditor({ packages, onChange, canAddPicture, onAddPicture }: { p
         <label className={labelClass}>Packages on this page (up to {MAX})</label>
         <p className="text-xs text-stone-500">Like the packages on your poster: a name, one total price, and the services in it. Visitors choose one when they ask for a time.</p>
       </div>
-      {packages.length < MAX && <PosterReader canAddPicture={canAddPicture} onAddPicture={onAddPicture} onAddPackages={(more: PosterPackage[]) => onChange([...packages, ...more].slice(0, MAX))} />}
       {packages.map((p, i) => (
         <div key={p.slug ?? i} className="rounded-xl border border-stone-200 bg-stone-50 p-4 space-y-3">
           <div className="flex flex-wrap items-end gap-3">
@@ -428,7 +430,19 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
   const setPage = (patch: Partial<OfferPage>) => onChange({ page: { ...page, ...patch } });
   const byId = new Map(menu.map((s) => [s._id, s]));
   const slug = page.slug ?? "";
+  /** Reading a poster fills the offer page, so adding its packages (or its picture) switches the page on. */
+  const withPageOn = (patch: Partial<OfferPage>): Partial<Offer> => ({
+    page: { ...page, slug: page.slug ?? (slugify(offer.name) || "offer"), headline: page.headline ?? (offer.content.headline || null), ...patch },
+  });
   return (
+    <div className="space-y-4">
+      {page.packages.length < 8 && (
+        <PosterReader
+          canAddPicture={page.images.length < MAX_PICTURES}
+          onAddPicture={(u) => onChange(withPageOn({ images: [...page.images, u] }))}
+          onAddPackages={(more: PosterPackage[]) => onChange(withPageOn({ packages: [...page.packages, ...more].slice(0, 8) }))}
+        />
+      )}
     <div className="rounded-xl border border-stone-200 p-4 space-y-4">
       <label className="flex items-start gap-2 text-sm text-stone-800">
         <input
@@ -491,12 +505,7 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
             This price is shown on the page and recorded with the request. It is <b>not applied</b> to anything: the receptionist gives the discount by hand when she bills.
           </p>
 
-          <PackagesEditor
-            packages={page.packages}
-            onChange={(packages) => setPage({ packages })}
-            canAddPicture={page.images.length < MAX_PICTURES}
-            onAddPicture={(u) => setPage({ images: [...page.images, u] })}
-          />
+          <PackagesEditor packages={page.packages} onChange={(packages) => setPage({ packages })} />
 
           <div>
             <label className={labelClass}>Pictures and posters (up to {MAX_PICTURES})</label>
@@ -554,6 +563,7 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
