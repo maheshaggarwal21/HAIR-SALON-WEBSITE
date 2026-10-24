@@ -148,6 +148,18 @@ Thank you, The Experts
 Samples: Asha · EXP-ABCDE · https://wa.me/919988872800
 Env var: `WHATSAPP_TEMPLATE_REQUEST_DECLINED=request_declined_v1`
 
+### `request_cancelled` — name `request_cancelled_v1` — Utility
+Sent when an UNPAID offer-page or WhatsApp-ad booking is cancelled, by the salon or by the customer from the link (D62). No refund line, because nothing was paid. (`booking_cancelled` above is for paid online bookings.)
+```
+Hi {{1}}, your booking {{2}} at The Experts has been cancelled. Nothing was charged. If you would like to book another time, please message us.
+
+To talk to us, click here to message our main salon number: {{3}}
+
+Thank you, The Experts
+```
+Samples: Asha · EXP-ABCDE · https://wa.me/919988872800
+Env var: `WHATSAPP_TEMPLATE_REQUEST_CANCELLED=request_cancelled_v1`
+
 ### `booking_refund` — name `booking_refund_v1` — Utility
 ```
 Hi {{1}}, your refund for booking {{2}} of ₹{{3}} is on its way to the account you paid from. Your bank may take 5 to 7 working days to show it.

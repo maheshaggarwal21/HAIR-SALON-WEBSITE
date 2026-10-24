@@ -838,11 +838,13 @@ async function closeBooking(id, { from, to, side = "salon", reason = null, by = 
   const engineBooking = updated.startAt && (updated.deposit?.amount || updated.requestExpiresAt || updated.source?.channel !== "web");
   // A WhatsApp-ad request (D62) has no time held yet, but the customer asked on WhatsApp, so a decline is answered there.
   const waDeclined = updated.source?.channel === "wa_ad" && to === "declined";
+  // An unpaid WhatsApp-ad request that is cancelled (by the salon or by the customer) has nothing to refund either.
+  const waCancelled = updated.source?.channel === "wa_ad" && to === "cancelled" && !(updated.deposit?.amount > 0);
   if (notifyCustomer && (engineBooking || waDeclined) && updated.source?.channel !== "walkin" && ["cancelled", "declined", "expired"].includes(to)) {
     await notify({
       key: `${updated._id}:${to}`,
       // A declined WhatsApp-ad request (D62) is unpaid, so it gets its own wording with no refund line.
-      type: to === "cancelled" ? "booking_cancelled" : waDeclined ? "request_declined" : "booking_declined",
+      type: to === "cancelled" ? (waCancelled ? "request_cancelled" : "booking_cancelled") : waDeclined ? "request_declined" : "booking_declined",
       to: updated.contact,
       appointmentId: updated._id,
       params: { name: updated.name, ref: updated.ref, refund: updated.refund?.amount || 0 },
