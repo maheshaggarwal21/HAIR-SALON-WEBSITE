@@ -43,7 +43,8 @@ const { cleanUtm } = require("../utils/utm");
 const router = express.Router();
 const HOUR = 60 * 60 * 1000;
 const MAX_ITEMS = 8;
-const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "utm", "date", "time", "name", "phone", "website"]);
+const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "utm", "date", "time", "name", "phone", "website", "people", "guestNames"]);
+const NAME_RE = /^[\p{L}\p{M} .'-]+$/u;
 
 const ipLimit = mongoRateLimit({ name: "wa-request-ip", windowMs: HOUR, max: 10 });
 
@@ -77,6 +78,13 @@ const validators = [
     .custom((v) => v !== null)
     .withMessage("Enter a 10-digit mobile number."),
   body("website").optional({ nullable: true }).isString().isLength({ max: 300 }),
+  // How many people (D67). The salon's own limit is checked in the handler; the price is never taken from the browser.
+  body("people").optional({ nullable: true }).isInt({ min: 1, max: 10 }).withMessage("Choose how many people.").toInt(),
+  body("guestNames").optional({ nullable: true }).isArray({ max: 9 }).withMessage("Names go in a list."),
+  body("guestNames.*")
+    .optional({ nullable: true })
+    .custom((v) => v === "" || (typeof v === "string" && v.trim().length >= 2 && v.trim().length <= 60 && NAME_RE.test(v.trim())))
+    .withMessage("Enter each name using letters only."),
 ];
 
 async function createWithUniqueRef(doc) {
@@ -100,6 +108,8 @@ const summary = (appt, duplicate = false) => ({
   ...(appt.source?.offerPackage ? { package: { name: appt.source.offerPackage.name, price: appt.source.offerPackage.price } } : {}),
   items: appt.source?.offerPackage ? appt.source.offerPackage.services.map((name) => ({ name })) : appt.guests.flatMap((g) => g.items.map((i) => ({ name: i.name }))),
   duplicate,
+  // A group (D67). Absent for one person, so a one-person answer is exactly what it always was.
+  ...(appt.guests.length > 1 ? { people: appt.guests.length, total: appt.pricing.total } : {}),
 });
 
 router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, res) => {
@@ -117,6 +127,16 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
   try {
     const settings = (await SiteSettings.getSingleton()).toObject();
     const today = salonDate();
+
+    // ── How many people (D67). Omitted or 1 = the request exactly as it always was. ──
+    const people = b.people == null ? 1 : Number(b.people);
+    if (people > settings.maxGuests) {
+      return res.status(400).json({ error: "VALIDATION", message: `Book up to ${settings.maxGuests} people at a time.`, fields: ["people"] });
+    }
+    const guestNames = Array.isArray(b.guestNames) ? b.guestNames.map((n) => String(n ?? "").trim()) : [];
+    if (guestNames.length > people - 1) {
+      return res.status(400).json({ error: "VALIDATION", message: "There are more names than people.", fields: ["guestNames"] });
+    }
 
     // ── What is being requested: an offer's services, or the customer's own pick ──
     let offerDoc = null;
@@ -194,7 +214,8 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
       { upsert: true, returnDocument: "after", setDefaultsOnInsert: true, runValidators: true }
     );
     // A package is ONE price, as printed on the poster. Anything else: the menu prices added up.
-    const subtotal = pkg ? pkg.price : items.reduce((n, i) => n + i.publicPrice, 0);
+    // For a group the same package (or the same services) for each person: computed here, once per person.
+    const subtotal = (pkg ? pkg.price : items.reduce((n, i) => n + i.publicPrice, 0)) * people;
     // The link in the customer's WhatsApp (/booking/<token>) is found by this saved key, exactly as for every other booking.
     const _id = new mongoose.Types.ObjectId();
     const appt = await createWithUniqueRef({
@@ -205,7 +226,11 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
       customerId: customer._id,
       contact: b.phone,
       name: b.name,
-      guests: [{ guestKey: "g1", name: b.name, gender: null, customerId: customer._id, items }],
+      guests: [
+        { guestKey: "g1", name: b.name, gender: null, customerId: customer._id, items },
+        // The other people of a group (D67): the same package or services, a name if they gave one.
+        ...Array.from({ length: people - 1 }, (_, n) => ({ guestKey: `g${n + 2}`, name: guestNames[n] || null, gender: null, items: items.map((i) => ({ ...i })) })),
+      ],
       requestedWindow: { date: b.date, window: wa.windowFor(settings, b.time), time: b.time },
       // Unpaid, and no discount applied: the price is the menu price; reception applies the offer by hand.
       pricing: { subtotal, discount: 0, total: subtotal, packageId: null },

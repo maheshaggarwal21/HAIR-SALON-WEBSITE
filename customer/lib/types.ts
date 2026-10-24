@@ -181,7 +181,8 @@ export interface PublicBooking {
 /** A request made on an offer page: when it was asked for, and the package chosen (D62/D64). */
 export interface ManageExtras {
   requestedFor: { date: string; time: string | null } | null;
-  package: { name: string; price: number; services: string[] } | null;
+  /** `people` only for a group (D67): the price is for each person. */
+  package: { name: string; price: number; services: string[]; people?: number } | null;
 }
 
 export interface ManageView {

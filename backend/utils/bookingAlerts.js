@@ -28,7 +28,8 @@ function formatDate(date) {
 const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 function requestAlertText(appt) {
-  const items = appt.guests.flatMap((g) => g.items);
+  // A group has the same services for each person: list them once (the People line says how many).
+  const items = (appt.guests.length > 1 ? appt.guests.slice(0, 1) : appt.guests).flatMap((g) => g.items);
   const pkg = appt.source?.offerPackage;
   const lines = [
     `🆕 ${appt.source?.channel === "wa_ad" ? "WhatsApp ad" : "Website"} request ${appt.ref}`,
@@ -39,6 +40,8 @@ function requestAlertText(appt) {
     // A package request (D64) shows the package, its ONE price and the services as printed on the poster.
     ...(pkg ? [`Package: ${pkg.name} — ${rupees(pkg.price)}`, ...pkg.services.map((n) => `• ${n}`)] : [...items.map((i) => `• ${i.name} — ${rupees(i.publicPrice)}`), `Total ${rupees(appt.pricing.total)}`]),
   ];
+  // A group (D67). Nothing is added for one person.
+  if (appt.guests.length > 1) lines.push(`People: ${appt.guests.length}${pkg ? ` — total ${rupees(appt.pricing.total)}` : ""}`);
   if (appt.preferredArtistName) lines.push(`Prefers: ${appt.preferredArtistName}`);
   if (appt.notes) lines.push(`Note: ${appt.notes}`);
   const utm = appt.source?.utm;

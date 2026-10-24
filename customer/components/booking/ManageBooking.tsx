@@ -171,6 +171,11 @@ export function ManageBooking({ token }: { token: string }) {
               <span className="font-serif text-[20px]">{b.package.name}</span>
               <span className="tabular text-[18px] font-semibold">{rupees(b.package.price)}</span>
             </div>
+            {b.package.people ? (
+              <p className="mt-1 text-ink-muted">
+                For {b.package.people} people: {rupees(b.package.price)} each, {rupees(b.package.price * b.package.people)} in all.
+              </p>
+            ) : null}
             <ul className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {b.package.services.map((n, i) => (
                 <li key={i}>· {n}</li>

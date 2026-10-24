@@ -786,67 +786,88 @@ async function approveRequest(id, { by = "staff", byUserId = null, now = new Dat
 const clockIst = (d) => new Date(d).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: SALON_TZ }).replace(/\s/g, "").toLowerCase();
 
 /**
- * Plan what confirming a request at `startMs` with `artist` looks like: the items
- * with their windows and the artist, the end of the booking, and whether a lock can
- * be taken. Pure (no database), so it is unit-tested.
+ * Spread a package's time over the services the server matched for ONE person: the package's whole
+ * time, rounded up to 15 minutes, shared out in blocks by each service's usual length (largest
+ * remainder), so the items together fill it exactly. Mutates `items`.
+ */
+function fitItemsToPackage(items, pkgMinutes) {
+  const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
+  if (!items.length) return;
+  const total = Math.ceil(pkgMinutes / 15);
+  const weights = items.map((i) => i.durationMin || DEFAULT_DURATION_MINUTES);
+  const sum = weights.reduce((n, w) => n + w, 0);
+  const exact = weights.map((w) => (w * total) / sum);
+  const blocks = exact.map(Math.floor);
+  let left = total - blocks.reduce((n, b) => n + b, 0);
+  exact
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i)
+    .forEach(({ i }) => {
+      if (left-- > 0) blocks[i]++;
+    });
+  items.forEach((it, n) => {
+    it.durationMin = blocks[n] * 15;
+    it.bufferMin = 0;
+  });
+}
+
+/**
+ * Plan what confirming a request at `startMs` looks like: the items with their windows and
+ * artists, the end of the booking, and whether a lock can be taken. Pure (no database), so it
+ * is unit-tested.
  *
- *  - A PACKAGE request (offer page, D64) is held for the package's whole time, as the
- *    owner set it, rounded up to 15 minutes. The matched services are only slices of
- *    that time: its blocks are shared out between them by their usual length, so that
- *    the items together fill the package exactly. Every other piece of code that
- *    rebuilds locks from the items (move, change of artist, leave) then keeps the
- *    whole time without knowing anything about packages.
+ *  - A PACKAGE request (offer page, D64) is held for the package's whole time, as the owner set
+ *    it, rounded up to 15 minutes, FOR EACH PERSON (D67). The services the server matched on the
+ *    menu are only slices of that time (fitItemsToPackage); because every other piece of code that
+ *    rebuilds locks reads the items (move, change of artist, leave), the whole time is kept without
+ *    those places knowing about packages.
  *  - Any other request keeps each service's own time, back to back, with its buffer.
- *  - A package with no stored time, or with no service matched on the menu, cannot be
- *    locked: it still confirms, takes no lock, and says so (`lock.warning`).
+ *  - A package with no stored time, or with no service matched on the menu, cannot be locked: it
+ *    still confirms, takes no lock, and says so (`lock.warning`).
  *
- * Items run one after the other (one artist cannot do two at once), across guests.
+ * Each person has ONE artist (`artistFor(guest)`, or one artist for everybody). People with different
+ * artists are side by side from the start; people who share an artist follow one another, in the order
+ * of the booking (D67). One person's items run back to back.
  *
+ * @param {object} appt
+ * @param {object|function} artistFor  an artist {_id, name}, or (guest, index) => artist
  * @returns {{guests: object[], startAt: Date, endAt: Date, lock: {taken: boolean, warning?: string}}}
  */
-function planRequestTime(appt, artist, startMs) {
+function planRequestTime(appt, artistFor, startMs) {
   const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
+  const artistOf = typeof artistFor === "function" ? artistFor : () => artistFor;
   const guests = appt.guests.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i })) }));
-  const items = guests.flatMap((g) => g.items);
+  const itemCount = guests.reduce((n, g) => n + g.items.length, 0);
   const pkg = appt.source?.offerPackage?.name ? appt.source.offerPackage : null;
   const pkgMinutes = Number(pkg?.durationMinutes);
   const hasPkgTime = Number.isFinite(pkgMinutes) && pkgMinutes > 0;
 
-  let lock = { taken: items.length > 0 };
-  if (pkg && (!hasPkgTime || !items.length)) {
+  let lock = { taken: itemCount > 0 };
+  if (pkg && (!hasPkgTime || !itemCount)) {
     lock = { taken: false, warning: !hasPkgTime ? "No lock taken: this package has no time set, so the artist's calendar is not blocked. Check their day by hand." : "No lock taken: none of this package's services are on the service list, so the artist's calendar is not blocked. Check their day by hand." };
   }
 
-  if (pkg && lock.taken) {
-    const total = Math.ceil(pkgMinutes / 15);
-    const weights = items.map((i) => i.durationMin || DEFAULT_DURATION_MINUTES);
-    const sum = weights.reduce((n, w) => n + w, 0);
-    const exact = weights.map((w) => (w * total) / sum);
-    const blocks = exact.map(Math.floor);
-    let left = total - blocks.reduce((n, b) => n + b, 0);
-    exact
-      .map((x, i) => ({ i, frac: x - Math.floor(x) }))
-      .sort((a, b) => b.frac - a.frac || a.i - b.i)
-      .forEach(({ i }) => {
-        if (left-- > 0) blocks[i]++;
-      });
-    items.forEach((it, n) => {
-      it.durationMin = blocks[n] * 15;
-      it.bufferMin = 0;
-    });
-  } else {
-    for (const it of items) it.durationMin = it.durationMin || DEFAULT_DURATION_MINUTES;
+  for (const g of guests) {
+    if (pkg && lock.taken) fitItemsToPackage(g.items, pkgMinutes);
+    else for (const it of g.items) it.durationMin = it.durationMin || DEFAULT_DURATION_MINUTES;
   }
 
-  let cursor = startMs;
-  for (const it of items) {
-    it.startAt = new Date(cursor);
-    it.endAt = new Date(cursor + it.durationMin * 60_000);
-    it.artistId = artist._id;
-    it.artistName = artist.name;
-    cursor += blocksFor(it.durationMin + (it.bufferMin || 0));
-  }
-  let end = cursor;
+  const freeFrom = new Map(); // artist → when they finish the previous person
+  let end = startMs;
+  guests.forEach((g, n) => {
+    const artist = artistOf(g, n);
+    const key = String(artist._id);
+    let cursor = Math.max(startMs, freeFrom.get(key) || 0);
+    for (const it of g.items) {
+      it.startAt = new Date(cursor);
+      it.endAt = new Date(cursor + it.durationMin * 60_000);
+      it.artistId = artist._id;
+      it.artistName = artist.name;
+      cursor += blocksFor(it.durationMin + (it.bufferMin || 0));
+    }
+    freeFrom.set(key, cursor);
+    end = Math.max(end, cursor);
+  });
   if (!lock.taken && hasPkgTime) end = Math.max(end, startMs + pkgMinutes * 60_000);
   return { guests, startAt: new Date(startMs), endAt: new Date(end), lock };
 }
@@ -983,18 +1004,24 @@ async function applyGroupPlan(id, { statuses, toStatus = null, plan, expectRev =
 /**
  * Confirm a request that has no time yet (request-lite and WhatsApp-ad requests) at a
  * date, time and ARTIST staff chose (audit item 3, D66). Goes through applyGroupPlan: lapsed
- * holds go, the artist's blocks are checked, the firm locks are inserted and the status
+ * holds go, the artists' blocks are checked, the firm locks are inserted and the status
  * changes in ONE transaction. Another booking in the way is 409 SLOT_TAKEN naming who;
  * nothing is written. See planRequestTime for what is locked.
+ *
+ * A group (D67) gives one artist per person in `artistIds` ({guestKey: artistId}); `artistId` alone
+ * means the same artist for everybody (so one after another).
  *
  * @param {object} [extraSet]  more fields to set in the same update (e.g. the manage-link key)
  * @returns {Promise<{ok: true, appt, lock: {taken: boolean, blocks?: number, minutes?: number, warning?: string}} | {ok: false, error: "CONFLICT"}>}
  */
-async function confirmRequestAtTime(id, { date, time, artistId, extraSet = {}, by = "staff", byUserId = null, now = new Date() }) {
+async function confirmRequestAtTime(id, { date, time, artistId = null, artistIds = null, extraSet = {}, by = "staff", byUserId = null, now = new Date() }) {
   const Artist = require("../models/Artist");
-  if (!artistId) throw new BookingError("VALIDATION", "Choose the artist who will do this booking.");
-  const artist = await Artist.findOne({ _id: artistId, isActive: true }, { name: 1 }).lean();
-  if (!artist) throw new BookingError("VALIDATION", "That artist is not active.");
+  const perGuest = artistIds && typeof artistIds === "object" ? artistIds : {};
+  const wanted = [...new Set([artistId, ...Object.values(perGuest)].filter(Boolean).map(String))];
+  if (!wanted.length) throw new BookingError("VALIDATION", "Choose the artist who will do this booking.");
+  const docs = await Artist.find({ _id: { $in: wanted }, isActive: true }, { name: 1 }).lean();
+  const byId = new Map(docs.map((d) => [String(d._id), d]));
+  if (wanted.some((w) => !byId.has(w))) throw new BookingError("VALIDATION", "That artist is not active.");
   const startMs = salonInstant(date, time).getTime();
   if (!Number.isFinite(startMs) || startMs % BLOCK_MS !== 0) {
     throw new BookingError("VALIDATION", "Pick a time on the quarter hour, for example 11:00 or 11:15.");
@@ -1005,7 +1032,18 @@ async function confirmRequestAtTime(id, { date, time, artistId, extraSet = {}, b
     statuses: ["requested"],
     toStatus: "confirmed",
     plan: (cur) => {
-      planned = planRequestTime(cur, artist, startMs);
+      if (Object.keys(perGuest).some((k) => !cur.guests.some((g) => g.guestKey === k))) {
+        throw new BookingError("VALIDATION", "There is no such person on this booking.");
+      }
+      planned = planRequestTime(
+        cur,
+        (g, n) => {
+          const chosen = perGuest[g.guestKey] ?? artistId;
+          if (!chosen) throw new BookingError("VALIDATION", `Choose an artist for ${g.name || `person ${n + 1}`}.`);
+          return byId.get(String(chosen));
+        },
+        startMs
+      );
       return { guests: planned.guests, startAt: planned.startAt, endAt: planned.endAt, groupMode: groupModeOf(planned.guests), skipLocks: !planned.lock.taken, noLockReason: planned.lock.warning };
     },
     set: extraSet,
@@ -1016,6 +1054,83 @@ async function confirmRequestAtTime(id, { date, time, artistId, extraSet = {}, b
   if (!done.ok) return done;
   const lock = planned.lock.taken ? { taken: true, blocks: done.blocks, minutes: done.blocks * 15 } : { taken: false, warning: planned.lock.warning };
   return { ok: true, appt: done.appt, lock };
+}
+
+/**
+ * "Suggest artists" for a group request (D67): for the date and time staff are about to confirm, a
+ * free artist for each person: able to do all of that person's services, working the whole time, with
+ * the whole window free, and not already given to someone else in this booking. Reads only; writes
+ * nothing. When it cannot place everyone it says why for each person it could not, and offers the
+ * nearest times on the same day where everyone fits.
+ *
+ * @returns {Promise<{ok: boolean, suggestions: object[], alternatives: object[], reason?: string} | {ok: false, error: "CONFLICT"}>}
+ */
+async function suggestArtistsForRequest(id, { date, time, now = new Date() }) {
+  const Service = require("../models/Service");
+  const Artist = require("../models/Artist");
+  const startMs = salonInstant(date, time).getTime();
+  if (!Number.isFinite(startMs) || startMs % BLOCK_MS !== 0) {
+    throw new BookingError("VALIDATION", "Pick a time on the quarter hour, for example 11:00 or 11:15.");
+  }
+  const appt = await Appointment.findOne({ _id: id, status: "requested" }).lean();
+  if (!appt || (appt.startAt && appt.requestExpiresAt)) return { ok: false, error: "CONFLICT" };
+
+  // Everybody side by side from the start: that is each person's own window.
+  const side = planRequestTime(appt, (g) => ({ _id: `suggest:${g.guestKey}`, name: "" }), startMs);
+  if (!side.lock.taken) return { ok: false, suggestions: [], alternatives: [], reason: side.lock.warning };
+
+  const docs = await Service.find({ _id: { $in: appt.guests.flatMap((g) => g.items.map((i) => i.serviceId)) } }).lean();
+  const keys = new Map(docs.map((d) => [String(d._id), serviceKeys(d)]));
+  const windows = side.guests.map((g, n) => ({
+    guestKey: g.guestKey,
+    label: g.name || `person ${n + 1}`,
+    items: g.items.map((i) => ({ serviceId: String(i.serviceId), ...(keys.get(String(i.serviceId)) || {}) })),
+    blocks: Math.round(((g.items.reduce((m, i) => Math.max(m, i.startAt.getTime() + blocksFor(i.durationMin + (i.bufferMin || 0))), startMs)) - startMs) / BLOCK_MS),
+  }));
+  const names = new Map((await Artist.find({ isActive: true }, { name: 1 }).lean()).map((a) => [String(a._id), a.name]));
+  const { input } = await loadEngineInput({ date, guests: [], services: new Map(), now, staff: true });
+  const preferred = appt.preferredArtistId ? String(appt.preferredArtistId) : null;
+
+  const place = (start) => {
+    const used = new Set();
+    const out = windows.map((w, n) => {
+      const blocks = Array.from({ length: w.blocks }, (_, k) => start + k * BLOCK_MS);
+      const able = input.artists.filter((a) => !used.has(a.id) && w.items.every((it) => canDo(a, it)));
+      const free = able
+        .filter((a) => a.intervals.some((iv) => iv.start <= blocks[0] && blocks[blocks.length - 1] + BLOCK_MS <= iv.end))
+        .filter((a) => blocks.every((b) => !input.locks.has(`${a.id}|${b}`)))
+        .sort((x, y) => Number(n === 0 && y.id === preferred) - Number(n === 0 && x.id === preferred) || x.bookedMinutes - y.bookedMinutes || x.name.localeCompare(y.name));
+      const pick = free[0];
+      if (!pick) {
+        return {
+          guestKey: w.guestKey,
+          artistId: null,
+          artistName: null,
+          reason: able.length
+            ? `No other artist is free for all ${w.blocks * 15} minutes at ${hhmm(start)}.`
+            : `No artist is set up to do all of ${w.label}'s services.`,
+        };
+      }
+      used.add(pick.id);
+      return { guestKey: w.guestKey, artistId: pick.id, artistName: names.get(pick.id) || pick.name };
+    });
+    return { ok: out.every((s) => s.artistId), suggestions: out };
+  };
+
+  const here = place(startMs);
+  if (here.ok) return { ok: true, suggestions: here.suggestions, alternatives: [] };
+
+  const longest = Math.max(...windows.map((w) => w.blocks)) * BLOCK_MS;
+  const alternatives = [];
+  for (const o of input.opening) {
+    for (let t = Math.ceil(o.start / BLOCK_MS) * BLOCK_MS; t + longest <= o.end; t += BLOCK_MS) {
+      if (t === startMs || t < now.getTime()) continue;
+      const tried = place(t);
+      if (tried.ok) alternatives.push({ time: hhmm(t), startAt: new Date(t).toISOString(), suggestions: tried.suggestions, distance: Math.abs(t - startMs) });
+    }
+  }
+  alternatives.sort((a, b) => a.distance - b.distance || a.startAt.localeCompare(b.startAt));
+  return { ok: false, suggestions: here.suggestions, alternatives: alternatives.slice(0, 3).map(({ distance, ...rest }) => rest) };
 }
 
 /**
@@ -1945,6 +2060,7 @@ module.exports = {
   sendReminders,
   approveRequest,
   confirmRequestAtTime,
+  suggestArtistsForRequest,
   planRequestTime,
   applyGroupPlan,
   changeGuestArtist,

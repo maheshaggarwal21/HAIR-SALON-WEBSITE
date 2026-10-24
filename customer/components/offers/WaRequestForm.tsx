@@ -37,6 +37,9 @@ interface Result {
   time: string;
   items: { name: string }[];
   duplicate: boolean;
+  /** A group (D67). Absent for one person. */
+  people?: number;
+  total?: number;
 }
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
@@ -99,12 +102,20 @@ export function WaRequestForm({
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
 
+  // How many people (D67). 1 = the form as it always was: nothing extra is sent.
+  const maxPeople = Math.max(1, site.onlineBooking?.maxGuests ?? 1);
+  const [people, setPeople] = useState(1);
+  const [guestNames, setGuestNames] = useState<string[]>([]);
+
   const needed = chosen ? chosen.durationMinutes : minutesNeeded;
-  const times = useMemo(() => (date ? timesFor(site, date, needed) : []), [site, date, needed]);
+  const chosenPrice = chosen ? chosen.price : null;
+  // Cheap to compute; no manual memo (the React Compiler memoises, and a manual one trips its lint rule here).
+  const times = date ? timesFor(site, date, needed) : [];
   const phoneDigits = phone.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
   const phoneOk = /^[6-9]\d{9}$/.test(phoneDigits);
   const needsPick = !offerSlug && !fixedServices;
-  const ready = Boolean(date && time && name.trim().length >= 2 && phoneOk && (!needsPick || picked.length > 0) && (!packages?.length || chosen)) && !sending;
+  const namesOk = guestNames.slice(0, people - 1).every((n) => !n.trim() || /^[\p{L}\p{M} .'-]{2,60}$/u.test(n.trim()));
+  const ready = Boolean(date && time && name.trim().length >= 2 && phoneOk && namesOk && (!needsPick || picked.length > 0) && (!packages?.length || chosen)) && !sending;
 
   // Meta Pixel: the first touch inside the form is the request STARTED (InitiateCheckout),
   // once per page view. Pointer as well as focus: Safari doesn't focus a tapped button.
@@ -132,6 +143,7 @@ export function WaRequestForm({
           name: name.trim(),
           phone: phoneDigits,
           website: trap,
+          ...(people > 1 ? { people, guestNames: Array.from({ length: people - 1 }, (_, i) => (guestNames[i] ?? "").trim()) } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -158,7 +170,7 @@ export function WaRequestForm({
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">{result.duplicate ? "Already with us" : "Request sent"}</p>
         <h3 className="mt-3 font-serif text-[30px] leading-tight md:text-[38px]">Thank you, {name.trim().split(" ")[0] || "and welcome"}.</h3>
         <p className="mt-3 text-[16px] leading-[1.6]">
-          We have your request{result.package ? <> for <b>{result.package.name}</b> ({rupees(result.package.price)})</> : null} for <b>{dayParts(result.date).long}</b> at <b>{clock(result.time)}</b>. It is <b>not booked yet</b>: we will confirm it on WhatsApp.
+          We have your request{result.package ? <> for <b>{result.package.name}</b> ({rupees(result.package.price)}{result.people ? <> each, {rupees(result.total ?? result.package.price * result.people)} for {result.people} people</> : null})</> : result.people ? <> for <b>{result.people} people</b></> : null} for <b>{dayParts(result.date).long}</b> at <b>{clock(result.time)}</b>. It is <b>not booked yet</b>: we will confirm it on WhatsApp.
           Nothing is paid now.
         </p>
         <p className="mt-2 text-[14px] text-ink-muted">
@@ -291,6 +303,57 @@ export function WaRequestForm({
             </div>
           ) : (
             <p className="mt-2 text-[15px] text-ink-muted">No more times that day. Pick another day.</p>
+          )}
+        </fieldset>
+      )}
+
+      {maxPeople > 1 && (
+        <fieldset className="min-w-0">
+          <legend className={label}>How many people?</legend>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="One fewer person"
+              disabled={people <= 1}
+              onClick={() => setPeople((n) => Math.max(1, n - 1))}
+              className="h-11 w-11 rounded-full border border-line bg-ivory text-[20px] hover:bg-ivory-2 disabled:opacity-40"
+            >
+              −
+            </button>
+            <span className="tabular w-8 text-center text-[20px] font-semibold" aria-live="polite">
+              {people}
+            </span>
+            <button
+              type="button"
+              aria-label="One more person"
+              disabled={people >= maxPeople}
+              onClick={() => setPeople((n) => Math.min(maxPeople, n + 1))}
+              className="h-11 w-11 rounded-full border border-line bg-ivory text-[20px] hover:bg-ivory-2 disabled:opacity-40"
+            >
+              +
+            </button>
+            <span className="text-[14px] text-ink-muted">Up to {maxPeople}. Everyone has the same {chosen ? "package" : "services"}, at the same time.</span>
+          </div>
+          {people > 1 && chosenPrice != null && (
+            <p className="mt-2 text-[15px]">
+              {rupees(chosenPrice)} × {people} = <b className="tabular">{rupees(chosenPrice * people)}</b>
+            </p>
+          )}
+          {people > 1 && (
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {Array.from({ length: people - 1 }, (_, i) => (
+                <label key={i} className={label}>
+                  Person {i + 2} (name is optional)
+                  <input
+                    value={guestNames[i] ?? ""}
+                    onChange={(e) => setGuestNames((prev) => Array.from({ length: Math.max(prev.length, i + 1) }, (_, k) => (k === i ? e.target.value : prev[k] ?? "")))}
+                    maxLength={60}
+                    autoComplete="off"
+                    className={field}
+                  />
+                </label>
+              ))}
+            </div>
           )}
         </fieldset>
       )}

@@ -87,6 +87,9 @@ interface BookingRequest {
   requestExpiresAt?: string | null;
   deposit?: { kind: string; amount: number; status: string } | null;
   refund?: { amount: number; status: string; error: string | null } | null;
+  /** A group request (D67): who is coming. Absent for one person. */
+  people?: number;
+  guests?: { guestKey: string; name: string | null }[];
   /** Confirmed WITHOUT blocking the artist's calendar (a package with no time set, or none of its services on the menu). */
   noLock?: boolean;
   noLockReason?: string | null;
@@ -356,6 +359,12 @@ function RequestCard({
   // A WhatsApp-ad request asked for a specific time: start from it, and the desk can change it.
   const [time, setTime] = useState(r.requestedWindow.time || "");
   const [artistId, setArtistId] = useState("");
+  // A group (D67): one artist per person, and a way to ask the system for free ones.
+  const people = r.guests && r.guests.length > 1 ? r.guests : null;
+  const [artistIds, setArtistIds] = useState<Record<string, string>>({});
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestNote, setSuggestNote] = useState<string[]>([]);
+  const [alternatives, setAlternatives] = useState<{ time: string; suggestions: { guestKey: string; artistId: string | null }[] }[]>([]);
   const isWa = r.channel === "wa_ad";
   const [reason, setReason] = useState("");
   const [note, setNote] = useState(r.internalNote || "");
@@ -387,6 +396,41 @@ function RequestCard({
     }
   }
 
+  const personLabel = (key: string, idx: number) => r.guests?.find((g) => g.guestKey === key)?.name || `Person ${idx + 1}`;
+  const everyoneHasArtist = !people || people.every((g) => artistIds[g.guestKey]);
+  const sharedArtist = people ? people.some((g, i) => artistIds[g.guestKey] && people.some((h, j) => j < i && artistIds[h.guestKey] === artistIds[g.guestKey])) : false;
+
+  function applySuggestions(list: { guestKey: string; artistId: string | null }[]) {
+    setArtistIds((prev) => ({ ...prev, ...Object.fromEntries(list.filter((x) => x.artistId).map((x) => [x.guestKey, x.artistId as string])) }));
+  }
+
+  async function suggest() {
+    setSuggesting(true);
+    setErr("");
+    setSuggestNote([]);
+    setAlternatives([]);
+    try {
+      const res = await fetch(`${API}/api/bookings/${r._id}/suggest-artists`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, time }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't suggest artists");
+      applySuggestions(data.suggestions || []);
+      const notes: string[] = [];
+      if (data.reason) notes.push(data.reason);
+      for (const [i, s] of (data.suggestions || []).entries()) if (!s.artistId && s.reason) notes.push(`${personLabel(s.guestKey, i)}: ${s.reason}`);
+      setSuggestNote(notes);
+      setAlternatives(data.alternatives || []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't suggest artists");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
   const totalMins = r.items.reduce((s, i) => s + (i.durationMin || 60), 0);
 
   return (
@@ -402,6 +446,7 @@ function RequestCard({
               </span>
             )}
             <span className="text-xs font-mono text-stone-400">{r.ref}</span>
+            {r.people && <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-medium">{r.people} people</span>}
             {isWa && (
               <>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium">WhatsApp ad</span>
@@ -448,7 +493,7 @@ function RequestCard({
                   <li key={idx}>{n}</li>
                 ))}
               </ul>
-              <div className="mt-1.5 text-xs text-stone-500">The package price from the offer. Nothing is charged yet: give it when you bill.</div>
+              <div className="mt-1.5 text-xs text-stone-500">{r.people ? `The package price from the offer is for each person (${r.people} people, ${rupees(r.total)} in all). ` : "The package price from the offer. "}Nothing is charged yet: give it when you bill.</div>
             </div>
           ) : (
             <>
@@ -604,16 +649,80 @@ function RequestCard({
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-xs font-semibold uppercase tracking-wider text-stone-500">Date</label>
             <input type="date" value={date} min={todayIST()} onChange={(e) => setDate(e.target.value)} className={inputClass} />
-            <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 ml-2">Artist (required)</label>
-            <select value={artistId} onChange={(e) => setArtistId(e.target.value)} className={inputClass} aria-required="true">
-              <option value="">Choose an artist…</option>
-              {artists.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+            {!people && (
+              <>
+                <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 ml-2">Artist (required)</label>
+                <select value={artistId} onChange={(e) => setArtistId(e.target.value)} className={inputClass} aria-required="true">
+                  <option value="">Choose an artist…</option>
+                  {artists.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
+          {people && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-stone-500">Artist for each person (required)</div>
+                <button
+                  type="button"
+                  onClick={suggest}
+                  disabled={!date || !time || suggesting}
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-stone-300 bg-white text-sm text-stone-800 hover:bg-stone-50 disabled:opacity-40"
+                >
+                  {suggesting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Suggest artists
+                </button>
+              </div>
+              {people.map((g, i) => (
+                <div key={g.guestKey} className="flex flex-wrap items-center gap-3">
+                  <span className="w-32 text-sm text-stone-800 truncate">{personLabel(g.guestKey, i)}</span>
+                  <select
+                    value={artistIds[g.guestKey] || ""}
+                    onChange={(e) => setArtistIds((prev) => ({ ...prev, [g.guestKey]: e.target.value }))}
+                    aria-label={`Artist for ${personLabel(g.guestKey, i)}`}
+                    className={inputClass}
+                  >
+                    <option value="">Choose an artist…</option>
+                    {artists.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              {sharedArtist && <p className="text-xs text-amber-700">The same artist is chosen for more than one person: they will be done one after another, so it takes longer.</p>}
+              {suggestNote.map((n, i) => (
+                <p key={i} className="text-xs text-amber-700">
+                  {n}
+                </p>
+              ))}
+              {alternatives.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600">
+                  <span>Times when everyone fits:</span>
+                  {alternatives.map((a) => (
+                    <button
+                      key={a.time}
+                      type="button"
+                      onClick={() => {
+                        setTime(a.time);
+                        applySuggestions(a.suggestions);
+                        setAlternatives([]);
+                        setSuggestNote([]);
+                      }}
+                      className="h-8 px-3 rounded-full border border-stone-200 bg-white text-stone-800 hover:bg-stone-100 tabular-nums"
+                    >
+                      {clockLabel(a.time)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-2">
               Time {isWa && r.requestedWindow.time ? (
@@ -646,9 +755,9 @@ function RequestCard({
           </div>
           <div className="flex gap-2">
             <button
-              disabled={!date || !time || !artistId || busy}
-              title={!artistId ? "Choose the artist who will do this booking" : undefined}
-              onClick={() => act("confirm", "POST", { date, time, artistId })}
+              disabled={!date || !time || (people ? !everyoneHasArtist : !artistId) || busy}
+              title={(people ? !everyoneHasArtist : !artistId) ? (people ? "Choose an artist for every person" : "Choose the artist who will do this booking") : undefined}
+              onClick={() => act("confirm", "POST", people ? { date, time, artistIds } : { date, time, artistId })}
               className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-40 hover:bg-emerald-700"
             >
               {busy && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -659,7 +768,7 @@ function RequestCard({
             </button>
           </div>
           <p className="text-xs text-stone-500">
-            Confirming holds this artist's time{r.package?.durationMinutes ? ` for the whole package (${durationLabel(r.package.durationMinutes)})` : ""}, so the website can't sell it again. If someone is already booked then, you'll be told who and nothing is saved.{" "}
+            Confirming holds {people ? "each artist's" : "this artist's"} time{r.package?.durationMinutes ? ` for the whole package (${durationLabel(r.package.durationMinutes)}${people ? " each" : ""})` : ""}, so the website can't sell it again. If someone is already booked then, you'll be told who and nothing is saved.{" "}
             {isWa ? "The customer gets a WhatsApp confirmation with this time." : "Tell the customer the time on WhatsApp; the website doesn't message them for this kind of request."}
           </p>
         </div>

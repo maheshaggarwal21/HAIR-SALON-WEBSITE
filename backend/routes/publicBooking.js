@@ -275,7 +275,7 @@ function publicBooking(appt) {
     payment: { kind: appt.deposit.kind, amount: appt.deposit.amount, status: appt.deposit.status },
     // A request made on an offer page (D62/D64): what they asked for, until a time is confirmed, and the package as printed.
     requestedFor: !appt.startAt && appt.requestedWindow?.date ? { date: appt.requestedWindow.date, time: appt.requestedWindow.time || null } : null,
-    package: appt.source?.offerPackage?.name ? { name: appt.source.offerPackage.name, price: appt.source.offerPackage.price, services: appt.source.offerPackage.services || [] } : null,
+    package: appt.source?.offerPackage?.name ? { name: appt.source.offerPackage.name, price: appt.source.offerPackage.price, services: appt.source.offerPackage.services || [], ...(appt.guests.length > 1 ? { people: appt.guests.length } : {}) } : null,
   };
 }
 
