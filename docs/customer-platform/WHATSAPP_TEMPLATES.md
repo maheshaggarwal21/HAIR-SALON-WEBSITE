@@ -136,6 +136,18 @@ To talk to us, click here to message our main salon number: {{4}}
 Thank you, The Experts
 ```
 
+### `request_declined` — name `request_declined_v1` — Utility
+Sent when reception declines an UNPAID request made from an offer page or a WhatsApp ad link (D62). No refund line, because nothing was paid. (`booking_declined` above is for paid online bookings.)
+```
+Hi {{1}}, sorry, we could not take your booking request {{2}} at The Experts for that time. Nothing was charged. Please message us and we will find a time that suits you.
+
+To talk to us, click here to message our main salon number: {{3}}
+
+Thank you, The Experts
+```
+Samples: Asha · EXP-ABCDE · https://wa.me/919988872800
+Env var: `WHATSAPP_TEMPLATE_REQUEST_DECLINED=request_declined_v1`
+
 ### `booking_refund` — name `booking_refund_v1` — Utility
 ```
 Hi {{1}}, your refund for booking {{2}} of ₹{{3}} is on its way to the account you paid from. Your bank may take 5 to 7 working days to show it.
@@ -146,7 +158,7 @@ Thank you, The Experts
 ```
 
 ### `request_received` — name `request_received_v1` — Utility
-Only for requests made before every service became instantly bookable (D49); optional.
+Sent the moment someone sends a request from an offer page or a WhatsApp ad link (D62), and for older website requests. Needed for those requests to get a confirmation message. Env var: `WHATSAPP_TEMPLATE_REQUEST_RECEIVED=request_received_v1`.
 ```
 Hi {{1}}, we have received your booking request {{2}} for {{3}} and will confirm it shortly. View it: {{4}}
 

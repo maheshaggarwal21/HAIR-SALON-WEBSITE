@@ -228,14 +228,17 @@ test("Confirm (with the time edited) sends booking_confirmed; the booking is the
   assert.equal(await NotificationLog.countDocuments({ type: "booking_confirmed" }), 1);
 });
 
-test("Decline sends booking_declined once", async () => {
+test("Decline sends request_declined (no refund wording) once", async () => {
   const a = (await request()).body;
   const id = (await Appointment.findOne({ ref: a.ref }))._id;
   assert.equal((await call("POST", `/bookings/${id}/decline`, { reason: "Fully booked" })).status, 200);
   assert.equal((await Appointment.findById(id)).status, "declined");
-  assert.equal(await NotificationLog.countDocuments({ appointmentId: id, type: "booking_declined" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ appointmentId: id, type: "request_declined" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ type: "booking_declined" }), 0, "the refund wording is not used for an unpaid request");
   assert.equal((await call("POST", `/bookings/${id}/decline`, {})).status, 409);
-  assert.equal(await NotificationLog.countDocuments({ type: "booking_declined" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ type: "request_declined" }), 1);
+  const sent = await NotificationLog.findOne({ type: "request_declined" }).lean();
+  assert.equal(sent.to, "9876500001");
 });
 
 test("a website request-lite booking is still handled by phone: confirming it sends no WhatsApp", async () => {
