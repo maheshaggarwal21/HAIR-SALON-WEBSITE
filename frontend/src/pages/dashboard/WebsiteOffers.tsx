@@ -88,7 +88,7 @@ const typingAddress = (v: string) => v.toLowerCase().replace(/[^a-z0-9-]+/g, "-"
 const finishedAddress = (v: string | null) => (v == null ? null : v.replace(/-+$/, ""));
 const SITE = "https://www.thexpertshair.com";
 /** Addresses the website already uses for its own pages. The server refuses them too (utils/offerPages.js). */
-const RESERVED_ADDRESSES = ["now", "karva-chauth", "api", "new", "edit"];
+const RESERVED_ADDRESSES = ["now", "api", "new", "edit"];
 const MAX_PICTURES = 5;
 
 interface ServicePrice {
@@ -493,6 +493,12 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
             <label className={labelClass}>What the offer is</label>
             <textarea value={page.offerText ?? ""} onChange={(e) => setPage({ offerText: e.target.value || null })} maxLength={500} rows={3} className={`${inputClass} h-auto py-3`} placeholder="e.g. A hair spa and a blow dry, done in an hour." />
           </div>
+          {page.packages.length > 0 ? (
+            <p className="text-xs text-stone-600 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+              This offer has packages, so each package shows its own price and no single headline price is needed. The page says "Packages from ₹…" using the cheapest one.
+            </p>
+          ) : (
+          <>
           <div className="grid sm:grid-cols-[10rem_1fr] gap-3">
             <div>
               <label className={labelClass}>Price (₹)</label>
@@ -512,6 +518,8 @@ function OfferPageEditor({ offer, menu, reels, onChange }: { offer: Offer; menu:
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             This price is shown on the page and recorded with the request. It is <b>not applied</b> to anything: the receptionist gives the discount by hand when she bills.
           </p>
+          </>
+          )}
 
           <PackagesEditor packages={page.packages} onChange={(packages) => setPage({ packages })} />
 
@@ -634,7 +642,7 @@ export default function WebsiteOffers() {
     setError("");
     try {
       const { _id, name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page } = editing;
-      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, slug: finishedAddress(page.slug), image: page.images?.[0] ?? null } };
+      const body = { name, startDate, endDate, active, theme, showBar, showPopup, content, popup, servicePrices, bundles, page: { ...page, slug: finishedAddress(page.slug), image: page.images?.[0] ?? null, ...(page.packages.length ? { price: null, priceNote: null } : {}) } };
       await api(_id ? `/campaigns/${_id}` : "/campaigns", { method: _id ? "PATCH" : "POST", body: JSON.stringify(body) });
       setEditing(null);
       await load();
@@ -780,9 +788,9 @@ export default function WebsiteOffers() {
             </div>
             <div className="sm:col-span-2">
               <label className={labelClass}>Button goes to</label>
-              <input list="offer-links" value={editing.content.ctaHref} onChange={(e) => setContent({ ctaHref: e.target.value })} placeholder="/offers/karva-chauth" className={inputClass} />
+              <input list="offer-links" value={editing.content.ctaHref} onChange={(e) => setContent({ ctaHref: e.target.value })} placeholder="/offers/now" className={inputClass} />
               <datalist id="offer-links">
-                <option value="/offers/karva-chauth">Karva Chauth page</option>
+                <option value="/offers/now">The offer that is on today</option>
                 <option value="/services">Full menu</option>
                 <option value="/services?for=her">Menu: for her</option>
                 <option value="/services?for=him">Menu: for him</option>
