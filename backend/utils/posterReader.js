@@ -4,9 +4,14 @@
  * (name, price, the old price if crossed out, and the services listed) come out, ready for
  * the owner to CHECK and turn into bundles.
  *
- * How: one call to Claude with the picture (vision) and a fixed answer shape (structured
- * output), through the official SDK. Fancy poster fonts and columns are why this uses a vision
- * model and not a plain text-reader.
+ * How: one call to an AI vision model with the picture and a fixed answer shape (structured
+ * output), through the provider's official SDK. Fancy poster fonts and columns are why this uses
+ * a vision model and not a plain text-reader. Two providers are supported and either one works:
+ *   - OpenAI  (OPENAI_API_KEY; model POSTER_READER_OPENAI_MODEL, default gpt-6.1-sol)
+ *   - Claude  (ANTHROPIC_API_KEY; model POSTER_READER_MODEL, default claude-opus-5-5)
+ * POSTER_READER_PROVIDER=openai|anthropic picks one; without it, OpenAI is used when its key is
+ * set, otherwise Claude. Everything after the model's answer (tidying, menu matching, the
+ * owner's review) is identical for both.
  *
  * Safety by design:
  *   - NOTHING is saved here. The result is a draft; the owner reviews every line in the staff
@@ -14,12 +19,13 @@
  *     by the server against the real menu when she does (utils/offers.js prepareOfferLines).
  *   - The model is told to copy what is printed and never to guess; anything it is unsure of
  *     goes in `notes` for the owner to look at.
- *   - Off until ANTHROPIC_API_KEY is set. Without it the staff app says reading posters is not
+ *   - Off until one of the two keys is set. Without it the staff app says reading posters is not
  *     set up and everything else keeps working.
- *   - Cost: one request per poster, a few rupees. The route limits reads per person per day.
+ *   - Cost: one request per poster, a few rupees or less. The route limits reads per person per day.
  */
 
-const MODEL = process.env.POSTER_READER_MODEL || "claude-opus-5-5";
+const CLAUDE_MODEL = () => process.env.POSTER_READER_MODEL || "claude-opus-5-5";
+const OPENAI_MODEL = () => process.env.POSTER_READER_OPENAI_MODEL || "gpt-6.1-sol";
 const MAX_PACKAGES = 12;
 const MAX_LINES = 30;
 
@@ -31,32 +37,37 @@ class PosterReaderError extends Error {
   }
 }
 
-const nullable = (type) => ({ anyOf: [{ type }, { type: "null" }] });
-
-/** The only shape the model may answer in. */
-const SCHEMA = {
-  type: "object",
-  properties: {
-    title: nullable("string"),
-    packages: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          price: nullable("integer"),
-          regularPrice: nullable("integer"),
-          services: { type: "array", items: { type: "string" } },
+/**
+ * The only shape the model may answer in. Claude writes "may be null" as anyOf; OpenAI's strict
+ * mode documents a type list, so the same shape is built with whichever the provider takes.
+ */
+function buildSchema(nullable) {
+  return {
+    type: "object",
+    properties: {
+      title: nullable("string"),
+      packages: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            price: nullable("integer"),
+            regularPrice: nullable("integer"),
+            services: { type: "array", items: { type: "string" } },
+          },
+          required: ["name", "price", "regularPrice", "services"],
+          additionalProperties: false,
         },
-        required: ["name", "price", "regularPrice", "services"],
-        additionalProperties: false,
       },
+      notes: { type: "array", items: { type: "string" } },
     },
-    notes: { type: "array", items: { type: "string" } },
-  },
-  required: ["title", "packages", "notes"],
-  additionalProperties: false,
-};
+    required: ["title", "packages", "notes"],
+    additionalProperties: false,
+  };
+}
+const SCHEMA = buildSchema((type) => ({ anyOf: [{ type }, { type: "null" }] }));
+const OPENAI_SCHEMA = buildSchema((type) => ({ type: [type, "null"] }));
 
 const INSTRUCTIONS = `You are reading a salon offer poster so its packages can be typed into a price list. Copy what is printed; never guess or invent.
 
@@ -71,21 +82,38 @@ Return:
 
 Ignore phone numbers, addresses, social handles, slogans and decorations. If the picture is not an offer poster, return no packages and say so in notes.`;
 
+/** Tests replace the SDK client with a stub (no network, no key). `provider` says which kind it imitates. */
 let injected = null;
-/** Tests replace the SDK client with a stub (no network, no key). */
-const setClientForTests = (c) => {
-  injected = c;
+const setClientForTests = (client, provider = "anthropic") => {
+  injected = client ? { client, provider } : null;
 };
 
-function getClient() {
-  if (injected) return injected;
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+/** Which provider will read the next poster: "openai", "anthropic", or null when none is set up. */
+function provider() {
+  if (injected) return injected.provider;
+  const want = String(process.env.POSTER_READER_PROVIDER || "").toLowerCase();
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  const hasClaude = Boolean(process.env.ANTHROPIC_API_KEY);
+  if (want === "openai") return hasOpenAI ? "openai" : null;
+  if (want === "anthropic" || want === "claude") return hasClaude ? "anthropic" : null;
+  return hasOpenAI ? "openai" : hasClaude ? "anthropic" : null;
+}
+
+const isConfigured = () => provider() !== null;
+
+function claudeClient() {
+  if (injected) return injected.client;
   const Anthropic = require("@anthropic-ai/sdk");
   const Client = Anthropic.default || Anthropic;
   return new Client({ timeout: 120_000, maxRetries: 1 });
 }
 
-const isConfigured = () => Boolean(injected || process.env.ANTHROPIC_API_KEY);
+function openaiClient() {
+  if (injected) return injected.client;
+  const OpenAI = require("openai");
+  const Client = OpenAI.default || OpenAI;
+  return new Client({ timeout: 120_000, maxRetries: 1 });
+}
 
 const wholeRupees = (v) => (Number.isFinite(v) && v >= 0 && v <= 10_000_000 ? Math.round(v) : null);
 const clean = (s, max) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -108,18 +136,12 @@ function tidy(raw) {
   };
 }
 
-/**
- * @param {{imageUrl: string}} p  a public https link to the poster picture
- * @returns {Promise<{title: string|null, packages: {name: string, price: number|null, regularPrice: number|null, services: string[]}[], notes: string[]}>}
- */
-async function readPoster({ imageUrl }) {
-  const client = getClient();
-  if (!client) throw new PosterReaderError("Reading posters isn't set up yet. Ask your developer to add the Claude key.", 503);
-
+/** One call to Claude. Returns the model's raw JSON object. */
+async function askClaude(imageUrl) {
   let response;
   try {
-    response = await client.messages.create({
-      model: MODEL,
+    response = await claudeClient().messages.create({
+      model: CLAUDE_MODEL(),
       max_tokens: 16000,
       output_config: { format: { type: "json_schema", schema: SCHEMA } },
       messages: [
@@ -133,22 +155,76 @@ async function readPoster({ imageUrl }) {
       ],
     });
   } catch (err) {
-    console.error("[posterReader] API error:", err?.status, err?.message);
-    if (err?.status === 400) throw new PosterReaderError("That picture couldn't be read. Use a clear JPG, PNG or WebP image under 5 MB.", 422);
-    throw new PosterReaderError("Reading the poster didn't work this time. Try again in a minute.", 502);
+    console.error("[posterReader] Claude error:", err?.status, err?.message);
+    throw apiProblem(err);
   }
-
   if (response.stop_reason === "refusal") throw new PosterReaderError("The poster couldn't be read. Type the bundles in by hand instead.", 422);
-  if (response.stop_reason === "max_tokens") throw new PosterReaderError("The poster has too much on it to read in one go. Crop it to the price boxes and try again.", 422);
+  if (response.stop_reason === "max_tokens") throw tooBig();
+  return parseJson((response.content || []).filter((b) => b.type === "text").map((b) => b.text).join(""));
+}
 
-  const text = (response.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-  let raw;
+/** One call to OpenAI (Responses API). Returns the model's raw JSON object. */
+async function askOpenAI(imageUrl) {
+  let response;
   try {
-    raw = JSON.parse(text);
+    response = await openaiClient().responses.create({
+      model: OPENAI_MODEL(),
+      max_output_tokens: 16000,
+      text: { format: { type: "json_schema", name: "poster_packages", schema: OPENAI_SCHEMA, strict: true } },
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: INSTRUCTIONS },
+            { type: "input_image", image_url: imageUrl, detail: "high" },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("[posterReader] OpenAI error:", err?.status, err?.code, err?.message);
+    throw apiProblem(err);
+  }
+  const refused = (response.output || []).some((o) => (o.content || []).some((c) => c.type === "refusal"));
+  if (refused) throw new PosterReaderError("The poster couldn't be read. Type the bundles in by hand instead.", 422);
+  if (response.status === "incomplete") {
+    if (response.incomplete_details?.reason === "max_output_tokens") throw tooBig();
+    throw new PosterReaderError("The poster couldn't be read. Type the bundles in by hand instead.", 422);
+  }
+  return parseJson(response.output_text);
+}
+
+const tooBig = () => new PosterReaderError("The poster has too much on it to read in one go. Crop it to the price boxes and try again.", 422);
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
   } catch {
     throw new PosterReaderError("Reading the poster didn't work this time. Try again in a minute.", 502);
   }
+}
+
+/** A provider error in the owner's words. No provider detail ever reaches the browser. */
+function apiProblem(err) {
+  const status = err?.status;
+  if (status === 400 || status === 422) return new PosterReaderError("That picture couldn't be read. Use a clear JPG, PNG or WebP image under 5 MB.", 422);
+  if (status === 401 || status === 403) return new PosterReaderError("The poster-reading key was refused. Ask your developer to check it.", 503);
+  if (status === 402 || err?.code === "insufficient_quota" || err?.error?.code === "insufficient_quota") {
+    return new PosterReaderError("The poster-reading credit has run out. Ask your developer to top it up, or type the bundles in.", 503);
+  }
+  if (status === 404) return new PosterReaderError("The poster-reading model isn't available. Ask your developer to check its name.", 503);
+  return new PosterReaderError("Reading the poster didn't work this time. Try again in a minute.", 502);
+}
+
+/**
+ * @param {{imageUrl: string}} p  a public https link to the poster picture
+ * @returns {Promise<{title: string|null, packages: {name: string, price: number|null, regularPrice: number|null, services: string[]}[], notes: string[]}>}
+ */
+async function readPoster({ imageUrl }) {
+  const which = provider();
+  if (!which) throw new PosterReaderError("Reading posters isn't set up yet. Ask your developer to add the OpenAI or Claude key.", 503);
+  const raw = which === "openai" ? await askOpenAI(imageUrl) : await askClaude(imageUrl);
   return tidy(raw);
 }
 
-module.exports = { readPoster, isConfigured, setClientForTests, tidy, SCHEMA, MODEL, PosterReaderError };
+module.exports = { readPoster, isConfigured, provider, setClientForTests, tidy, SCHEMA, OPENAI_SCHEMA, CLAUDE_MODEL, OPENAI_MODEL, PosterReaderError };

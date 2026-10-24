@@ -148,6 +148,8 @@ test("only a clean https link is accepted", async () => {
 test("without a key the route says so plainly and calls nothing", async () => {
   reader.setClientForTests(null);
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.POSTER_READER_PROVIDER;
   const r = await post({ imageUrl: "https://blob.example/p.png" });
   assert.equal(r.status, 503);
   assert.match(r.body.error, /isn't set up/);
@@ -215,4 +217,99 @@ test("word matching: spelling variants, plurals and one-letter slips agree; diff
   assert.ok(matcher.score(t("Manicur"), t("Manicure")) >= 0.9, "a one-letter slip in a long word is forgiven");
   assert.ok(matcher.score(t("Half Leg Wax"), t("Full Leg Wax")) < 0.9, "half is not full");
   assert.equal(matcher.score(t("Pedicure"), t("Facial")), 0);
+});
+
+// ─── OpenAI as the reader ───────────────────────────────────────────────────
+
+const oaiStub = () => ({
+  responses: {
+    create: async (args) => {
+      calls.push(args);
+      if (reply instanceof Error) throw reply;
+      return reply;
+    },
+  },
+});
+const oaiAnswer = (obj, extra = {}) => ({ status: "completed", output_text: JSON.stringify(obj), output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(obj) }] }], ...extra });
+const useOpenAI = () => reader.setClientForTests(oaiStub(), "openai");
+
+test("OpenAI: the poster goes as a link with a strict answer shape, and the answer is read the same way", async () => {
+  useOpenAI();
+  reply = oaiAnswer(POSTER);
+  const r = await post({ imageUrl: "https://blob.example/karwa-poster.png" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const a = calls[0];
+  assert.equal(a.model, "gpt-6.1-sol");
+  const content = a.input[0].content;
+  assert.deepEqual(content.find((c) => c.type === "input_image"), { type: "input_image", image_url: "https://blob.example/karwa-poster.png", detail: "high" });
+  assert.equal(a.text.format.type, "json_schema");
+  assert.equal(a.text.format.strict, true);
+  assert.deepEqual(r.body.packages.map((p) => [p.name, p.price, p.lines.length]), [["Package 1", 3500, 10], ["Package 2", 4500, 10], ["Package 3", 2500, 4]]);
+  assert.equal(r.body.packages[0].lines.find((l) => l.line === "Pedicure").match.name, "Pedicure", "the same menu matching applies");
+  assert.equal(await Campaign.countDocuments(), 0, "reading still saves nothing");
+});
+
+test("OpenAI: the answer shape follows OpenAI's strict rules (every field required, no extras, nulls as type lists)", () => {
+  const walk = (node, path = "schema") => {
+    if (node && node.type === "object") {
+      assert.equal(node.additionalProperties, false, `${path} forbids extras`);
+      assert.deepEqual([...node.required].sort(), Object.keys(node.properties).sort(), `${path} requires every field`);
+      for (const [k, v] of Object.entries(node.properties)) walk(v, `${path}.${k}`);
+    }
+    if (node && node.type === "array") walk(node.items, `${path}[]`);
+  };
+  walk(reader.OPENAI_SCHEMA);
+  assert.deepEqual(reader.OPENAI_SCHEMA.properties.title.type, ["string", "null"]);
+  assert.ok(!JSON.stringify(reader.OPENAI_SCHEMA).includes("anyOf"));
+  walk(reader.SCHEMA);
+});
+
+test("OpenAI: a refusal, a cut-off answer, garbage, a bad key, no credit, a missing model and a bad picture each give a calm message", async () => {
+  useOpenAI();
+  const ask = () => post({ imageUrl: "https://blob.example/p.png" });
+  reply = { status: "completed", output_text: "", output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] };
+  assert.equal((await ask()).status, 422);
+  reply = oaiAnswer(POSTER, { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } });
+  const cut = await ask();
+  assert.equal(cut.status, 422);
+  assert.match(cut.body.error, /too much/);
+  reply = oaiAnswer(POSTER, { status: "incomplete", incomplete_details: { reason: "content_filter" } });
+  assert.equal((await ask()).status, 422);
+  reply = { status: "completed", output_text: "here is a poem", output: [] };
+  assert.equal((await ask()).status, 502);
+  reply = Object.assign(new Error("Incorrect API key sk-secret-123"), { status: 401 });
+  const bad = await ask();
+  assert.equal(bad.status, 503);
+  assert.doesNotMatch(JSON.stringify(bad.body), /sk-secret|Incorrect/, "no provider detail or key text reaches the browser");
+  reply = Object.assign(new Error("You exceeded your current quota"), { status: 429, code: "insufficient_quota" });
+  const broke = await ask();
+  assert.equal(broke.status, 503);
+  assert.match(broke.body.error, /credit has run out/);
+  reply = Object.assign(new Error("model not found"), { status: 404 });
+  assert.equal((await ask()).status, 503);
+  reply = Object.assign(new Error("invalid image"), { status: 400 });
+  assert.equal((await ask()).status, 422);
+  reply = Object.assign(new Error("boom"), { status: 500 });
+  assert.equal((await ask()).status, 502);
+});
+
+test("which reader is used: OpenAI first when both keys are set, a named choice wins, no key means none", () => {
+  reader.setClientForTests(null);
+  const keep = { o: process.env.OPENAI_API_KEY, a: process.env.ANTHROPIC_API_KEY, p: process.env.POSTER_READER_PROVIDER };
+  try {
+    delete process.env.OPENAI_API_KEY; delete process.env.ANTHROPIC_API_KEY; delete process.env.POSTER_READER_PROVIDER;
+    assert.equal(reader.provider(), null);
+    assert.equal(reader.isConfigured(), false);
+    process.env.ANTHROPIC_API_KEY = "a";
+    assert.equal(reader.provider(), "anthropic");
+    process.env.OPENAI_API_KEY = "o";
+    assert.equal(reader.provider(), "openai", "your OpenAI credit is used first");
+    process.env.POSTER_READER_PROVIDER = "anthropic";
+    assert.equal(reader.provider(), "anthropic");
+    process.env.POSTER_READER_PROVIDER = "openai";
+    delete process.env.OPENAI_API_KEY;
+    assert.equal(reader.provider(), null, "naming a provider whose key is missing does not quietly use the other one");
+  } finally {
+    for (const [k, v] of [["OPENAI_API_KEY", keep.o], ["ANTHROPIC_API_KEY", keep.a], ["POSTER_READER_PROVIDER", keep.p]]) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  }
 });

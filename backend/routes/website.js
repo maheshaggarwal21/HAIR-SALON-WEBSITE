@@ -697,7 +697,7 @@ router.post(
   async (req, res) => {
     if (firstError(req, res)) return;
     if (!posterReader.isConfigured()) {
-      return res.status(503).json({ error: "Reading posters isn't set up yet. Ask your developer to add the Claude key. You can still type the bundles in." });
+      return res.status(503).json({ error: "Reading posters isn't set up yet. Ask your developer to add the OpenAI or Claude key. You can still type the bundles in." });
     }
     try {
       const who = String(req.session?.userId || "owner");
