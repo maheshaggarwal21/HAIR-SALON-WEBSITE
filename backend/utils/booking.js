@@ -474,7 +474,9 @@ async function createBooking(o) {
 // ─── Messages after a booking settles ────────────────────────────────────────
 
 function manageUrl(appt) {
-  const base = (process.env.CUSTOMER_SITE_URL || "https://www.thexpertshair.com").replace(/\/+$/, "");
+  // A setting typed without "https://" would give customers a link that does not open.
+  let base = (process.env.CUSTOMER_SITE_URL || "https://www.thexpertshair.com").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
   return `${base}/booking/${manageToken(appt._id)}`;
 }
 
@@ -1114,7 +1116,7 @@ async function moveBooking(id, { startAt, artistId = null, reason = null, by = "
       type: "booking_artist_changed",
       to: updated.contact,
       appointmentId: updated._id,
-      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: before.artists.join(", "), newArtist: artistsNow.join(", "), reason: reason || "a change in our schedule", link: manageUrl(updated) },
+      params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: before.artists.join(", "), newArtist: artistsNow.join(", "), reason, link: manageUrl(updated) },
     });
   }
   return { ok: true, appt: updated, before };
@@ -1238,7 +1240,7 @@ async function reassignForLeave({ artistId, from, to, reason = null, by = "staff
           type: "booking_artist_changed",
           to: updated.contact,
           appointmentId: updated._id,
-          params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: oldNames.join(", "), newArtist: newNames.join(", "), reason: reason || "a change in our schedule", link: manageUrl(updated) },
+          params: { name: updated.name, ref: updated.ref, when: formatInstant(updated.startAt), oldArtist: oldNames.join(", "), newArtist: newNames.join(", "), reason, link: manageUrl(updated) },
         });
       }
       moved.push({ ...brief, from: oldNames, to: newNames, customerTold: named });

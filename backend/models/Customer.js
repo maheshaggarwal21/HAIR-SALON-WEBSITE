@@ -43,6 +43,8 @@ const utmSchema = new mongoose.Schema(
     campaign: { type: String, trim: true, maxlength: 100 },
     content: { type: String, trim: true, maxlength: 100 },
     fbclid: { type: String, trim: true, maxlength: 255 },
+    /** The ad's own id, from utm_id / ad_id in the ad link (optional). */
+    adId: { type: String, trim: true, maxlength: 100 },
   },
   { _id: false }
 );

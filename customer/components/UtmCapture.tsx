@@ -2,7 +2,7 @@
 
 /**
  * First-touch attribution (T1.15, CF §17). On the first landing that carries
- * utm_* or fbclid, remember them for 30 days; the request form attaches them so
+ * utm_*, fbclid or an ad id (utm_id / ad_id), remember them for 30 days; the request form attaches them so
  * the staff app shows which ad or post a request came from.
  *
  * First touch wins: a later visit with different UTMs doesn't overwrite them
@@ -15,7 +15,7 @@ import { useEffect } from "react";
 
 const KEY = "exp_first_touch";
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const PARAMS = { utm_source: "source", utm_medium: "medium", utm_campaign: "campaign", utm_content: "content", fbclid: "fbclid" } as const;
+const PARAMS = { utm_source: "source", utm_medium: "medium", utm_campaign: "campaign", utm_content: "content", fbclid: "fbclid", utm_id: "adId", ad_id: "adId" } as const;
 
 export type Utm = Partial<Record<(typeof PARAMS)[keyof typeof PARAMS], string>>;
 

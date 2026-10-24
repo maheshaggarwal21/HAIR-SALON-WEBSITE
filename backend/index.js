@@ -37,6 +37,15 @@ const cookieParser = require("cookie-parser");
 const MongoStore = require("connect-mongo").default;
 const { authenticate, authorize, authorizePermission } = require("./middleware/authMiddleware");
 const { PERMISSIONS } = require("./constants/permissions");
+const whatsapp = require("./utils/whatsapp");
+
+// Say loudly, once per cold start, which WhatsApp settings are missing (names only, never values).
+if (process.env.NODE_ENV === "production") {
+  const w = whatsapp.configStatus();
+  const state = `provider=${w.provider} dryRun=${w.dryRun} testPhone=${w.testPhone}`;
+  if (w.missing.length) console.error(`[whatsapp] SETTINGS MISSING — messages will be held back: ${w.missing.join(", ")} (${state})`);
+  else console.log(`[whatsapp] ready (${state})`);
+}
 
 // ── Configuration ────────────────────────────────────────────────────────────
 /** Frontend URL used for Razorpay payment-link callbacks (redirect after pay). */
@@ -919,6 +928,8 @@ app.get("/api/health", async (_req, res) => {
       // Reports only whether the value exists, never the value itself — so a
       // misconfigured webhook can be diagnosed without dashboard access.
       webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ? "set" : "NOT SET",
+      // Names of missing WhatsApp settings only, so "why was nobody messaged?" can be answered without the dashboard.
+      whatsapp: whatsapp.configStatus(),
     });
   } catch (err) {
     res.status(500).json({

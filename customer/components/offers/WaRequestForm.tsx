@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { addDays, clock, dayParts, isOpenOn, nowMinutesIST, rupees, todayIST, whatsappHref } from "@/lib/format";
 import type { OfferPackage, SiteInfo } from "@/lib/types";
 import { trackOnce } from "@/lib/pixel";
+import { readFirstTouch } from "@/components/UtmCapture";
 
 const DAYS_SHOWN = 14;
 const STEP = 30;
@@ -108,6 +109,7 @@ export function WaRequestForm({
   async function submit() {
     setSending(true);
     setError("");
+    const utm = readFirstTouch();
     try {
       const res = await fetch("/api/public/requests/wa", {
         method: "POST",
@@ -115,6 +117,7 @@ export function WaRequestForm({
         body: JSON.stringify({
           ...(offerSlug ? { offerSlug, ...(chosen ? { packageSlug: chosen.slug } : {}) } : { services: picked }),
           ...(campaign ? { campaign } : {}),
+          ...(utm ? { utm } : {}),
           date,
           time,
           name: name.trim(),
@@ -314,7 +317,7 @@ export function WaRequestForm({
         {sending ? "Sending…" : "Send my request"}
       </Button>
       <p className="text-[13px] leading-[1.5] text-ink-muted">
-        This is a request, not a booking. We confirm it on WhatsApp, and you pay at the salon after your visit. We will use your number only for this visit.
+        This is a request, not a booking. We confirm it on WhatsApp, and you pay at the salon after your visit. By sending it you agree that we message you on WhatsApp about this visit (confirmation, any change and a reminder). We will use your number only for this visit.
       </p>
     </form>
   );
