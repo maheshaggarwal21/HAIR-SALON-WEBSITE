@@ -38,7 +38,6 @@ const { PERMISSIONS } = require("../constants/permissions");
 const validateId = require("../middleware/validateId");
 const audit = require("../utils/audit");
 const { isValidDate, salonInstant, salonDate, TIME_RE } = require("../utils/time");
-const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
 const waRequest = require("../utils/waRequest");
 const metaCapi = require("../utils/metaCapi");
 const { manageToken, hashManageToken } = require("../utils/bookingToken");
@@ -116,6 +115,9 @@ function toStaffView(a) {
     visitId: a.visitId ?? null,
     lockConflict: Boolean(a.lockConflict),
     lastChange: a.statusHistory?.[a.statusHistory.length - 1] ?? null,
+    // Confirmed without blocking the artist's calendar (audit item 3): reception must check their day by hand.
+    noLock: Boolean(a.noLockReason),
+    noLockReason: a.noLockReason ?? null,
   };
 }
 
@@ -194,49 +196,21 @@ router.post(
         return res.json({ request: toStaffView(out.appt) });
       }
       if (!req.body.date || !req.body.time) return res.status(400).json({ error: "Pick a date and time" });
+      // The artist is required (audit item 3): the confirm holds that artist's time.
+      if (!req.body.artistId) return res.status(400).json({ error: "Choose the artist who will do this booking." });
 
-      let artist = null;
-      if (req.body.artistId) {
-        artist = await Artist.findOne({ _id: req.body.artistId, isActive: true }, { name: 1 }).lean();
-        if (!artist) return res.status(400).json({ error: "That artist is not active" });
-      }
-
-      // Chain the items back to back from the agreed time. A service still on
-      // its one-hour estimate is planned at that estimate — generous on purpose.
-      const startAt = salonInstant(req.body.date, req.body.time);
-      let cursor = startAt.getTime();
-      const guests = appt.guests.map((g) => {
-        const plain = g.toObject();
-        plain.items = plain.items.map((i) => {
-          const itemStart = new Date(cursor);
-          const itemEnd = new Date(cursor + (i.durationMin || DEFAULT_DURATION_MINUTES) * 60_000);
-          cursor = itemEnd.getTime() + (i.bufferMin || 0) * 60_000;
-          return {
-            ...i,
-            startAt: itemStart,
-            endAt: itemEnd,
-            artistId: artist ? artist._id : i.artistId,
-            artistName: artist ? artist.name : i.artistName,
-          };
-        });
-        return plain;
+      // One transaction: lapsed holds go, the artist's blocks are checked, firm locks are
+      // inserted and the status changes. Another booking in the way is 409 SLOT_TAKEN.
+      const out = await booking.confirmRequestAtTime(appt._id, {
+        date: req.body.date,
+        time: req.body.time,
+        artistId: req.body.artistId,
+        // An older WhatsApp-ad request made before its link was wired up gets its link key now (D62).
+        extraSet: appt.source?.channel === "wa_ad" && !appt.manageTokenHash ? { manageTokenHash: hashManageToken(manageToken(appt._id)) } : {},
+        ...actor(req),
       });
-      let endAt = new Date(cursor);
-      // A package (D64) takes as long as the owner said, even when only some of its services are on the service list.
-      const pkgMinutes = appt.source?.offerPackage?.durationMinutes;
-      if (pkgMinutes) endAt = new Date(Math.max(endAt.getTime(), startAt.getTime() + pkgMinutes * 60_000));
-      const who = actor(req);
-
-      const updated = await Appointment.findOneAndUpdate(
-        { _id: appt._id, status: "requested" },
-        {
-          // An older WhatsApp-ad request made before its link was wired up gets its link key now (D62).
-          $set: { status: "confirmed", startAt, endAt, guests, ...(appt.source?.channel === "wa_ad" && !appt.manageTokenHash ? { manageTokenHash: hashManageToken(manageToken(appt._id)) } : {}) },
-          $push: { statusHistory: { from: "requested", to: "confirmed", at: new Date(), ...who } },
-        },
-        { returnDocument: "after", runValidators: true }
-      ).lean();
-      if (!updated) return conflict(res, appt._id);
+      if (!out.ok) return conflict(res, appt._id);
+      const updated = out.appt;
 
       // WhatsApp-ad requests (D62) are told at once, with the confirmed time. Request-lite
       // bookings from the website are still handled by phone, as before. Never throws.
@@ -256,11 +230,13 @@ router.post(
           ref: updated.ref,
           startAt: updated.startAt,
           endAt: updated.endAt,
-          artist: artist?.name ?? null,
+          artist: updated.guests?.[0]?.items?.[0]?.artistName ?? null,
+          lock: out.lock,
         },
       });
-      return res.json({ request: toStaffView(updated) });
+      return res.json({ request: toStaffView(updated), lock: out.lock });
     } catch (err) {
+      if (err?.code && err.status) return sendBookingError(res, err, "confirm");
       console.error("[bookings] confirm error:", err);
       return res.status(500).json({ error: "Failed to confirm" });
     }

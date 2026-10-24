@@ -75,6 +75,11 @@ async function receptionist(permissions) {
   caller = { userId: u.insertedId, name: "Reena", role: "receptionist" };
 }
 
+/** Confirming a request needs an artist (audit item 3). */
+async function theArtist() {
+  return (await Artist.findOne({ phone: "9888800001" })) || Artist.create({ name: "Mansi", phone: "9888800001" });
+}
+
 let refN = 0;
 async function makeRequest(over = {}) {
   return Appointment.create({
@@ -163,7 +168,7 @@ test("new permissions are registered with labels and groups for the editor", () 
 
 test("confirm with time: IST time stored as UTC, items chained, artist assigned, audited", async () => {
   const appt = await makeRequest();
-  const artist = await Artist.create({ name: "Mansi", phone: "9888800001" });
+  const artist = await theArtist();
 
   const res = await call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "14:30", artistId: String(artist._id) });
   assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -175,7 +180,8 @@ test("confirm with time: IST time stored as UTC, items chained, artist assigned,
   assert.equal(facial.endAt.toISOString(), "2026-10-29T10:00:00.000Z");
   assert.equal(brows.startAt.toISOString(), "2026-10-29T10:00:00.000Z");
   assert.equal(brows.endAt.toISOString(), "2026-10-29T10:15:00.000Z");
-  assert.equal(saved.endAt.toISOString(), "2026-10-29T10:20:00.000Z"); // + 5 min buffer
+  // 15 min + 5 min buffer, rounded up to the 15-minute blocks a slot lock is made of (audit item 3).
+  assert.equal(saved.endAt.toISOString(), "2026-10-29T10:30:00.000Z");
   assert.equal(facial.artistName, "Mansi");
   assert.equal(facial.listPrice, 3100); // snapshot untouched
   assert.deepEqual(saved.statusHistory.map((h) => h.to), ["requested", "confirmed"]);
@@ -187,9 +193,10 @@ test("confirm with time: IST time stored as UTC, items chained, artist assigned,
 
 test("two people confirming at once: one wins, the other is told it's already handled", async () => {
   const appt = await makeRequest();
+  const artistId = String((await theArtist())._id);
   const [a, b] = await Promise.all([
-    call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "11:00" }),
-    call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "17:00" }),
+    call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "11:00", artistId }),
+    call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "17:00", artistId }),
   ]);
   assert.deepEqual([a.status, b.status].sort(), [200, 409]);
   const saved = await Appointment.findById(appt._id).lean();
@@ -203,10 +210,11 @@ test("decline and cancel follow the state machine; nothing is deleted", async ()
   const declined = await call("POST", `/bookings/${appt._id}/decline`, { reason: "Fully booked that day" });
   assert.equal(declined.status, 200);
   assert.equal(declined.body.request.status, "declined");
-  assert.equal((await call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "11:00" })).status, 409);
+  const artistId = String((await theArtist())._id);
+  assert.equal((await call("POST", `/bookings/${appt._id}/confirm`, { date: "2026-10-29", time: "11:00", artistId })).status, 409);
 
   const other = await makeRequest();
-  await call("POST", `/bookings/${other._id}/confirm`, { date: "2026-10-29", time: "11:00" });
+  await call("POST", `/bookings/${other._id}/confirm`, { date: "2026-10-29", time: "11:00", artistId });
   const cancelled = await call("POST", `/bookings/${other._id}/cancel`, { reason: "Customer called" });
   assert.equal(cancelled.body.request.status, "cancelled");
   const saved = await Appointment.findById(other._id).lean();

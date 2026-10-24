@@ -20,7 +20,7 @@ process.env.TELEGRAM_BOT_TOKEN = "";
 process.env.META_WA_TOKEN = "";
 process.env.PUBLIC_TOKEN_SECRET = "t";
 
-let Service, Appointment, Customer, Campaign, NotificationLog, SlotLock, OtpChallenge, SiteSettings, User, evictPermissionCache, booking;
+let Artist, artist, Service, Appointment, Customer, Campaign, NotificationLog, SlotLock, OtpChallenge, SiteSettings, User, evictPermissionCache, booking;
 let server;
 let base;
 let caller;
@@ -31,6 +31,7 @@ let svc;
 before(async () => {
   await startDb();
   Service = require("../models/Service");
+  Artist = require("../models/Artist");
   Appointment = require("../models/Appointment");
   Customer = require("../models/Customer");
   Campaign = require("../models/Campaign");
@@ -94,6 +95,8 @@ beforeEach(async () => {
   phoneN = 0;
   svc = await Service.create({ name: "Hair Spa", price: 1600, publicPrice: 800, slug: "hair-spa", isActive: true, showOnWebsite: true, bookingMode: "request", audience: "her", displayCategory: "Hair", durationMinutes: 60, durationConfirmed: true });
   await SiteSettings.getSingleton();
+  // Confirming a request needs an artist (audit item 3).
+  artist = await Artist.create({ name: "Mansi Kumari", phone: "9888800001", commission: 40, gender: "female" });
   DAY = await openDay();
 });
 
@@ -216,7 +219,7 @@ test("the staff list shows the source, campaign and that it is unpaid", async ()
 test("Confirm (with the time edited) sends booking_confirmed; the booking is then a normal confirmed one", async () => {
   const a = (await request()).body;
   const id = (await Appointment.findOne({ ref: a.ref }))._id;
-  const r = await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "12:30" });
+  const r = await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "12:30" });
   assert.equal(r.status, 200);
   const done = await Appointment.findById(id).lean();
   assert.equal(done.status, "confirmed");
@@ -224,7 +227,7 @@ test("Confirm (with the time edited) sends booking_confirmed; the booking is the
   const log = await NotificationLog.findOne({ key: `${id}:booking_confirmed` }).lean();
   assert.ok(log);
   assert.match(log.params.when, /12:30 pm/i);
-  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "12:30" })).status, 409, "confirming twice is refused");
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "12:30" })).status, 409, "confirming twice is refused");
   assert.equal(await NotificationLog.countDocuments({ type: "booking_confirmed" }), 1);
 });
 
@@ -247,7 +250,7 @@ test("a website request-lite booking is still handled by phone: confirming it se
     guests: [{ guestKey: "g1", items: [{ serviceId: svc._id, name: "Hair Spa", publicPrice: 800 }] }],
     requestedWindow: { date: DAY, window: "morning" }, pricing: { subtotal: 800, total: 800 }, source: { channel: "web" },
   });
-  assert.equal((await call("POST", `/bookings/${lite._id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
+  assert.equal((await call("POST", `/bookings/${lite._id}/confirm`, { artistId: String(artist._id), date: DAY, time: "11:00" })).status, 200);
   assert.equal(await NotificationLog.countDocuments(), 0);
   const l2 = await Appointment.create({
     ref: Appointment.generateRef(), mode: "request", status: "requested", contact: "9812345679", name: "Web Two",
@@ -261,7 +264,7 @@ test("a website request-lite booking is still handled by phone: confirming it se
 test("a confirmed UNPAID booking gets the 24 h and 2 h reminders from the existing cron", async () => {
   const a = (await request()).body;
   const id = (await Appointment.findOne({ ref: a.ref }))._id;
-  await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" });
+  await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "11:00" });
   // Move it to "tomorrow-ish", booked days ago, the way a real one would be when the cron reaches it.
   const now = new Date();
   const start = new Date(now.getTime() + 20 * 3600_000);
@@ -476,7 +479,7 @@ test("a package's own time decides which start times work, and how long the conf
   assert.match(late.body.message, /too late/);
   const r = await post("/public/requests/wa", { offerSlug: "pkgs", packageSlug: "package-1", date: DAY, time: "10:00", name: "Asha Kaur", phone: phone() });
   const id = (await Appointment.findOne({ ref: r.body.ref }))._id;
-  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "10:00" })).status, 200);
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "10:00" })).status, 200);
   const done = await Appointment.findById(id).lean();
   assert.ok(done.endAt - done.startAt >= 180 * 60_000, "the booking lasts the package's 3 hours even though only 2 services are scheduled items");
 });
@@ -488,7 +491,7 @@ test("a package with no service recognised still books: nothing scheduled, the p
   const a = await Appointment.findOne({ ref: r.body.ref }).lean();
   assert.deepEqual([a.guests[0].items.length, a.pricing.total, a.source.offerPackage.services], [0, 1999, ["Zzyzx Ritual", "Quux Glow"]]);
   const id = a._id;
-  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "11:00" })).status, 200);
   const done = await Appointment.findById(id).lean();
   assert.equal(done.endAt - done.startAt, 90 * 60_000);
 });
@@ -536,7 +539,7 @@ test("a request made before its link key was saved gets one when reception confi
   const id = (await Appointment.findOne({ ref: r.body.ref }))._id;
   await Appointment.collection.updateOne({ _id: id }, { $unset: { manageTokenHash: "" } });
   assert.equal((await call("GET", `/public/booking/${tokens.manageToken(id)}`)).status, 404, "an older request has a dead link");
-  assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
+  assert.equal((await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "11:00" })).status, 200);
   assert.equal((await call("GET", `/public/booking/${tokens.manageToken(id)}`)).status, 200, "after confirming, the link in its WhatsApp messages works");
 });
 
@@ -547,7 +550,7 @@ test("cancelling a confirmed unpaid request (salon or customer) sends request_ca
   // salon cancels
   const a = (await request()).body;
   const id = (await Appointment.findOne({ ref: a.ref }))._id;
-  await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" });
+  await call("POST", `/bookings/${id}/confirm`, { artistId: String(artist._id), date: DAY, time: "11:00" });
   assert.equal((await call("POST", `/bookings/${id}/cancel`, { reason: "Artist unwell" })).status, 200);
   assert.equal(await NotificationLog.countDocuments({ appointmentId: id, type: "request_cancelled" }), 1);
   assert.equal(await NotificationLog.countDocuments({ type: "booking_cancelled" }), 0);
@@ -556,7 +559,7 @@ test("cancelling a confirmed unpaid request (salon or customer) sends request_ca
   // customer cancels from the link in their WhatsApp
   const b = (await request()).body;
   const id2 = (await Appointment.findOne({ ref: b.ref }))._id;
-  await call("POST", `/bookings/${id2}/confirm`, { date: DAY, time: "12:00" });
+  await call("POST", `/bookings/${id2}/confirm`, { artistId: String(artist._id), date: DAY, time: "12:00" });
   const out = await call("POST", `/public/booking/${tokens.manageToken(id2)}/cancel`, { bookingToken: "x", reason: "Plans changed" });
   assert.equal(out.status, 200, JSON.stringify(out.body));
   assert.equal((await Appointment.findById(id2)).status, "cancelled");
