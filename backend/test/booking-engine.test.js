@@ -306,6 +306,15 @@ test("OTP: Turnstile required and 3 codes per phone per 15 minutes", async () =>
   assert.equal((await call("POST", "/api/public/otp/send", { phone, turnstileToken: "good" })).body.error, "LIMIT_REACHED");
 });
 
+test("OTP: one IP cannot ask for codes for many numbers (10 per hour)", async () => {
+  for (let i = 0; i < 10; i++) {
+    const out = await call("POST", "/api/public/otp/send", { phone: `98765001${String(i).padStart(2, "0")}`, turnstileToken: "good" });
+    assert.equal(out.status, 200, `request ${i + 1}`);
+  }
+  const eleventh = await call("POST", "/api/public/otp/send", { phone: "9876500199", turnstileToken: "good" });
+  assert.equal(eleventh.status, 429);
+});
+
 test("booking token: tampered, expired or missing tokens are refused", () => {
   const phone = "9876500004";
   const { token } = bookingToken.issue(phone, new Date(Date.now() - 31 * 60_000));

@@ -38,11 +38,12 @@ const { manageToken, hashManageToken } = require("../utils/bookingToken");
 const offerPages = require("../utils/offerPages");
 const metaCapi = require("../utils/metaCapi");
 const { clientIp } = require("../utils/audit");
+const { cleanUtm } = require("../utils/utm");
 
 const router = express.Router();
 const HOUR = 60 * 60 * 1000;
 const MAX_ITEMS = 8;
-const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "date", "time", "name", "phone", "website"]);
+const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "utm", "date", "time", "name", "phone", "website"]);
 
 const ipLimit = mongoRateLimit({ name: "wa-request-ip", windowMs: HOUR, max: 10 });
 
@@ -60,6 +61,8 @@ const validators = [
   body("offerSlug").optional({ nullable: true }).isString().matches(/^[a-z0-9-]{1,60}$/).withMessage("Unknown offer."),
   body("packageSlug").optional({ nullable: true }).isString().matches(/^[a-z0-9-]{1,40}$/).withMessage("Unknown package."),
   body("campaign").optional({ nullable: true }).isString().isLength({ max: 60 }),
+  body("utm").optional({ nullable: true }).isObject(),
+  body("utm.*").optional({ nullable: true }).isString().isLength({ max: 255 }),
   body("date").custom(isValidDate).withMessage("Choose a date."),
   body("time").matches(wa.TIME_RE).withMessage("Choose a time."),
   body("name")
@@ -183,7 +186,8 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
     // ── Save ──
     const now = new Date();
     const campaign = wa.cleanCampaign(b.campaign) || (offerDoc ? offerDoc.page.slug : null);
-    const utm = { source: "whatsapp", medium: "ad", ...(campaign ? { campaign } : {}) };
+    // What the ad link really said (first touch, kept by the site for 30 days) wins; the WhatsApp-ad defaults fill the gaps.
+    const utm = { source: "whatsapp", medium: "ad", ...(campaign ? { campaign } : {}), ...(cleanUtm(b.utm) || {}) };
     const customer = await Customer.findOneAndUpdate(
       { phone: b.phone },
       { $set: { name: b.name }, $setOnInsert: { createdFrom: "web", firstTouch: { utm, at: now } } },

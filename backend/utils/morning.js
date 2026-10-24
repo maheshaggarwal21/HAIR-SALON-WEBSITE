@@ -28,18 +28,38 @@ const { dayBoard } = require("./board");
 const { salonDate } = require("./time");
 
 const FIRM = ["confirmed", "checked_in"];
-const SHOWN_IN_SHEET = 8;
+/** The day sheet's client list is one WhatsApp variable: one line, and short enough to read. */
+const SHEET_MAX_CHARS = 600;
+const SHEET_SEPARATOR = " | ";
 
-const clock = (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).replace(" ", "").toLowerCase();
+const clock = (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).replace(/\s/g, "").toLowerCase();
 const longDay = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const firstName = (n) => String(n || "").trim().split(/\s+/)[0] || "there";
 const rupees = (n) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
-/** "10:00am Sita (Haircut) | 3:00pm Kamla (Facial) | +2 more" — one line: WhatsApp variables cannot hold line breaks. */
+/** One line: no line breaks, and nothing that looks like the " | " between clients. */
+const oneLine = (t) => String(t ?? "").replace(/\s*\|\s*/g, " / ").replace(/\s+/g, " ").trim();
+
+/**
+ * "10:00am Sita (Haircut) | 3:00pm Kamla (Facial) | +2 more" — one line (WhatsApp variables
+ * cannot hold line breaks), at most SHEET_MAX_CHARS long: as many clients as fit, in time order,
+ * then "+X more" for the rest. At least one client is always shown.
+ */
 function sheetLine(items) {
-  const shown = items.slice(0, SHOWN_IN_SHEET).map((i) => `${clock(i.startAt)} ${firstName(i.name)} (${i.service})`);
-  if (items.length > SHOWN_IN_SHEET) shown.push(`+${items.length - SHOWN_IN_SHEET} more`);
-  return shown.join(" | ");
+  const entries = items.map((i) => `${clock(i.startAt)} ${oneLine(firstName(i.name))} (${oneLine(i.service)})`.slice(0, 200));
+  const more = (n) => `+${n} more`;
+  let line = "";
+  let shown = 0;
+  for (const entry of entries) {
+    const next = line ? `${line}${SHEET_SEPARATOR}${entry}` : entry;
+    const left = entries.length - shown - 1;
+    const tail = left > 0 ? `${SHEET_SEPARATOR}${more(left)}` : "";
+    if (shown > 0 && next.length + tail.length > SHEET_MAX_CHARS) break;
+    line = next;
+    shown++;
+  }
+  const rest = entries.length - shown;
+  return rest > 0 ? `${line}${SHEET_SEPARATOR}${more(rest)}` : line;
 }
 
 async function artistSheets(board, date) {

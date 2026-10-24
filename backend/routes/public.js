@@ -107,7 +107,7 @@ router.get("/site", readLimit, async (_req, res) => {
     // it stays on request-lite. Switching every artist off is the rollback (CP4).
     const payments = require("../utils/payments");
     const whatsapp = require("../utils/whatsapp");
-    const canSendCodes = whatsapp.isConfigured() && Boolean(whatsapp.templateFor("otp"));
+    const canSendCodes = whatsapp.canSendOtp();
     const onlineBooking = {
       enabled: Boolean(anyOnline) && payments.isConfigured() && (canSendCodes || process.env.NODE_ENV !== "production"),
       maxGuests: settings.maxGuests,

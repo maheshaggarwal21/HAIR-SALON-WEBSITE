@@ -69,11 +69,18 @@ async function alertNewRequest(appt) {
 
 const { SALON_TZ } = require("./time");
 
-/** "Thu 29 Oct, 4:30 pm" in salon time. */
+/**
+ * "Fri, 16 Oct, 11:00 am" in salon time (IST), whatever the server's time zone.
+ * Built from parts with plain spaces and a lower-case am/pm, so every Node/ICU version
+ * gives the same text (some insert a no-break space before "am"). WhatsApp templates
+ * and the owner's Telegram alerts both print this.
+ */
 function formatInstant(at) {
-  return new Date(at).toLocaleString("en-IN", {
-    weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZone: SALON_TZ,
-  });
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hourCycle: "h12", timeZone: SALON_TZ,
+  }).formatToParts(new Date(at));
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("weekday")}, ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")} ${get("dayPeriod").toLowerCase()}`;
 }
 
 const BOOKING_HEADINGS = {
