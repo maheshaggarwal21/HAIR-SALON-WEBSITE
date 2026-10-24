@@ -37,7 +37,7 @@ const { body, query, param, validationResult } = require("express-validator");
 const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const SiteSettings = require("../models/SiteSettings");
-const { mongoRateLimit, hit } = require("../middleware/mongoRateLimit");
+const { mongoRateLimit, hit, peek } = require("../middleware/mongoRateLimit");
 const { verifyTurnstile } = require("../utils/turnstile");
 const { clientIp } = require("../utils/audit");
 const { salonDate, isValidDate, daysBetween } = require("../utils/time");
@@ -279,6 +279,38 @@ function publicBooking(appt) {
   };
 }
 
+/** Audit item 9. Bookings that succeeded, per phone per day. */
+const PHONE_BOOKINGS_PER_DAY = 10;
+/** Expected refusals (SLOT_TAKEN etc.) per phone per day — higher, so a customer hunting for a free time is not locked out. */
+const PHONE_FAILURES_PER_DAY = 30;
+
+const REFUSED_BOOKINGS = { error: "LIMIT_REACHED", message: "You've made several bookings today. Message us on WhatsApp for more." };
+const REFUSED_ATTEMPTS = { error: "LIMIT_REACHED", message: "Too many attempts today. Message us on WhatsApp and we'll book it for you." };
+
+/** The refusal body if this phone is over either daily cap, else null. Fails open on a store error. */
+async function phoneLimitRefusal(phone) {
+  try {
+    const [done, failed] = await Promise.all([
+      peek({ name: "appointment-phone", id: phone, windowMs: 24 * HOUR }),
+      peek({ name: "appointment-fail-phone", id: phone, windowMs: 24 * HOUR }),
+    ]);
+    if (done.count >= PHONE_BOOKINGS_PER_DAY) return REFUSED_BOOKINGS;
+    if (failed.count >= PHONE_FAILURES_PER_DAY) return REFUSED_ATTEMPTS;
+  } catch (err) {
+    console.error("[public-booking] phone limit check failed — allowing request:", err.message);
+  }
+  return null;
+}
+
+/** Count one event for this phone. Awaited (serverless: finish writes before the response); never throws. */
+async function countPhone(name, phone) {
+  try {
+    await hit({ name, id: phone, windowMs: 24 * HOUR, max: Infinity });
+  } catch (err) {
+    console.error(`[public-booking] could not count ${name}:`, err.message);
+  }
+}
+
 router.post(
   "/appointments",
   only(APPOINTMENT_FIELDS),
@@ -311,10 +343,11 @@ router.post(
       const ts = await verifyTurnstile(b.turnstileToken, clientIp(req));
       if (!ts.ok) return res.status(400).json({ error: "TURNSTILE_FAILED", message: "Couldn't verify you're human. Try again." });
 
-      const phoneHit = await hit({ name: "appointment-phone", id: b.phone, windowMs: 24 * HOUR, max: 5 });
-      if (!phoneHit.allowed) {
-        return res.status(429).json({ error: "LIMIT_REACHED", message: "You've made several bookings today. Message us on WhatsApp for more." });
-      }
+      // Per-phone daily limits (audit item 9). Checked read-only here and counted
+      // only AFTER the outcome is known, so "that time was just taken" never
+      // uses up a customer's day. A counter-store error lets the booking through.
+      const refused = await phoneLimitRefusal(b.phone);
+      if (refused) return res.status(429).json(refused);
 
       const pkg = await resolvePackage(b.packageSlug);
       const artistId = await resolveArtist(b.artistSlug);
@@ -333,6 +366,8 @@ router.post(
         pixel: metaCapi.fromRequest(req),
       });
 
+      await countPhone("appointment-phone", b.phone);
+
       return res.status(201).json({
         booking: publicBooking(out.appt),
         manageToken: out.manageToken,
@@ -341,6 +376,9 @@ router.post(
           : null,
       });
     } catch (err) {
+      // An expected refusal (slot taken, overlap, validation of the choice): the
+      // separate, higher failed-attempt counter. Real server errors are not the customer's doing.
+      if (err?.code && err.status && err.status < 500) await countPhone("appointment-fail-phone", b.phone);
       return sendError(res, err, "create");
     }
   }

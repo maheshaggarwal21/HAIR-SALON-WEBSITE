@@ -58,6 +58,21 @@ async function hit({ name, id, windowMs, max }) {
 }
 
 /**
+ * Read the current count for a key WITHOUT counting (audit item 9). For limits
+ * that must go up only after the work succeeded: check with peek(), do the
+ * work, then hit(). Same key and window as hit(). Throws on a store error —
+ * callers decide whether to fail open.
+ * @returns {Promise<{count: number, resetAt: Date}>}
+ */
+async function peek({ name, id, windowMs }) {
+  const now = Date.now();
+  const windowStart = new Date(Math.floor(now / windowMs) * windowMs);
+  const resetAt = new Date(windowStart.getTime() + windowMs);
+  const doc = await RateLimitHit.findOne({ key: `${name}:${hash(id)}`, windowStart }, { count: 1 }).lean();
+  return { count: doc?.count ?? 0, resetAt };
+}
+
+/**
  * Express middleware.
  * @param {object}   opts
  * @param {string}   opts.name       limiter name, part of the key
@@ -86,4 +101,4 @@ function mongoRateLimit({ name, windowMs, max, keyBy = (req) => clientIp(req) })
   };
 }
 
-module.exports = { mongoRateLimit, hit };
+module.exports = { mongoRateLimit, hit, peek };
