@@ -39,6 +39,7 @@ const ORDER = {
   booking_declined: ["name", "ref", "refund", "salon_link"],
   // A WhatsApp-ad / offer-page request the salon could not take: unpaid, so no refund line (D62).
   request_declined: ["name", "ref", "salon_link"],
+  request_cancelled: ["name", "ref", "salon_link"],
   booking_refund: ["name", "ref", "amount", "salon_link"],
   booking_moved: ["name", "ref", "when", "link", "salon_link"],
   // To the ARTIST at 08:15 (D56); no salon link — they are staff.

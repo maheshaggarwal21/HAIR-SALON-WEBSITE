@@ -539,3 +539,27 @@ test("a request made before its link key was saved gets one when reception confi
   assert.equal((await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" })).status, 200);
   assert.equal((await call("GET", `/public/booking/${tokens.manageToken(id)}`)).status, 200, "after confirming, the link in its WhatsApp messages works");
 });
+
+// ─── cancelling an unpaid offer-page booking ────────────────────────────────
+
+test("cancelling a confirmed unpaid request (salon or customer) sends request_cancelled, never the refund wording", async () => {
+  const tokens = require("../utils/bookingToken");
+  // salon cancels
+  const a = (await request()).body;
+  const id = (await Appointment.findOne({ ref: a.ref }))._id;
+  await call("POST", `/bookings/${id}/confirm`, { date: DAY, time: "11:00" });
+  assert.equal((await call("POST", `/bookings/${id}/cancel`, { reason: "Artist unwell" })).status, 200);
+  assert.equal(await NotificationLog.countDocuments({ appointmentId: id, type: "request_cancelled" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ type: "booking_cancelled" }), 0);
+  assert.equal((await call("POST", `/bookings/${id}/cancel`, {})).status, 409);
+  assert.equal(await NotificationLog.countDocuments({ type: "request_cancelled" }), 1);
+  // customer cancels from the link in their WhatsApp
+  const b = (await request()).body;
+  const id2 = (await Appointment.findOne({ ref: b.ref }))._id;
+  await call("POST", `/bookings/${id2}/confirm`, { date: DAY, time: "12:00" });
+  const out = await call("POST", `/public/booking/${tokens.manageToken(id2)}/cancel`, { bookingToken: "x", reason: "Plans changed" });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal((await Appointment.findById(id2)).status, "cancelled");
+  assert.equal(await NotificationLog.countDocuments({ appointmentId: id2, type: "request_cancelled" }), 1);
+  assert.equal(await NotificationLog.countDocuments({ type: "booking_cancelled" }), 0);
+});
