@@ -372,6 +372,13 @@ async function createAppointmentVisit(req, res) {
     });
   } catch (err) {
     if (err instanceof CheckoutError) return res.status(err.status).json({ error: err.message });
+    // Audit #2 (M8): the unique index on the payment id caught a second visit the pre-check missed. The same
+    // booking is the existing replay; any other booking keeps the message the pre-check gives.
+    if (err?.code === 11000 && err.keyPattern?.razorpayPaymentId && razorpayPaymentId) {
+      const first = await Visit.findOne({ razorpayPaymentId }).lean();
+      if (first && String(first.appointmentId) === String(appointmentId)) return res.status(200).json(visitReplay(first));
+      return res.status(409).json({ error: "That payment is already on another visit" });
+    }
     if (err?.code === 11000) return res.status(409).json({ error: "This booking has already been billed" });
     console.error("[visits] appointment visit error:", err);
     return res.status(500).json({ error: "Failed to create the visit", details: err.message });
@@ -631,6 +638,15 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
       if (counterSale && err?.code === 11000) {
         const first = await Visit.findOne({ counterSessionId: counterSale.session._id }).lean();
         if (first) return res.status(200).json(visitReplay(first));
+      }
+      // Audit #2 (M8): two requests passed the pre-check above together and the unique index on the payment id
+      // caught the second. Answer exactly as the pre-check would have: the first visit, as a duplicate.
+      if (!counterSale && effectivePaymentId && err?.code === 11000 && err.keyPattern?.razorpayPaymentId) {
+        const first = await Visit.findOne({ razorpayPaymentId: effectivePaymentId }).lean();
+        if (first) {
+          await paymentIdCheck.observe(() => noteReplayedSale({ req, existing: first, paymentId: effectivePaymentId, serviceIds, discountPercent, paymentMethod, cashAmount }));
+          return res.status(200).json(visitReplay(first));
+        }
       }
       throw err;
     }
