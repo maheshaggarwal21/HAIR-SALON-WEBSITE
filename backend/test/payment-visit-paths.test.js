@@ -154,13 +154,14 @@ test("v2 split: a cash part of 0 or the whole total is refused (today as a 500 w
   assert.equal(await Visit.countDocuments(), 0);
 });
 
-test("v2 TODAY (audit #1): a made-up payment id is accepted and saved as 'paid online'; nothing checks it", async () => {
+test("v2 (audit #1, default 'log' mode): a made-up payment id is STILL accepted and saved as 'paid online'; the check only looks and records", async () => {
   assert.equal(await PaymentEvent.countDocuments(), 0, "Razorpay never reported this payment");
   const r = await sale({ paymentMethod: "online", razorpayPaymentId: "pay_madeUp123" });
   assert.equal(r.status, 201);
   const v = await Visit.findById(r.body.visitId).lean();
   assert.deepEqual([v.paymentMethod, v.onlineAmount, v.razorpayPaymentId], ["online", 4000, "pay_madeUp123"]);
-  assert.equal(rz.fetched.length, 0, "Razorpay is not asked about it either");
+  // Intentionally changed by audit #1: the check now asks Razorpay once (it only observes, the save is unchanged).
+  assert.deepEqual(rz.fetched, ["pay_madeUp123"], "the check asks Razorpay about it, once");
 });
 
 test("v2 TODAY (audit #1): a cash visit that carries a payment id keeps the id, with 0 online", async () => {
@@ -277,12 +278,13 @@ test("checkout: the rest in cash takes no payment id, and one sent anyway is NOT
   invariant(v);
 });
 
-test("checkout TODAY (audit #1): a made-up payment id for the online part is accepted", async () => {
+test("checkout (audit #1, default 'log' mode): a made-up payment id for the online part is STILL accepted", async () => {
   const appt = await booking();
   const r = await checkout(appt, { paymentMethod: "online", razorpayPaymentId: "pay_madeUpDesk" });
   assert.equal(r.status, 201);
   assert.equal((await Visit.findById(r.body.visitId).lean()).razorpayPaymentId, "pay_madeUpDesk");
-  assert.equal(rz.fetched.length, 0);
+  // Intentionally changed by audit #1: the check now asks Razorpay once (it only observes, the save is unchanged).
+  assert.deepEqual(rz.fetched, ["pay_madeUpDesk"]);
 });
 
 test("checkout: a payment id already on another visit is refused (409), and the booking stays open", async () => {

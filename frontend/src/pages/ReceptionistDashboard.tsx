@@ -45,7 +45,7 @@ import type { SidebarLink } from "@/layouts/DashboardLayout";
 
 const receptionistLinks: SidebarLink[] = [
   { to: "/dashboard/receptionist/bookings", label: "Bookings", icon: CalendarCheck, requiredPermission: ["bookings.view", "bookings.refund"] },
-  { to: "/dashboard/receptionist/fix-numbers", label: "Fix Numbers", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
+  { to: "/dashboard/receptionist/fix-numbers", label: "Fix numbers & errors", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
   { to: "/dashboard/receptionist/website", label: "Website", icon: Globe, requiredPermission: "website.manage" },
   { to: "/dashboard/receptionist/payments", label: "Payment History", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/receptionist/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },

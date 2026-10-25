@@ -15,6 +15,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { LogOut, Scissors, Menu, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import PaymentIdCheckSwitch from "@/components/PaymentIdCheckSwitch";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface SidebarLink {
@@ -52,6 +53,10 @@ export default function DashboardLayout({
     }
     return perms.includes(link.requiredPermission);
   });
+
+  // Same two permissions the server accepts for this switch (routes/paymentIdCheck.js); the server decides anyway.
+  const canSeePaymentCheck =
+    user?.role === "owner" || (user?.permissions ?? []).some((p) => p === "visit.create" || p === "datafixes.manage");
 
   const handleSignOut = async () => {
     setSidebarOpen(false);
@@ -93,6 +98,9 @@ export default function DashboardLayout({
           ))}
         </nav>
       </div>
+
+      {/* Payment ID check switch (audit #1): owner and anyone allowed to bill; hidden for the rest. */}
+      {canSeePaymentCheck && <PaymentIdCheckSwitch />}
 
       {/* Sign-out */}
       <div className="shrink-0 p-3 border-t border-stone-800">

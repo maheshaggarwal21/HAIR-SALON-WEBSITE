@@ -30,6 +30,7 @@ const { notify } = require("./notify");
 const { dayBoard } = require("./board");
 const { salonDate } = require("./time");
 const { alertOwnerIfTimerStale } = require("./timerHealth");
+const { alertOwnerOpenEntries } = require("./paymentIdCheck");
 
 const FIRM = ["confirmed", "checked_in"];
 /** The day sheet's client list is one WhatsApp variable: one line, and short enough to read. */
@@ -144,7 +145,7 @@ async function ownerSummary(board, date) {
 async function morningRun(now = new Date()) {
   const date = salonDate(now);
   // Audit item 7: also on closed days — the 15-minute timer runs every day. Never throws.
-  const timer = await alertOwnerIfTimerStale(now);
+  const timer = { ...(await alertOwnerIfTimerStale(now)), ...(await alertOwnerOpenEntries(now)) };
   const board = await dayBoard(date, now);
   if (board.closed) return { date, closed: true, artistsMessaged: 0, ownerSummaries: 0, ...timer };
   const artists = await artistSheets(board, date);

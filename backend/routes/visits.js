@@ -21,6 +21,7 @@ const { authorizePermission, getUserPermissions } = require("../middleware/authM
 const { PERMISSIONS } = require('../constants/permissions');
 const { salonDate, isValidDate, addDays } = require("../utils/time");
 const counter = require("../utils/counter");
+const paymentIdCheck = require("../utils/paymentIdCheck");
 
 const router = express.Router();
 
@@ -188,6 +189,65 @@ router.get("/appointment-bill/:id", authorizePermission(PERMISSIONS.VISIT_CREATE
 });
 
 /**
+ * The payment-id check for a booking at checkout (audit #1, D70). The online money the desk collected is
+ * what is left after the deposit and any cash/card part, i.e. `buckets.onlineAmount - bill.depositApplied`;
+ * it is worked out here from the same two functions the transaction below uses, so the two cannot disagree.
+ * Only the cases where the transaction would store a desk payment id are checked. Never throws: if the
+ * booking cannot be read, the transaction below gives the real answer (a CheckoutError) or the save
+ * goes on and the check is recorded as "check_failed".
+ */
+async function checkBookingPayment({ req, appointmentId, serviceIds, paymentMethod, cashAmount, razorpayPaymentId, date }) {
+  const none = { refusal: null, done: async () => {} };
+  try {
+    if (!razorpayPaymentId || !["online", "partial"].includes(paymentMethod)) return none;
+    let bill;
+    let buckets;
+    try {
+      bill = await appointmentBill({ appointmentId, serviceIds });
+      if (!(bill.remainder > 0)) return none;
+      buckets = appointmentBuckets(bill, { paymentMethod, cashAmount });
+    } catch (err) {
+      if (err instanceof CheckoutError) return none; // the transaction below will say the same thing
+      return await paymentIdCheck.begin({ req, paymentId: razorpayPaymentId, expectedPaise: NaN });
+    }
+    return await paymentIdCheck.begin({
+      req,
+      paymentId: razorpayPaymentId,
+      expectedPaise: (buckets.onlineAmount - bill.depositApplied) * 100,
+      name: bill.appt.name,
+      date,
+      ref: bill.appt.ref,
+    });
+  } catch (err) {
+    console.error("[visits] payment id check skipped:", err.message);
+    return none;
+  }
+}
+
+/**
+ * The duplicate replay in /v2 hands back the first visit when a payment id is reused. If the reusing sale is
+ * a different sale (its total or its services differ from that visit's), that is worth a record: a second
+ * customer's sale was just swallowed by the first. Compare only; nothing is written to a visit.
+ */
+async function noteReplayedSale({ req, existing, paymentId, serviceIds, discountPercent, paymentMethod, cashAmount }) {
+  const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
+  if (error) return; // cannot be priced: nothing to compare, and the caller's answer is unchanged
+  const subtotal = orderedServices.reduce((sum, s) => sum + s.price, 0);
+  const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
+  const requestedTotal = Math.max(0, subtotal - Math.round(subtotal * (pct / 100)));
+  const ids = (list) => list.map(String).sort().join(",");
+  const sameServices = ids(orderedServices.map((s) => s._id)) === ids((existing.services || []).map((s) => s.serviceId));
+  if (sameServices && requestedTotal === Math.round(existing.finalTotal)) return;
+  let expectedPaise = null;
+  try {
+    expectedPaise = derivePaymentAmounts({ paymentMethod, finalTotal: requestedTotal, cashAmount }).onlineAmount * 100;
+  } catch {
+    /* an invalid cash part: leave the expected amount out */
+  }
+  await paymentIdCheck.recordReplay({ req, paymentId, existing, requestedTotal, expectedPaise });
+}
+
+/**
  * POST /v2 with `appointmentId`: the visit for a booking. One transaction:
  * the Visit is written AND the booking becomes `completed` with `visitId`
  * and `deposit.status = applied`. If anything fails, neither happens.
@@ -210,6 +270,11 @@ async function createAppointmentVisit(req, res) {
       services: already.services.map((s) => ({ serviceEntryId: s._id, serviceId: s.serviceId, serviceName: s.name, servicePrice: s.price })),
     });
   }
+
+  // Audit #1 (D70): ask whether the desk payment id belongs to this sale. Outside the transaction: it may
+  // call Razorpay, and it must never be able to hold up or break the save.
+  const idCheck = await checkBookingPayment({ req, appointmentId, serviceIds, paymentMethod, cashAmount, razorpayPaymentId, date });
+  if (idCheck.refusal) return res.status(idCheck.refusal.status).json(idCheck.refusal.body);
 
   const session = await mongoose.startSession();
   let visit;
@@ -324,6 +389,7 @@ async function createAppointmentVisit(req, res) {
       console.error("[visits] payment event reconcile failed:", visit.razorpayPaymentId, err.message);
     }
   }
+  await idCheck.done(visit._id);
 
   return res.status(201).json({
     success: true,
@@ -447,6 +513,8 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     if (effectivePaymentId) {
       const existing = await Visit.findOne({ razorpayPaymentId: effectivePaymentId }).lean();
       if (existing) {
+        // Audit #1 addition (D70): a DIFFERENT sale reusing this id is only noted; the caller gets the same answer.
+        if (!counterSale) await paymentIdCheck.observe(() => noteReplayedSale({ req, existing, paymentId: effectivePaymentId, serviceIds, discountPercent, paymentMethod, cashAmount }));
         return res.status(200).json({
           success: true,
           duplicate: true,
@@ -503,6 +571,13 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     }
 
     const amounts = derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount });
+
+    // Audit #1 (D70): does this payment id belong to this sale? An observer: it records, and refuses only in
+    // "enforce" mode and only when the payment is clearly wrong. A counter QR sale carries the server's own id.
+    const idCheck = counterSale
+      ? { refusal: null, done: async () => {} }
+      : await paymentIdCheck.begin({ req, paymentId: effectivePaymentId, expectedPaise: amounts.onlineAmount * 100, name: String(name).trim(), date: new Date(date) });
+    if (idCheck.refusal) return res.status(idCheck.refusal.status).json(idCheck.refusal.body);
 
     let visit;
     try {
@@ -593,6 +668,7 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         console.error("[visits] payment event reconcile failed:", effectivePaymentId, err.message);
       }
     }
+    await idCheck.done(visit._id);
 
     return res.status(201).json({
       success: true,

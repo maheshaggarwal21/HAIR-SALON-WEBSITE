@@ -10,9 +10,12 @@
  * "After one full day": nothing from today is listed. Today's visits are still
  * being entered, and the desk would be "fixing" a number mid-conversation.
  *
- *   GET  /?kind=duplicate|invalid|payment|unassigned|reference&status=open|resolved|all&days=30&q=
+ *   GET  /?kind=duplicate|invalid|payment|unassigned|reference|payment_id&status=open|resolved|all&days=30&q=
  *   POST /correct-contact   { from, to, key?, note? }  re-file every visit under a wrong number
  *   POST /resolve           { key, kind, status: fixed|dismissed|open, note?, identified? }
+ *
+ * "payment_id" (Payment log errors, D70) is different: it lists results the payment-id check RECORDED when a
+ * sale was saved (utils/paymentIdCheck.js), the same day included, and closing one needs a note.
  *
  * Detection is live over Visits. A correction changes `Visit.contact` only —
  * amounts, dates, payment buckets and revenue are untouched — and each change
@@ -30,6 +33,7 @@ const { PERMISSIONS } = require("../constants/permissions");
 const audit = require("../utils/audit");
 const { salonDate, addDays } = require("../utils/time");
 const { last10, isValidPhone, typoPair } = require("../utils/numberChecks");
+const paymentIdCheck = require("../utils/paymentIdCheck");
 
 const router = express.Router();
 
@@ -48,7 +52,7 @@ const SETTLED = {
   paymentStatus: "success",
   $or: [{ assignmentStatus: { $exists: false } }, { assignmentStatus: "not_required" }, { assignmentStatus: "completed" }],
 };
-const KINDS = ["duplicate", "invalid", "payment", "unassigned", "reference"];
+const KINDS = ["duplicate", "invalid", "payment", "unassigned", "reference", "payment_id"];
 const KEY_RE = /^[a-z]{2,4}:[A-Za-z0-9_:.-]{1,90}$/;
 const LIMIT = 200;
 
@@ -233,6 +237,8 @@ router.get("/", async (req, res) => {
     else if (kind === "invalid") issues = invalid(await contactGroups(win));
     else if (kind === "unassigned") issues = await unassigned(win);
     else if (kind === "reference") issues = await missingReference();
+    // Recorded payment-id check results (D70): read straight from the audit log, today's included, no visit scanned.
+    else if (kind === "payment_id") issues = await paymentIdCheck.listEntries();
     else {
       try {
         issues = await payments(win);
@@ -242,6 +248,8 @@ router.get("/", async (req, res) => {
     }
 
     const decided = new Map((await DataFix.find({ kind }).lean()).map((d) => [d.key, d]));
+    // A payment-id decision covers that problem as it stood: if the same problem was recorded again after it, it is open again.
+    if (kind === "payment_id") for (const i of issues) if (!paymentIdCheck.stillDecided(i, decided.get(i.key))) decided.delete(i.key);
     issues = issues.map((i) => {
       const d = decided.get(i.key);
       return { ...i, status: d ? d.status : "open", note: d?.note ?? null, identified: d?.identified?.name || d?.identified?.contact ? d.identified : null, resolvedBy: d?.resolvedBy?.name ?? null, resolvedAt: d?.resolvedAt ?? null };
@@ -301,6 +309,11 @@ router.post("/resolve", async (req, res) => {
     const { key, kind, status } = req.body || {};
     if (!KEY_RE.test(String(key || "")) || !KINDS.includes(kind)) return res.status(400).json({ error: "Bad request" });
     if (!["fixed", "dismissed", "open"].includes(status)) return res.status(400).json({ error: "status must be fixed, dismissed or open" });
+
+    // A payment-id result is closed only with a written reason, so the list explains itself later.
+    if (kind === "payment_id" && status !== "open" && !String(req.body.note || "").trim()) {
+      return res.status(400).json({ error: "Write a note saying what you checked." });
+    }
 
     if (status === "open") {
       await DataFix.deleteOne({ key });

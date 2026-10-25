@@ -48,6 +48,16 @@ async function capturedPayments(orderId) {
 }
 
 /**
+ * One payment as Razorpay has it (status, amount in paise). Used only by the payment-id check
+ * (utils/paymentIdCheck.js) when our own webhook record has not arrived yet. Throws on any failure.
+ */
+async function fetchPayment(paymentId) {
+  const rz = getClient();
+  if (!rz) throw new Error("Razorpay is not configured");
+  return rz.payments.fetch(paymentId);
+}
+
+/**
  * Refund part or all of a captured payment (T2.17). Throws on failure so the
  * caller can keep the refund in the queue and tell the owner (E24).
  * @returns {Promise<{id: string, status: string}>}
@@ -70,4 +80,4 @@ function checkoutSignatureOk(orderId, paymentId, signature) {
   return expected.length === given.length && crypto.timingSafeEqual(expected, given);
 }
 
-module.exports = { createOrder, capturedPayments, refund, checkoutSignatureOk, isConfigured, setClientForTests, getClient };
+module.exports = { createOrder, capturedPayments, fetchPayment, refund, checkoutSignatureOk, isConfigured, setClientForTests, getClient };
