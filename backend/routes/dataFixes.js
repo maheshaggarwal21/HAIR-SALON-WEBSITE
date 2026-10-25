@@ -238,7 +238,7 @@ router.get("/", async (req, res) => {
     else if (kind === "unassigned") issues = await unassigned(win);
     else if (kind === "reference") issues = await missingReference();
     // Recorded payment-id check results (D70): read straight from the audit log, today's included, no visit scanned.
-    else if (kind === "payment_id") issues = await paymentIdCheck.listEntries();
+    else if (kind === "payment_id") issues = await paymentIdCheck.withVisitContacts(await paymentIdCheck.listEntries());
     else {
       try {
         issues = await payments(win);

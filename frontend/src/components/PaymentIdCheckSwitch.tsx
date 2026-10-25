@@ -65,7 +65,9 @@ export default function PaymentIdCheckSwitch() {
         <span className="text-xs leading-tight text-stone-400">
           Payment ID check:
           <br />
-          <span className={enforce ? "font-semibold text-amber-400" : "font-semibold text-stone-200"}>{enforce ? "Enforce" : "Log only"}</span>
+          <span className={enforce ? "text-stone-500" : "font-semibold text-stone-100"}>Log only</span>
+          <span className="text-stone-500"> / </span>
+          <span className={enforce ? "font-semibold text-amber-400" : "text-stone-500"}>Enforce</span>
         </span>
         <button
           type="button"

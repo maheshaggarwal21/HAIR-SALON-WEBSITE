@@ -709,3 +709,32 @@ test("the morning count follows the same rule (a re-recorded problem counts agai
   await online({ razorpayPaymentId: "pay_scope4", serviceIds: [ids.hair] });
   assert.equal(await check.countOpen(), 1);
 });
+
+// ─── row links: the visit's contact is looked up when the list is read ──────
+
+test("payment log errors: each row carries the visit's contact and day, read from the visit at query time; the audit entry stores no contact", async () => {
+  const r = await online({ razorpayPaymentId: "pay_link1" });
+  const entry = await AuditLog.findOne({ action: "payment.id_unverified" }).lean();
+  assert.ok(!JSON.stringify(entry).includes("9876543210"), "no phone number in the audit entry");
+  await asRole("receptionist", ["datafixes.manage"]);
+  const [i] = (await openList()).issues;
+  assert.deepEqual([i.contact, i.visitDay], ["9876543210", "2026-10-26"]);
+
+  // The number is corrected later (Fix numbers): the row follows the visit, not a copy.
+  await Visit.updateOne({ _id: r.body.visitId }, { $set: { contact: "9811122233" } });
+  assert.equal((await openList()).issues[0].contact, "9811122233");
+});
+
+test("payment log errors: no contact for a deleted visit, a visit without a valid 10-digit number, or a refused sale", async () => {
+  const gone = await online({ razorpayPaymentId: "pay_link2" });
+  const walkin = await online({ razorpayPaymentId: "pay_link3", name: "Walk In" });
+  await Visit.deleteOne({ _id: gone.body.visitId });
+  await Visit.updateOne({ _id: walkin.body.visitId }, { $set: { contact: "walk-in" } });
+  await setMode("enforce");
+  assert.equal((await online({ razorpayPaymentId: "pay_link4" })).status, 400);
+  await asRole("receptionist", ["datafixes.manage"]);
+  const rows = (await openList("all")).issues;
+  assert.equal(rows.length, 3);
+  for (const row of rows) assert.equal(row.contact, null, row.paymentId);
+  assert.equal(rows.find((x) => x.paymentId === "pay_link4").visitId, null);
+});

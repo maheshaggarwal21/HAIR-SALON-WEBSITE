@@ -438,6 +438,23 @@ async function listEntries() {
   });
 }
 
+/**
+ * Adds `contact` (the visit's 10-digit phone, or null) and `visitDay` (YYYY-MM-DD) to list rows, for the
+ * link to Payment History. Read from the visit when the list is built, never stored in the audit entry, so a
+ * corrected number is followed. null when there is no visit (a sale refused in enforce mode), the visit was
+ * deleted, or its contact is not exactly 10 digits (walk-ins without a phone). Read-only.
+ */
+async function withVisitContacts(entries) {
+  const idList = [...new Set(entries.map((e) => e.visitId).filter((v) => v && mongoose.Types.ObjectId.isValid(v)))];
+  const visits = idList.length ? await Visit.find({ _id: { $in: idList } }, { contact: 1, date: 1 }).lean() : [];
+  const byId = new Map(visits.map((v) => [String(v._id), v]));
+  return entries.map((e) => {
+    const v = e.visitId ? byId.get(String(e.visitId)) : null;
+    const contact = typeof v?.contact === "string" ? v.contact.trim() : "";
+    return { ...e, contact: /^\d{10}$/.test(contact) ? contact : null, visitDay: v?.date ? new Date(v.date).toISOString().slice(0, 10) : null };
+  });
+}
+
 /** How many recorded results nobody has decided yet. Never throws (0 on trouble). */
 async function countOpen() {
   try {
@@ -481,6 +498,7 @@ module.exports = {
   keyFor,
   stillDecided,
   listEntries,
+  withVisitContacts,
   countOpen,
   alertOwnerOpenEntries,
   alertModeChanged,

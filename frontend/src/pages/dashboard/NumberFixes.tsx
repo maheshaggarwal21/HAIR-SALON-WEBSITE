@@ -18,7 +18,10 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import CopyId from "@/components/CopyId";
+import { usePermission } from "@/hooks/usePermission";
+import { historyLink } from "@/lib/paymentLinks";
 import { motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, Copy, Hash, Loader2, PhoneOff, RotateCcw, Search, ShieldAlert, Undo2, UserX, Wallet } from "lucide-react";
 
@@ -72,6 +75,7 @@ interface Issue {
   replay?: boolean;
   by?: string;
   ref?: string | null;
+  visitDay?: string | null;
 }
 interface Reply {
   issues: Issue[];
@@ -468,6 +472,11 @@ function Reference({ i, busy, resolve }: { i: Issue; busy: boolean; resolve: Res
 function PaymentLog({ i, busy, resolve }: { i: Issue; busy: boolean; resolve: Resolve }) {
   const [note, setNote] = useState("");
   const noteOk = note.trim().length > 0;
+  // The link follows the role the user is inside; it is hidden without payments.view, and for a row with no
+  // visit, a deleted visit or a visit without a valid 10-digit number (the server then sends contact: null).
+  const { pathname } = useLocation();
+  const canViewPayments = usePermission("payments.view");
+  const link = historyLink({ pathname, canView: canViewPayments, contact: i.contact, day: i.visitDay });
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
@@ -492,7 +501,12 @@ function PaymentLog({ i, busy, resolve }: { i: Issue; busy: boolean; resolve: Re
         )}
         .
       </p>
-      <p className="mt-1 font-mono text-xs text-stone-400">{i.paymentId}</p>
+      <div className="mt-1">{i.paymentId && <CopyId id={i.paymentId} />}</div>
+      {link && (
+        <Link to={link} className="mt-2 inline-block text-sm font-medium text-amber-700 underline underline-offset-2 hover:text-amber-800">
+          See this client's payments
+        </Link>
+      )}
       {i.status === "open" && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="What did you check? (required)" className="min-w-[220px] flex-1 rounded-lg border border-stone-200 px-3 py-2 text-sm" />
