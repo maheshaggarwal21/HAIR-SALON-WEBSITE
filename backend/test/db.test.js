@@ -55,3 +55,27 @@ test("duplicate lock aborts the whole transaction", async () => {
   // The losing booking must not survive its failed lock.
   assert.deepEqual((await Booking.find().lean()).map((b) => b.ref), ["EXP-AAAAA"]);
 });
+
+// ─── Connection pool (scaling) ──────────────────────────────────────────────
+
+test("each server instance caps its Mongo connection pool (default 10), so a burst of instances cannot exhaust Atlas", async () => {
+  const { connectionOptions, DEFAULT_MAX_POOL_SIZE } = require("../db");
+  assert.equal(DEFAULT_MAX_POOL_SIZE, 10);
+  assert.equal(connectionOptions({}).maxPoolSize, 10);
+  assert.equal(mongoose.connection.getClient().options.maxPoolSize, 10, "the live connection really uses it");
+});
+
+test("MONGODB_MAX_POOL_SIZE adjusts it; junk, zero or huge values fall back to the safe default or the bounds", () => {
+  const { connectionOptions } = require("../db");
+  assert.equal(connectionOptions({ MONGODB_MAX_POOL_SIZE: "25" }).maxPoolSize, 25);
+  assert.equal(connectionOptions({ MONGODB_MAX_POOL_SIZE: "1" }).maxPoolSize, 1);
+  for (const bad of ["", "abc", "0", "-5", "2.5", "NaN", undefined]) assert.equal(connectionOptions({ MONGODB_MAX_POOL_SIZE: bad }).maxPoolSize, 10, String(bad));
+  assert.equal(connectionOptions({ MONGODB_MAX_POOL_SIZE: "5000" }).maxPoolSize, 50, "never above 50 per instance");
+});
+
+test("the existing fail-fast timeouts are kept", () => {
+  const { connectionOptions } = require("../db");
+  const o = connectionOptions({});
+  assert.equal(o.serverSelectionTimeoutMS, 8000);
+  assert.equal(o.socketTimeoutMS, 45000);
+});

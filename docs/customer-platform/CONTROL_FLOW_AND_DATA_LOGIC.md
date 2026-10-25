@@ -887,6 +887,7 @@ Proposal rules (display category, audience, variants, outlier flags) live in
 `WHATSAPP_TEMPLATE_*` · `CRON_SECRET` · `REVALIDATE_SECRET` · `CUSTOMER_SITE_URL` ·
 `INSTAGRAM_ACCESS_TOKEN` (stored in DB after first refresh) · `GOOGLE_PLACES_API_KEY` ·
 `SALON_PLACE_ID` · `COUNTER_DISPLAY_ENABLED` (D60, default off).
+`MONGODB_MAX_POOL_SIZE` (optional, 1-50, default 10): connections each serverless instance may hold to Atlas. Mongoose's own default is 100 per process, so a burst of instances could exhaust Atlas's connection limit (`db.js`).
 
 Customer site: `NEXT_PUBLIC_API_BASE` · `NEXT_PUBLIC_TURNSTILE_SITE_KEY` ·
 `NEXT_PUBLIC_RAZORPAY_KEY_ID` · `REVALIDATE_SECRET`.
