@@ -542,8 +542,40 @@ async function confirmPayment({ orderId, paymentId, amount = null, now = new Dat
   if (first.deposit.status !== "pending") return { outcome: "already", appt: first };
   if (amount != null && Math.round(amount) !== first.deposit.amount) {
     console.error(`[booking] ${first.ref}: paid ₹${amount}, expected ₹${first.deposit.amount}`);
+    // Audit #4: money that matches no booking is not kept and re-checked forever. Cancel by system and queue a
+    // refund of what Razorpay actually captured, the same as a payment that arrives after the hold expired.
+    // Conditional on the deposit still being pending, so a repeat of this call (webhook retry, the 15-minute
+    // tick) finds it already handled ("already") and refunds nothing twice.
+    const captured = Math.round(amount * 100) / 100;
+    const cancelled = await Appointment.findOneAndUpdate(
+      { _id: first._id, "deposit.status": "pending" },
+      [
+        {
+          $set: {
+            "deposit.status": "paid",
+            "deposit.paidAt": now,
+            "deposit.razorpayPaymentId": paymentId,
+            "deposit.amount": captured, // what was actually received, so "refunded in full" reads true
+            holdExpiresAt: null,
+            status: "cancelled",
+            cancelledAt: { $ifNull: ["$cancelledAt", now] },
+            cancelledBy: { $ifNull: ["$cancelledBy", "system"] },
+            cancelReason: { $ifNull: ["$cancelReason", "payment_amount_mismatch"] },
+            refund: { amount: captured, status: "pending", reason: "system_payment_mismatch", requestedAt: now, razorpayRefundId: null, processedAt: null, attempts: 0, error: null },
+            statusHistory: { $concatArrays: ["$statusHistory", [{ from: "$status", to: "cancelled", at: now, by: "system", byUserId: null, reason: "payment_amount_mismatch" }]] },
+          },
+        },
+      ],
+      { returnDocument: "after", updatePipeline: true }
+    ).lean();
+    if (!cancelled) return { outcome: "already", appt: first };
+    await SlotLock.deleteMany({ appointmentId: first._id });
     await alertBooking(first, "payment_mismatch");
-    return { outcome: "amount_mismatch", appt: first };
+    const sent = await autoRefund(cancelled);
+    if (!sent?.ok) {
+      await notify({ key: `${first._id}:payment_mismatch`, type: "booking_refund", to: first.contact, appointmentId: first._id, params: { name: first.name, ref: first.ref, amount: captured } });
+    }
+    return { outcome: "amount_mismatch", appt: sent?.ok ? sent.appt : cancelled };
   }
 
   const settings = (await SiteSettings.getSingleton()).toObject();
@@ -1864,7 +1896,11 @@ async function sendRefund(id, { now = new Date() } = {}) {
   const paymentId = claimed.deposit?.razorpayPaymentId;
   try {
     if (!paymentId) throw new Error("No Razorpay payment on this booking — refund by hand and mark it");
-    const r = await payments.refund(paymentId, claimed.refund.amount, { ref: claimed.ref, reason: claimed.refund.reason || "" });
+    // Audit #5: on a RETRY (an earlier attempt may have reached Razorpay even though its reply was lost), adopt a
+    // refund Razorpay already holds for this payment, amount and booking instead of sending a second one. If the
+    // list cannot be read, this throws and the refund stays queued as failed: never a double refund.
+    const earlier = claimed.refund.attempts > 1 ? await payments.findRefund(paymentId, claimed.refund.amount, claimed.ref) : null;
+    const r = earlier || (await payments.refund(paymentId, claimed.refund.amount, { ref: claimed.ref, reason: claimed.refund.reason || "" }));
     const full = claimed.refund.amount >= (claimed.deposit.amount || 0);
     const updated = await Appointment.findOneAndUpdate(
       { _id: id, "refund.status": "processing" },

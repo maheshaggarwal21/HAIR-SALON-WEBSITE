@@ -45,6 +45,8 @@ before(async () => {
         refundCalls.push({ paymentId, ...o });
         return { id: `rfnd_${refundCalls.length}`, status: "processed" };
       },
+      // A retry first asks Razorpay what it already holds for the payment (audit #5); here: nothing yet.
+      fetchMultipleRefund: async () => ({ items: [] }),
     },
   });
 
