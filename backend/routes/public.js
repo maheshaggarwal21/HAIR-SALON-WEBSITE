@@ -51,6 +51,7 @@ const { groupBySlug } = require("../config/menuGroups");
 const { PUBLIC_SERVICE_FILTER, PUBLIC_ARTIST_FILTER, audienceFilter, serviceCards, cardSlugFor, publicArtist, assignPublicSlugs } =
   require("../utils/publicCatalogue");
 const { mongoRateLimit, hit } = require("../middleware/mongoRateLimit");
+const { publicReadLimit } = require("../middleware/memoryRateLimit");
 const { verifyTurnstile } = require("../utils/turnstile");
 const { alertNewRequest } = require("../utils/bookingAlerts");
 const { clientIp } = require("../utils/audit");
@@ -73,8 +74,11 @@ router.use(async (_req, res, next) => {
   }
 });
 
-/** Reads: generous per-IP limit, enough for a page that loads several feeds. */
-const readLimit = mongoRateLimit({ name: "public-read", windowMs: 60_000, max: 120 });
+/**
+ * Reads: generous per-IP limit, enough for a page that loads several feeds. Counted in memory, not in MongoDB:
+ * these are public, edge-cached reads, and a database write per page view is the wrong price for them (audit #18).
+ */
+const readLimit = publicReadLimit;
 
 /**
  * Short shared-cache window so Vercel's edge absorbs bursts (an ad going live)

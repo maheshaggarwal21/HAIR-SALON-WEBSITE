@@ -11,12 +11,12 @@
 
 const express = require("express");
 const { param } = require("express-validator");
-const { mongoRateLimit } = require("../middleware/mongoRateLimit");
+const { publicReadLimit } = require("../middleware/memoryRateLimit");
 const offerPages = require("../utils/offerPages");
 const { salonDate } = require("../utils/time");
 
 const router = express.Router();
-const readLimit = mongoRateLimit({ name: "public-read", windowMs: 60_000, max: 120 });
+const readLimit = publicReadLimit; // in memory, shared with the other public reads (audit #18)
 const cacheFor = (res, s) => res.set("Cache-Control", `public, s-maxage=${s}, stale-while-revalidate=${s * 2}`);
 
 router.get("/offer-pages/now", readLimit, async (_req, res) => {
