@@ -7,6 +7,7 @@
  *   /dashboard/receptionist/payments → Payment History
  *   /dashboard/receptionist/analytics → Analytics (if granted analytics.view)
  *   /dashboard/receptionist/artists  → Artist Directory (if granted artists.view)
+ *   /dashboard/receptionist/artist-skills → Artist Skills: who can be booked for which services (if granted artistskills.manage, or artists.view to look)
  *   /dashboard/receptionist/services → Services (if granted services.view)
  *   /dashboard/receptionist/team     → Team Management (if granted team.view)
  *   /dashboard/receptionist/today    → Today board: walk-ins, check-in (if granted bookings.view)
@@ -21,7 +22,7 @@
 
 import { lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, CalendarCheck, AlertTriangle, Globe } from "lucide-react";
+import { Receipt, CalendarPlus, BarChart3, Palette, Scissors, Users, Database, CalendarCheck, AlertTriangle, Globe, UserCog } from "lucide-react";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import PageBoundary from "@/components/PageBoundary";
 import { useAuth } from "@/context/AuthContext";
@@ -38,6 +39,7 @@ const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
 const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
 const BookingsHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.BookingsHub })));
 const NumberFixes = lazy(() => import("@/pages/dashboard/NumberFixes"));
+const ArtistSkills = lazy(() => import("@/pages/dashboard/ArtistSkills"));
 const WebsiteHub = lazy(() => import("@/pages/dashboard/hubs").then((m) => ({ default: m.WebsiteHub })));
 import RequirePermission from "@/components/RequirePermission";
 
@@ -52,6 +54,7 @@ const receptionistLinks: SidebarLink[] = [
   { to: "/dashboard/receptionist/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/receptionist/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/receptionist/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
+  { to: "/dashboard/receptionist/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: ["artists.view", "artistskills.manage"] },
   { to: "/dashboard/receptionist/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus, requiredPermission: "visit.create" },
 ];
@@ -132,6 +135,14 @@ export default function ReceptionistDashboard() {
           element={
             <RequirePermission permission={["artists.view", "artists.crud"]} backTo={HOME}>
               <ArtistManagement />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="artist-skills"
+          element={
+            <RequirePermission permission={["artists.view", "artistskills.manage"]} backTo={HOME}>
+              <ArtistSkills />
             </RequirePermission>
           }
         />

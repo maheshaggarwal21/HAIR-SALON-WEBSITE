@@ -30,6 +30,10 @@ const PERMISSIONS = Object.freeze({
   DATAFIXES_MANAGE:      'datafixes.manage',
   // Counter payments (D60): pair and manage the customer-facing QR tablet
   COUNTER_MANAGE:        'counter.manage',
+  // Artist Skills (D35): who can be booked for which services. A checklist item of its own, so it can be given to a
+  // receptionist without the Artists directory. In ADDITION to artists.view / artists.crud (no one loses access).
+  // Not on by default for any role: it changes who customers can book.
+  ARTIST_SKILLS_MANAGE:  'artistskills.manage',
 });
 
 // Default permission sets assigned when a new account is created.
@@ -91,6 +95,7 @@ const PERMISSION_LABELS = {
   'website.manage':        'Manage Website (Settings, Public Menu, Artist Profiles)',
   'datafixes.manage':      'Fix wrong numbers: review duplicates, refunds and unassigned visits',
   'counter.manage':        'Counter display: pair tablets and manage the payment QR screen (owner)',
+  'artistskills.manage':   'Artist Skills: see and change who can be booked for which services',
 };
 
 // UI groupings for the permission editor checklist — purely cosmetic.
@@ -111,7 +116,7 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Artists',
-    keys:  ['artists.view', 'artists.crud', 'artist_dashboard.view'],
+    keys:  ['artists.view', 'artists.crud', 'artist_dashboard.view', 'artistskills.manage'],
   },
   {
     label: 'Services',

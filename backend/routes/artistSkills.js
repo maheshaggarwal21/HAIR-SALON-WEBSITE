@@ -104,7 +104,8 @@ const artistView = (a, defaults, tree) => {
   };
 };
 
-router.get("/", authorizePermission(PERMISSIONS.ARTISTS_VIEW), async (_req, res) => {
+// artistskills.manage is the checklist item made for this page; artists.view / artists.crud opened it before and still do.
+router.get("/", authorizePermission([PERMISSIONS.ARTISTS_VIEW, PERMISSIONS.ARTIST_SKILLS_MANAGE]), async (_req, res) => {
   try {
     const [settings, artists, tree] = await Promise.all([
       SiteSettings.getSingleton(),
@@ -130,7 +131,7 @@ router.get("/", authorizePermission(PERMISSIONS.ARTISTS_VIEW), async (_req, res)
 
 router.patch(
   "/defaults/:gender",
-  authorizePermission(PERMISSIONS.ARTISTS_CRUD),
+  authorizePermission([PERMISSIONS.ARTISTS_CRUD, PERMISSIONS.ARTIST_SKILLS_MANAGE]),
   [param("gender").isIn(GENDER_KEYS), ...ruleValidators("rule")],
   async (req, res) => {
     if (firstError(req, res)) return;
@@ -153,7 +154,7 @@ router.patch(
 router.patch(
   "/:id",
   validateId,
-  authorizePermission(PERMISSIONS.ARTISTS_CRUD),
+  authorizePermission([PERMISSIONS.ARTISTS_CRUD, PERMISSIONS.ARTIST_SKILLS_MANAGE]),
   [body("mode").isIn(["inherit", "custom"]).withMessage("Mode is inherit or custom"), body("rule").optional({ nullable: true }), ...ruleValidators("rule").map((v) => v.optional())],
   async (req, res) => {
     if (firstError(req, res)) return;

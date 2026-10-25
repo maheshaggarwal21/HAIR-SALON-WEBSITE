@@ -52,7 +52,7 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
-  { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: "artists.view" },
+  { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: ["artists.view", "artistskills.manage"] },
   { to: "/dashboard/manager/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus, requiredPermission: "visit.create" },
 ];
@@ -208,7 +208,7 @@ export default function ManagerDashboard() {
         <Route
           path="artist-skills"
           element={
-            <RequirePermission permission="artists.view" backTo={HOME}>
+            <RequirePermission permission={["artists.view", "artistskills.manage"]} backTo={HOME}>
               <ArtistSkills />
             </RequirePermission>
           }
