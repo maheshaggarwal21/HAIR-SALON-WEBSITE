@@ -1324,7 +1324,7 @@ function deskItem(s, artist, startMs) {
   return {
     serviceId: s._id,
     name: s.publicName || s.name,
-    publicPrice: s.publicPrice ?? Math.round((s.price || 0) * 0.5),
+    publicPrice: require("../models/Service").deskPrice(s),
     listPrice: s.price ?? null,
     durationMin,
     bufferMin: s.bufferMinutes || 0,

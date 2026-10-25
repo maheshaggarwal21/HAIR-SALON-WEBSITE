@@ -112,13 +112,6 @@ const ceilBlock = (ms) => Math.ceil(ms / BLOCK_MS) * BLOCK_MS;
 /** Minutes rounded up to whole blocks, in ms: 50 min → 60 min. */
 const blocksFor = (minutes) => Math.ceil(minutes / 15) * BLOCK_MS;
 
-/** Start (ms) of every block in [startMs, endMs). */
-function blockStarts(startMs, endMs) {
-  const out = [];
-  for (let t = floorBlock(startMs); t < endMs; t += BLOCK_MS) out.push(t);
-  return out;
-}
-
 /** The salon's open intervals on an IST date as epoch-ms pairs. Holidays and special hours win. */
 function openingIntervals(settings, date) {
   if (settings.holidays?.includes(date)) return [];
@@ -168,7 +161,6 @@ module.exports = {
   floorBlock,
   ceilBlock,
   blocksFor,
-  blockStarts,
   openingIntervals,
   intersect,
   subtract,

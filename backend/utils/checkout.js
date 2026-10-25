@@ -59,7 +59,7 @@ function actualClock(appt) {
   return (i) => ({ startTime: hhmm(at(i.startAt)), endTime: hhmm(at(i.endAt)) });
 }
 
-const deskPrice = (s) => (s.publicPrice != null ? s.publicPrice : Math.round((s.price || 0) * 0.5));
+const deskPrice = (s) => Service.deskPrice(s);
 
 /**
  * @param {object} o

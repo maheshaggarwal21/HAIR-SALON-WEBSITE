@@ -67,11 +67,6 @@ function derivePaymentLines(visit) {
   return [];
 }
 
-/** True when a visit was paid with more than one method. */
-function isSplitPayment(visit) {
-  return derivePaymentLines(visit).length > 1;
-}
-
 /**
  * Display label for a set of lines.
  * One line → "Cash"
@@ -136,7 +131,6 @@ module.exports = {
   BUCKET_FIELD,
   METHOD_LABEL,
   derivePaymentLines,
-  isSplitPayment,
   describePaymentLines,
   buildMethodMatch,
 };
