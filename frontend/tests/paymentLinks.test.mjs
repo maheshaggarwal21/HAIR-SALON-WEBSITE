@@ -1,7 +1,7 @@
 // Run with: npm run test:unit   (Node's built-in test runner; reads the .ts helper directly)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseHistoryParams, paymentsBase, historyLink } from "../src/lib/paymentLinks.ts";
+import { parseHistoryParams, paymentsBase, historyLink, razorpayPaymentUrl } from "../src/lib/paymentLinks.ts";
 
 test("valid contact and dates are read", () => {
   assert.deepEqual(parseHistoryParams("?contact=9876543210&from=2026-10-01&to=2026-10-26"), { contact: "9876543210", range: { from: "2026-10-01", to: "2026-10-26" } });
@@ -51,4 +51,11 @@ test("the link is built only when allowed and the visit has a valid 10-digit con
   assert.equal(historyLink({ ...ok, contact: "98765" }), null);
   assert.equal(historyLink({ ...ok, pathname: "/elsewhere" }), null);
   assert.equal(historyLink({ ...ok, day: "nonsense" }), "/dashboard/receptionist/payments?contact=9876543210", "a bad day drops only the dates");
+});
+
+test("the Razorpay dashboard link is built only for a real-looking payment id, and the id is URL-encoded", () => {
+  assert.equal(razorpayPaymentUrl("pay_Ts1xOOssZkYpa8"), "https://dashboard.razorpay.com/app/payments/pay_Ts1xOOssZkYpa8");
+  for (const bad of ["", "order_Ts1xBk8XrtNdHw", "pay_", "pay_abc def", "pay_abc/../x", "pay_abc?x=1", "pay_abc#h", "xpay_abc", "PAY_abc", "pay_abc-d", "pay_é", null, undefined, "<script>"]) {
+    assert.equal(razorpayPaymentUrl(bad), null, JSON.stringify(bad));
+  }
 });

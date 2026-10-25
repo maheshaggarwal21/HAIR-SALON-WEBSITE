@@ -60,3 +60,13 @@ export function historyLink(o: { pathname: string; canView: boolean; contact: st
   }
   return `${base}?${q.toString()}`;
 }
+
+/**
+ * The payment in the salon's Razorpay dashboard (https://dashboard.razorpay.com/app/payments/<id>, the address
+ * the dashboard itself shows for one payment). Only for an id shaped like `pay_` + letters and digits; anything
+ * else gets no link. It opens only for someone signed in to the salon's Razorpay account.
+ */
+export function razorpayPaymentUrl(id: string | null | undefined): string | null {
+  if (typeof id !== "string" || !/^pay_[A-Za-z0-9]+$/.test(id)) return null;
+  return `https://dashboard.razorpay.com/app/payments/${encodeURIComponent(id)}`;
+}
