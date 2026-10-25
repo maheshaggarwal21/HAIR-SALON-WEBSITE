@@ -22,6 +22,30 @@
 
 const mongoose = require("mongoose");
 
+/**
+ * Connections each server instance may hold open to Atlas.
+ *
+ * Mongoose's own default is 100 per process. On Vercel every concurrent invocation can be its own
+ * instance, so a burst of visitors (a festival ad going live) opens instances x 100 connections and
+ * can hit the Atlas limit, after which every request fails, staff app included. One request needs
+ * only a handful at a time (a few parallel queries, one transaction), so 10 is plenty.
+ * MONGODB_MAX_POOL_SIZE adjusts it (whole number, 1 to 50).
+ */
+const DEFAULT_MAX_POOL_SIZE = 10;
+const MAX_POOL_SIZE_LIMIT = 50;
+
+/** The options passed to mongoose.connect(). Pure, so it can be tested. */
+function connectionOptions(env = process.env) {
+  const raw = String(env.MONGODB_MAX_POOL_SIZE ?? "").trim();
+  const asked = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  const maxPoolSize = asked >= 1 ? Math.min(asked, MAX_POOL_SIZE_LIMIT) : DEFAULT_MAX_POOL_SIZE;
+  return {
+    serverSelectionTimeoutMS: 8000, // Fail fast on cold-start instead of 30 s
+    socketTimeoutMS: 45000,
+    maxPoolSize,
+  };
+}
+
 /** Cached connection promise — shared across requests within one process. */
 let connectionPromise = null;
 
@@ -82,10 +106,7 @@ async function connectDB() {
   console.log("[db] Connecting to MongoDB…");
 
   connectionPromise = mongoose
-    .connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 8000, // Fail fast on cold-start instead of 30 s
-      socketTimeoutMS: 45000,
-    })
+    .connect(process.env.MONGODB_URI, connectionOptions())
     .then(() => {
       console.log("[db] MongoDB connected successfully");
     })
@@ -99,3 +120,5 @@ async function connectDB() {
 }
 
 module.exports = connectDB;
+module.exports.connectionOptions = connectionOptions;
+module.exports.DEFAULT_MAX_POOL_SIZE = DEFAULT_MAX_POOL_SIZE;
