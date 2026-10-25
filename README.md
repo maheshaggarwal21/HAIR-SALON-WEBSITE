@@ -149,8 +149,7 @@ Base URL locally: `http://localhost:4000`
 - `GET /api/form-data`
 - `POST /api/create-order`
 - `POST /api/verify-order-payment`
-- `POST /api/create-payment-link` (legacy payment-link flow)
-- `GET /api/verify-payment` (legacy callback verification)
+- `GET /api/verify-payment` (checks the signature of an old payment-link callback; kept because old links may still be in customers' hands)
 
 ### Auth routes (`/api/auth`)
 
@@ -160,7 +159,6 @@ Base URL locally: `http://localhost:4000`
 
 ### Visits routes (`/api/visits`)
 
-- `POST /` (legacy create)
 - `POST /v2` (payment-first draft create)
 - `GET /:id/assignment-draft`
 - `POST /:id/confirm-assignment`

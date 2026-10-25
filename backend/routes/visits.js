@@ -1,15 +1,17 @@
 /**
  * @file routes/visits.js
- * @description Visit creation endpoint.
+ * @description Visits: create (POST /v2), assignment, the booking bill, history and customer lookup.
  *
- * POST /  – Create a new Visit document after successful Razorpay payment.
- *           Resolves service IDs to { name, price } from the Service model
- *           and computes billing totals server-side to prevent tampering.
+ * POST /v2 – Create a Visit after a Razorpay (or counter, or cash) payment. Service ids are
+ *            resolved to names and prices from the Service model and the totals are computed
+ *            here, never taken from the browser.
+ *
+ * (The old POST / "create visit" route was removed: nothing called it and it did not check
+ * the payment id the way v2 does. Audit #11.)
  */
 
 const express = require("express");
 const mongoose = require("mongoose");
-const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Visit = require("../models/Visit");
 const Service = require("../models/Service");
@@ -137,172 +139,6 @@ async function resolveRequestedServicesWithDuplicates(serviceIds) {
   const orderedServices = requestedIds.map((id) => serviceById.get(id));
   return { orderedServices };
 }
-
-// ─── Validation rules ────────────────────────────────────────────────────────
-const createRules = [
-  body("name").trim().notEmpty().withMessage("Name is required"),
-  body("contact")
-    .trim()
-    .matches(/^[6-9]\d{9}$/)
-    .withMessage("Valid 10-digit Indian mobile required"),
-  body("gender")
-    .trim()
-    .notEmpty()
-    .isIn(["male", "female", "other", "prefer_not"])
-    .withMessage("Gender is required"),
-  body("date").notEmpty().withMessage("Date is required"),
-  body("startTime")
-    .trim()
-    .notEmpty()
-    .matches(/^\d{2}:\d{2}$/)
-    .withMessage("Start time is required (HH:mm)"),
-  body("endTime")
-    .trim()
-    .notEmpty()
-    .matches(/^\d{2}:\d{2}$/)
-    .withMessage("End time is required (HH:mm)"),
-  body("artist").trim().notEmpty().withMessage("Artist is required"),
-  body("serviceIds")
-    .isArray({ min: 1 })
-    .withMessage("At least one service is required"),
-  body("serviceIds.*").isMongoId().withMessage("Invalid service ID"),
-  body("paymentMethod")
-    .optional()
-    .isIn(["online", "cash", "card", "partial"])
-    .withMessage("paymentMethod must be online, cash, card, or partial"),
-  body("cashAmount")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("cashAmount must be >= 0"),
-  body("onlineAmount")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("onlineAmount must be >= 0"),
-  body("cardAmount")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("cardAmount must be >= 0"),
-  body("razorpayPaymentId")
-    .optional({ values: "null" })
-    .trim(),
-  body("discountPercent")
-    .optional()
-    .isFloat({ min: 0, max: 100 })
-    .withMessage("Discount must be 0–100"),
-];
-
-// ─── POST / — create a visit ─────────────────────────────────────────────────
-router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, async (req, res) => {
-  const errs = validationResult(req);
-  if (!errs.isEmpty()) {
-    return res.status(400).json({ errors: errs.array() });
-  }
-
-  try {
-    await connectDB();
-    const {
-      name,
-      contact,
-      gender,
-      date,
-      startTime,
-      endTime,
-      artist,
-      serviceType,
-      serviceIds,
-      discountPercent = 0,
-      paymentMethod = "online",
-      cashAmount = 0,
-      razorpayPaymentId = null,
-    } = req.body;
-
-    // ── Resolve services from DB (authoritative prices) ───────────────────
-    const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
-    if (error) {
-      return res.status(400).json({ error });
-    }
-
-    const services = orderedServices.map((s) => ({
-      name: s.name,
-      price: s.price,
-      serviceId: s._id,
-      // Snapshot the expected duration at visit creation time.
-      // Only an owner-CONFIRMED time counts. No time, or the one-hour
-      // placeholder (Service.durationConfirmed false), stores null — this visit
-      // is then excluded from time-performance calculations (not penalised,
-      // not rewarded).
-      duration: Service.performanceDuration(s),
-    }));
-
-    // ── Compute billing server-side ───────────────────────────────────────
-    const subtotal = services.reduce((sum, s) => sum + s.price, 0);
-    const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
-    const discountAmount = Math.round(subtotal * (pct / 100));
-    const finalTotal = Math.max(0, subtotal - discountAmount);
-
-    if (paymentMethod === "online" && !razorpayPaymentId) {
-      return res.status(400).json({ error: "Razorpay Payment ID is required for online payment" });
-    }
-    if (paymentMethod === "partial" && !razorpayPaymentId) {
-      return res.status(400).json({ error: "Razorpay Payment ID is required for partial payment" });
-    }
-
-    const amounts = derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount });
-
-    // ── Create visit document ─────────────────────────────────────────────
-    const visit = await Visit.create({
-      schemaVersion: 1,
-      name,
-      contact,
-      gender,
-      date: new Date(date),
-      startTime,
-      endTime,
-      artist,
-      serviceType: serviceType || undefined,
-      services,
-      // visitDurationMins is calculated on the frontend (endTime − startTime)
-      // and sent with the form. Storing it avoids recalculating from strings.
-      visitDurationMins: req.body.visitDurationMins != null ? Number(req.body.visitDurationMins) : null,
-      filledBy: req.session.name || "Unknown",
-      subtotal,
-      discountPercent: pct,
-      discountAmount,
-      finalTotal,
-      paymentMethod,
-      cashAmount: amounts.cashAmount,
-      cardAmount: amounts.cardAmount,
-      onlineAmount: amounts.onlineAmount,
-      paymentStatus: "success",
-      razorpayPaymentId: razorpayPaymentId || null,
-      assignmentStatus: "not_required",
-      lockUntilAssigned: false,
-      paymentConfirmedAt: new Date(),
-      paymentSnapshot: {
-        subtotal,
-        discountPercent: pct,
-        discountAmount,
-        finalTotal,
-        paymentMethod,
-        cashAmount: amounts.cashAmount,
-        cardAmount: amounts.cardAmount,
-        onlineAmount: amounts.onlineAmount,
-        razorpayPaymentId: razorpayPaymentId || null,
-      },
-    });
-
-    return res.status(201).json({
-      success: true,
-      visitId: visit._id,
-      finalTotal,
-    });
-  } catch (err) {
-    console.error("[visits] Create error:", err);
-    return res
-      .status(500)
-      .json({ error: "Failed to create visit", details: err.message });
-  }
-});
 
 // ─── POST /v2 — create paid draft (assignment pending) ─────────────────────
 // ─── Online bookings at checkout (CF §8, T2.16) ─────────────────────────────
