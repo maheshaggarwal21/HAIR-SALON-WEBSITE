@@ -49,6 +49,7 @@ const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZone: IST }) : "—";
 const REASONS: Record<string, string> = {
   paid_after_hold_expired: "Paid after the slot was taken",
+  system_payment_mismatch: "Paid a different amount than the booking needed",
   salon_cancelled: "Salon cancelled",
   salon_declined: "Request declined",
   system_expired: "Request not answered in time",

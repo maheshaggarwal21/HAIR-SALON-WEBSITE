@@ -96,7 +96,7 @@ const BOOKING_HEADINGS = {
   confirmed: "✅ Online booking",
   requested: "🕒 Online booking — needs approval",
   paid_after_hold_expired: "🚨 PAID AFTER HOLD EXPIRED — slot was taken, refund needed",
-  payment_mismatch: "🚨 Payment amount does not match the booking — check Razorpay",
+  payment_mismatch: "🚨 Payment amount does not match the booking — booking cancelled, refund of what was captured queued",
   refund_failed: "🚨 Refund FAILED — still owed, try again from the Refunds screen",
   rescheduled: "🔁 Customer moved their booking",
   cancelled_by_customer: "❌ Customer cancelled online",

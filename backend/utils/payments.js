@@ -69,6 +69,20 @@ async function refund(paymentId, amount, notes = {}) {
 }
 
 /**
+ * A refund Razorpay already holds for this payment with this amount and this booking reference, if any
+ * (a refund that failed at Razorpay does not count). Used before RE-sending a refund, so a lost reply can never
+ * become a second refund. Throws if Razorpay cannot be asked.
+ * @returns {Promise<{id: string, status: string}|null>}
+ */
+async function findRefund(paymentId, amount, ref) {
+  const rz = getClient();
+  if (!rz) throw new Error("Razorpay is not configured");
+  const { items = [] } = await rz.payments.fetchMultipleRefund(paymentId, { count: 100 });
+  const paise = Math.round(amount * 100);
+  return items.find((x) => Number(x.amount) === paise && x.notes?.ref === ref && ["processed", "pending"].includes(x.status)) || null;
+}
+
+/**
  * Browser checkout handler signature: HMAC-SHA256(order_id|payment_id, key_secret).
  * Constant-time; false on any missing piece.
  */
@@ -80,4 +94,4 @@ function checkoutSignatureOk(orderId, paymentId, signature) {
   return expected.length === given.length && crypto.timingSafeEqual(expected, given);
 }
 
-module.exports = { createOrder, capturedPayments, fetchPayment, refund, checkoutSignatureOk, isConfigured, setClientForTests, getClient };
+module.exports = { createOrder, capturedPayments, fetchPayment, refund, findRefund, checkoutSignatureOk, isConfigured, setClientForTests, getClient };

@@ -33,6 +33,11 @@ let orderSeq = 0;
 let capturedByOrder = new Map();
 let refundsSent = [];
 let refundFails = false;
+// Refund safety (audit #5): what Razorpay already holds for a payment, and the ways a call can go wrong.
+let refundsOnRazorpay = new Map(); // paymentId -> [{id, amount, status, notes}]
+let refundLostReply = false; // Razorpay accepts the refund but our reply never arrives
+let refundListFails = false;
+let refundListCalls = 0;
 
 before(async () => {
   stub = http.createServer((req, res) => {
@@ -101,7 +106,15 @@ before(async () => {
       refund: async (paymentId, o) => {
         if (refundFails) throw { error: { description: "Insufficient balance" } };
         refundsSent.push({ paymentId, ...o });
-        return { id: `rfnd_${refundsSent.length}`, status: "processed" };
+        const made = { id: `rfnd_${refundsSent.length}`, status: "processed", amount: o.amount, notes: o.notes };
+        refundsOnRazorpay.set(paymentId, [...(refundsOnRazorpay.get(paymentId) || []), made]);
+        if (refundLostReply) throw new Error("socket hang up");
+        return made;
+      },
+      fetchMultipleRefund: async (paymentId) => {
+        refundListCalls += 1;
+        if (refundListFails) throw new Error("razorpay is down");
+        return { entity: "collection", items: refundsOnRazorpay.get(paymentId) || [] };
       },
     },
   });
@@ -132,6 +145,10 @@ beforeEach(async () => {
   capturedByOrder = new Map();
   refundsSent = [];
   refundFails = false;
+  refundsOnRazorpay = new Map();
+  refundLostReply = false;
+  refundListFails = false;
+  refundListCalls = 0;
   ip = `10.9.${Math.floor(++ipCounter / 250)}.${ipCounter % 250}`;
   DATE = bookableDate();
   const common = { isActive: true, showOnWebsite: true, bookingMode: "instant", durationConfirmed: true };
@@ -739,4 +756,163 @@ test("manage link: a link older than a day needs a fresh WhatsApp code to cancel
   assert.equal(r.body.error, "OTP_REQUIRED");
   const ok = await call("POST", `/api/public/booking/${token}/cancel`, { bookingToken: tokenFor("9876500073") });
   assert.equal(ok.status, 200);
+});
+
+// ─── Audit #4: a payment of the wrong amount ────────────────────────────────
+
+/** A paid-looking webhook for a booking, but for a different amount (rupees). */
+const paymentOf = (appt, rupees) => ({ ...paymentFor(appt), amount: rupees * 100 });
+
+test("#4: a payment of the WRONG amount (less) cancels the booking, refunds what was actually captured, frees the time and does not come back", async () => {
+  const { appt } = await booking.createBooking({ phone: "9876500071", name: "Asha", selection: await selectionOf([ids.cut]), startAt: at("11:00"), paymentKind: "full" });
+  const fresh = await Appointment.findById(appt._id).lean();
+  assert.equal(fresh.deposit.amount, 500);
+  const hook = await webhook(paymentOf(fresh, 300));
+  assert.equal(hook.body.booking, "amount_mismatch");
+  const row = await Appointment.findById(appt._id).lean();
+  assert.equal(row.status, "cancelled");
+  assert.equal(row.cancelledBy, "system");
+  assert.equal(row.cancelReason, "payment_amount_mismatch");
+  assert.equal(row.refund.amount, 300, "exactly what Razorpay captured");
+  assert.equal(row.refund.reason, "system_payment_mismatch");
+  assert.equal(row.refund.status, "processed", "the customer did nothing wrong: sent at once");
+  assert.equal(row.deposit.status, "refunded");
+  assert.equal(row.deposit.razorpayPaymentId, `pay_${fresh.ref}`);
+  assert.deepEqual(refundsSent.map((r) => [r.paymentId, r.amount]), [[`pay_${fresh.ref}`, 30000]]);
+  assert.equal(await SlotLock.countDocuments({ appointmentId: appt._id }), 0, "the time is given back");
+
+  // The same webhook again (Razorpay retries) changes nothing and refunds nothing more.
+  assert.equal((await webhook(paymentOf(fresh, 300))).body.booking, "already");
+  assert.equal(refundsSent.length, 1);
+});
+
+test("#4: a payment of MORE than the deposit is refunded in full too", async () => {
+  const { appt } = await booking.createBooking({ phone: "9876500072", name: "Bina", selection: await selectionOf([ids.cut]), startAt: at("12:00"), paymentKind: "full" });
+  const fresh = await Appointment.findById(appt._id).lean();
+  await webhook(paymentOf(fresh, 800));
+  const row = await Appointment.findById(appt._id).lean();
+  assert.deepEqual([row.status, row.refund.amount, row.refund.status, row.deposit.status], ["cancelled", 800, "processed", "refunded"]);
+  assert.equal(refundsSent[0].amount, 80000);
+});
+
+test("#4: with automatic refunds switched off the refund waits in the queue for the owner", async () => {
+  const SiteSettings = require("../models/SiteSettings");
+  await SiteSettings.updateOne({ key: "default" }, { $set: { autoRefundSalonSide: false } }, { upsert: true });
+  const { appt } = await booking.createBooking({ phone: "9876500073", name: "Chitra", selection: await selectionOf([ids.cut]), startAt: at("13:00"), paymentKind: "full" });
+  await webhook(paymentOf(await Appointment.findById(appt._id).lean(), 300));
+  const row = await Appointment.findById(appt._id).lean();
+  assert.deepEqual([row.status, row.refund.status, row.refund.amount], ["cancelled", "pending", 300]);
+  assert.equal(refundsSent.length, 0);
+});
+
+test("#4: a Razorpay failure while refunding keeps it queued as 'failed' (the tick retries it, like any automatic refund)", async () => {
+  const { appt } = await booking.createBooking({ phone: "9876500074", name: "Disha", selection: await selectionOf([ids.cut]), startAt: at("14:00"), paymentKind: "full" });
+  refundFails = true;
+  await webhook(paymentOf(await Appointment.findById(appt._id).lean(), 300));
+  const row = await Appointment.findById(appt._id).lean();
+  assert.deepEqual([row.status, row.refund.status, row.refund.amount], ["cancelled", "failed", 300]);
+  refundFails = false;
+  await Appointment.updateOne({ _id: appt._id }, { $set: { "refund.requestedAt": new Date(Date.now() - 10 * 60_000) } });
+  assert.equal(await booking.retryAutoRefunds(), 1);
+  assert.equal((await Appointment.findById(appt._id).lean()).refund.status, "processed");
+});
+
+test("#4: the 15-minute tick that finds a wrong-amount payment on an expired hold cancels and refunds it ONCE, and never looks at it again", async () => {
+  const { appt } = await booking.createBooking({ phone: "9876500075", name: "Esha", selection: await selectionOf([ids.cut]), startAt: at("15:00"), paymentKind: "full" });
+  const fresh = await Appointment.findById(appt._id).lean();
+  capturedByOrder.set(fresh.deposit.razorpayOrderId, [{ id: "pay_wrong1", status: "captured", amount: 30000 }]);
+  await lapse(appt._id);
+  const first = await booking.expireBookings();
+  assert.equal(first.paidLate, 1);
+  const row = await Appointment.findById(appt._id).lean();
+  assert.deepEqual([row.status, row.refund.amount, row.refund.status], ["cancelled", 300, "processed"]);
+  const second = await booking.expireBookings();
+  assert.equal(second.paidLate, 0, "it no longer takes a place in the 50-booking window every 15 minutes");
+  assert.equal(refundsSent.length, 1);
+});
+
+test("#4: a payment of the RIGHT amount is still confirmed as before", async () => {
+  const { appt } = await booking.createBooking({ phone: "9876500076", name: "Farah", selection: await selectionOf([ids.cut]), startAt: at("16:00"), paymentKind: "full" });
+  const hook = await webhook(paymentFor(await Appointment.findById(appt._id).lean()));
+  assert.equal(hook.body.booking, "confirmed");
+  assert.equal(refundsSent.length, 0);
+});
+
+// ─── Audit #5: a refund is never sent twice ─────────────────────────────────
+
+/** A paid, confirmed booking whose cancellation by the salon queues a full refund. */
+async function paidAndConfirmed(phone, hhmm) {
+  const { appt } = await booking.createBooking({ phone, name: "Asha", selection: await selectionOf([ids.cut]), startAt: at(hhmm), paymentKind: "full" });
+  await webhook(paymentFor(await Appointment.findById(appt._id).lean()));
+  return appt._id;
+}
+
+test("#5: Razorpay took the refund but our reply was lost: the retry ADOPTS that refund instead of sending a second one", async () => {
+  const id = await paidAndConfirmed("9876500081", "11:00");
+  refundLostReply = true;
+  await booking.releaseBySalon(id, { from: "confirmed", to: "cancelled", reason: "power cut", by: "Owner" });
+  let row = await Appointment.findById(id).lean();
+  assert.equal(row.refund.status, "failed", "we think it failed");
+  assert.equal(refundsSent.length, 1, "but Razorpay has it");
+
+  refundLostReply = false;
+  const again = await booking.sendRefund(id);
+  assert.equal(again.ok, true);
+  assert.equal(refundsSent.length, 1, "NO second refund");
+  row = await Appointment.findById(id).lean();
+  assert.deepEqual([row.refund.status, row.refund.razorpayRefundId, row.deposit.status], ["processed", "rfnd_1", "refunded"]);
+});
+
+test("#5: the same holds for a refund left 'processing' (the function was cut off): the stale claim adopts it", async () => {
+  const id = await paidAndConfirmed("9876500082", "12:00");
+  refundLostReply = true;
+  await booking.releaseBySalon(id, { from: "confirmed", to: "cancelled", reason: "power cut", by: "Owner" });
+  refundLostReply = false;
+  await Appointment.updateOne({ _id: id }, { $set: { "refund.status": "processing", "refund.claimedAt": new Date(Date.now() - 20 * 60_000) } });
+  assert.equal((await booking.sendRefund(id)).ok, true);
+  assert.equal(refundsSent.length, 1);
+  assert.equal((await Appointment.findById(id).lean()).refund.razorpayRefundId, "rfnd_1");
+});
+
+test("#5: the normal first send makes no extra Razorpay call", async () => {
+  const id = await paidAndConfirmed("9876500083", "13:00");
+  await booking.releaseBySalon(id, { from: "confirmed", to: "cancelled", reason: "power cut", by: "Owner" });
+  assert.equal(refundsSent.length, 1);
+  assert.equal(refundListCalls, 0);
+});
+
+test("#5: a different amount, a different booking, or a FAILED refund on the same payment is not adopted: a new one is sent", async () => {
+  for (const [i, other] of [
+    [0, { amount: 12300, status: "processed" }],
+    [1, { amount: 50000, status: "processed", ref: "EXP-SOMEONE-ELSE" }],
+    [2, { amount: 50000, status: "failed" }],
+  ]) {
+    refundsSent = [];
+    refundsOnRazorpay = new Map();
+    const id = await paidAndConfirmed(`98765001${i}0`, `1${4 + i}:00`);
+    const row0 = await Appointment.findById(id).lean();
+    refundsOnRazorpay.set(row0.deposit.razorpayPaymentId, [{ id: "rfnd_other", amount: other.amount, status: other.status, notes: { ref: other.ref || row0.ref } }]);
+    refundFails = true; // first attempt fails, so the retry below is a RETRY
+    await booking.releaseBySalon(id, { from: "confirmed", to: "cancelled", reason: "power cut", by: "Owner" });
+    refundFails = false;
+    assert.equal((await booking.sendRefund(id)).ok, true, `case ${i}`);
+    assert.equal(refundsSent.length, 1, `case ${i}: exactly one new refund`);
+  }
+});
+
+test("#5: if Razorpay's refund list cannot be read on a retry, nothing is sent (no risk of a double) and the refund stays queued as failed", async () => {
+  const id = await paidAndConfirmed("9876500091", "17:00");
+  refundFails = true;
+  await booking.releaseBySalon(id, { from: "confirmed", to: "cancelled", reason: "power cut", by: "Owner" });
+  refundFails = false;
+  refundListFails = true;
+  const r = await booking.sendRefund(id);
+  assert.equal(r.ok, false);
+  assert.equal(refundsSent.length, 0);
+  const row = await Appointment.findById(id).lean();
+  assert.equal(row.refund.status, "failed");
+  assert.match(row.refund.error, /razorpay is down/);
+  refundListFails = false;
+  assert.equal((await booking.sendRefund(id)).ok, true, "and it goes out when Razorpay answers");
+  assert.equal(refundsSent.length, 1);
 });
