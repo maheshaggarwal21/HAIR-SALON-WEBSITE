@@ -5,7 +5,7 @@
  * Log only (the default): every sale is saved; a payment id that does not check out is only listed under
  * Fix numbers & errors → Payment log errors. Enforce: a sale is refused when its payment id is clearly
  * wrong. Switching TO enforce asks first; switching back does not. The server decides who may use it
- * (owner, or anyone with visit.create / datafixes.manage); for anyone else the first request is refused
+ * (owner, or anyone with paymentcheck.manage, visit.create or datafixes.manage); for anyone else the first request is refused
  * and nothing is drawn. Every change is audited on the server and tells the owner on Telegram.
  */
 

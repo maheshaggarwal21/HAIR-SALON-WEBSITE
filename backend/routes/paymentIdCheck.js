@@ -5,9 +5,10 @@
  *   GET /  -> { mode }
  *   PUT /  { mode: "log" | "enforce" } -> { mode }
  *
- * Who: the owner, and anyone holding `visit.create` (the desk, who are the ones blocked by a refused sale and
- * need to switch back) or `datafixes.manage` (who read the Payment log errors list). Permissions are stored
- * per account, so the route accepts either rather than assuming which one an account has.
+ * Who: the owner, anyone the owner ticked `paymentcheck.manage` for (the checklist item made for this), and, as
+ * before, anyone holding `visit.create` (the desk, who are the ones blocked by a refused sale and need to switch
+ * back) or `datafixes.manage` (who read the Payment log errors list). Permissions are stored per account, so the
+ * route accepts any of them rather than assuming which one an account has; no one lost access when the new one was added.
  *
  * The mode lives in SiteSettings.paymentIdCheck ("log" by default). Every real change is audited as
  * `payment.id_check_mode_changed` with who changed it and tells the owner on Telegram at once. Saving the
@@ -33,7 +34,7 @@ router.use(async (_req, res, next) => {
     res.status(503).json({ error: "Database unavailable" });
   }
 });
-router.use(authorizePermission([PERMISSIONS.VISIT_CREATE, PERMISSIONS.DATAFIXES_MANAGE]));
+router.use(authorizePermission([PERMISSIONS.VISIT_CREATE, PERMISSIONS.DATAFIXES_MANAGE, PERMISSIONS.PAYMENT_CHECK_MANAGE]));
 
 router.get("/", async (_req, res) => {
   try {

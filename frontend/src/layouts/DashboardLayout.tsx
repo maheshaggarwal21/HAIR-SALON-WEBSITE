@@ -54,9 +54,11 @@ export default function DashboardLayout({
     return perms.includes(link.requiredPermission);
   });
 
-  // Same two permissions the server accepts for this switch (routes/paymentIdCheck.js); the server decides anyway.
+  // The permissions the server accepts for this switch (routes/paymentIdCheck.js); the server decides anyway.
+  // paymentcheck.manage is the checklist item made for it; the other two opened it before and still do.
   const canSeePaymentCheck =
-    user?.role === "owner" || (user?.permissions ?? []).some((p) => p === "visit.create" || p === "datafixes.manage");
+    user?.role === "owner" ||
+    (user?.permissions ?? []).some((p) => p === "paymentcheck.manage" || p === "visit.create" || p === "datafixes.manage");
 
   const handleSignOut = async () => {
     setSidebarOpen(false);
