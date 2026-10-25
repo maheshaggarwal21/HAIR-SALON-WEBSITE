@@ -13,7 +13,7 @@ const mongoose = require("mongoose");
 const dataFixSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, trim: true },
-    kind: { type: String, enum: ["duplicate", "invalid", "payment", "unassigned"], required: true, index: true },
+    kind: { type: String, enum: ["duplicate", "invalid", "payment", "unassigned", "payment_id"], required: true, index: true },
     status: { type: String, enum: ["fixed", "dismissed"], required: true, index: true },
     note: { type: String, trim: true, maxlength: 300, default: null },
     /** For a refunded/failed payment: who it turned out to be. */

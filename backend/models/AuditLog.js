@@ -78,6 +78,9 @@ const ACTIONS = [
   "migration.applied",
   "visit.contact_corrected",
   "datafix.resolved",
+  // Payment id check (audit #1, D70)
+  "payment.id_unverified",
+  "payment.id_check_mode_changed",
   // Counter payments (D60)
   "counter.device_paired",
   "counter.device_revoked",

@@ -50,11 +50,6 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ── Configuration ────────────────────────────────────────────────────────────
-/** Frontend URL used for Razorpay payment-link callbacks (redirect after pay). */
-const FRONTEND_URL = (
-  process.env.FRONTEND_URL || "http://localhost:5173"
-).replace(/\/+$/, "");
-
 /** Allowed CORS origins — custom domains + local dev ports */
 const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL || "http://localhost:5173",
@@ -411,32 +406,6 @@ const razorpay = process.env.RAZORPAY_KEY_ID
     })
   : null;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Validate required payment fields and convert amount to paise.
- * @param {object} body  - Express req.body
- * @param {object} res   - Express response (used to send 400 on failure)
- * @returns {{ name: string, phone: string, amountInPaise: number } | null}
- *          Parsed values, or null if validation failed (response already sent).
- */
-function validatePaymentInput(body, res) {
-  const { name, phone, amount } = body;
-
-  if (!name || !phone || !amount) {
-    res.status(400).json({ error: "name, phone and amount are required" });
-    return null;
-  }
-
-  const amountInPaise = Math.round(Number(amount) * 100);
-  if (isNaN(amountInPaise) || amountInPaise < 100) {
-    res.status(400).json({ error: "Amount must be at least ₹1" });
-    return null;
-  }
-
-  return { name: name.trim(), phone: phone.trim(), amountInPaise };
-}
-
 /**
  * Generate an HMAC-SHA256 hex signature for Razorpay verification.
  * @param {string} payload - Concatenated payload string
@@ -752,45 +721,6 @@ app.get(
 );
 
 /**
- * POST /api/create-payment-link
- * @body {{ name: string, phone: string, amount: number }} — amount in rupees
- * @returns {{ payment_link_url: string }}
- *
- * Creates a Razorpay Payment Link (legacy flow). Razorpay redirects the
- * customer back to the frontend /payment-status page with query params.
- */
-app.post("/api/create-payment-link", authenticate, async (req, res) => {
-  if (!razorpay) return res.status(503).json({ error: "Payment service not configured" });
-
-  const parsed = validatePaymentInput(req.body, res);
-  if (!parsed) return;
-
-  try {
-    const paymentLink = await razorpay.paymentLink.create({
-      amount: parsed.amountInPaise,
-      currency: "INR",
-      accept_partial: false,
-      description: "Hair Salon Appointment Payment",
-      customer: { name: parsed.name, contact: "+91" + parsed.phone },
-      notify: { sms: true, email: false },
-      reminder_enable: false,
-      notes: {
-        customer_name: parsed.name,
-        customer_phone: parsed.phone,
-        amount_inr: String(req.body.amount),
-      },
-      callback_url: `${FRONTEND_URL}/payment-status`,
-      callback_method: "get",
-    });
-
-    return res.json({ payment_link_url: paymentLink.short_url });
-  } catch (err) {
-    console.error("[payment] Payment link error:", err);
-    return res.status(500).json({ error: "Failed to create payment link", details: err.message });
-  }
-});
-
-/**
  * GET /api/verify-payment
  * @query razorpay_payment_id, razorpay_payment_link_id,
  *        razorpay_payment_link_reference_id, razorpay_payment_link_status,
@@ -877,6 +807,7 @@ app.use("/api/services", authenticate, require("./routes/services"));
 app.use("/api/bookings", authenticate, require("./routes/bookings"));
 app.use("/api/schedules", authenticate, require("./routes/schedules"));
 app.use("/api/data-fixes", authenticate, require("./routes/dataFixes"));
+app.use("/api/payment-id-check", authenticate, require("./routes/paymentIdCheck"));
 app.use("/api/counter", authenticate, require("./routes/counter"));
 app.use("/api/website", authenticate, require("./routes/website"));
 app.use("/api/artist-skills", authenticate, require("./routes/artistSkills"));

@@ -46,7 +46,7 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
   { to: "/dashboard/manager/bookings", label: "Bookings", icon: CalendarCheck, requiredPermission: ["bookings.view", "bookings.refund"] },
   { to: "/dashboard/manager/website", label: "Website", icon: Globe, requiredPermission: "website.manage" },
-  { to: "/dashboard/manager/fix-numbers", label: "Fix Numbers", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
+  { to: "/dashboard/manager/fix-numbers", label: "Fix numbers & errors", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },

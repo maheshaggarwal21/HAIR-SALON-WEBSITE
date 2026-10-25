@@ -216,21 +216,6 @@ export interface CreateVisitResult {
   }>;
 }
 
-/** Create a Visit document after successful payment. */
-export async function createVisit(
-  payload: CreateVisitPayload
-): Promise<CreateVisitResult> {
-  const res = await fetch(`${BASE}/api/visits`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to create visit record");
-  return data;
-}
-
 export async function createVisitDraftV2(
   payload: CreateVisitPayload
 ): Promise<CreateVisitResult> {

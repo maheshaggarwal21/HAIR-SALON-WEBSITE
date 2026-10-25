@@ -18,6 +18,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
+import { parseHistoryParams } from "@/lib/paymentLinks";
 import { toLocalDateKey } from "@/lib/utils";
 import UnreconciledPayments from "@/pages/dashboard/shared/UnreconciledPayments";
 import { useRestriction } from "@/hooks/usePermission";
@@ -213,6 +215,33 @@ export default function PaymentHistory() {
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
   const [schemaFilter, setSchemaFilter] = useState<SchemaFilter>("all");
 
+  /**
+   * Deep link (from Fix numbers & errors → Payment log errors): ?contact=, ?from=, ?to= only PRESELECT the
+   * client lookup and the date range. Read on first load and whenever the URL changes; never written back when
+   * the user changes a filter. Invalid values are ignored (see lib/paymentLinks.ts); the server still enforces
+   * payments.view and the front-desk date clamp, so the URL is never trusted for access. With no params
+   * nothing here changes anything.
+   */
+  const [searchParams] = useSearchParams();
+  const urlKey = searchParams.toString();
+  const [appliedUrlKey, setAppliedUrlKey] = useState<string | null>(null);
+  if (appliedUrlKey !== urlKey) {
+    setAppliedUrlKey(urlKey);
+    const { contact: linkedContact, range: linkedRange } = parseHistoryParams(searchParams);
+    if (linkedRange) {
+      setPreset("custom");
+      setCustomFrom(linkedRange.from);
+      setCustomTo(linkedRange.to);
+    }
+    if (linkedContact) {
+      setClient({ name: "", contact: linkedContact, gender: "other" });
+      setCustomerInput("");
+      setCustomerFilter("");
+      setClientMatches([]);
+      setClientMatchesOpen(false);
+    }
+  }
+
   // Pagination
   const [page, setPage] = useState(1);
   const LIMIT = 50;
@@ -249,6 +278,21 @@ export default function PaymentHistory() {
       window.clearTimeout(timeout);
     };
   }, [customerInput, client]);
+
+  // A client opened from a link only has a number; fill in the name from the lookup when it is found.
+  useEffect(() => {
+    if (!client || client.name) return;
+    let stale = false;
+    searchCustomers({ phone: client.contact })
+      .then((found) => {
+        const match = found.find((c) => c.contact === client.contact);
+        if (match && !stale) setClient(match);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [client]);
 
   const pickClient = (c: CustomerSuggestion) => {
     setClient(c);
@@ -430,7 +474,7 @@ export default function PaymentHistory() {
               <UserRound className="w-5 h-5 text-amber-600 shrink-0" />
               <div className="min-w-0">
                 <p className="font-semibold text-stone-900 truncate">
-                  {client.name} · {client.contact}
+                  {client.name || "Client"} · {client.contact}
                 </p>
                 <p className="text-xs text-stone-500">
                   All visits

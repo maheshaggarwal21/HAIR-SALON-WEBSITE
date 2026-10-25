@@ -124,6 +124,12 @@ const siteSettingsSchema = new mongoose.Schema(
      * everything waits for the owner.
      */
     autoRefundSalonSide: { type: Boolean, default: true },
+    /**
+     * Audit #1 / D70: what the desk does when the Razorpay payment id on a sale does not check out
+     * (utils/paymentIdCheck.js). "log" (the default) records it and never blocks a sale; "enforce"
+     * refuses only a payment that is clearly wrong. Changed from the staff app sidebar; every change is audited.
+     */
+    paymentIdCheck: { type: String, enum: ["log", "enforce"], default: "log" },
     policyVersion: { type: String, default: "2026-10-v1" },
 
     contact: {

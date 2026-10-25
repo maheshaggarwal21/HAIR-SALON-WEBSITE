@@ -1,15 +1,17 @@
 /**
  * @file routes/visits.js
- * @description Visit creation endpoint.
+ * @description Visits: create (POST /v2), assignment, the booking bill, history and customer lookup.
  *
- * POST /  – Create a new Visit document after successful Razorpay payment.
- *           Resolves service IDs to { name, price } from the Service model
- *           and computes billing totals server-side to prevent tampering.
+ * POST /v2 – Create a Visit after a Razorpay (or counter, or cash) payment. Service ids are
+ *            resolved to names and prices from the Service model and the totals are computed
+ *            here, never taken from the browser.
+ *
+ * (The old POST / "create visit" route was removed: nothing called it and it did not check
+ * the payment id the way v2 does. Audit #11.)
  */
 
 const express = require("express");
 const mongoose = require("mongoose");
-const { body, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Visit = require("../models/Visit");
 const Service = require("../models/Service");
@@ -19,6 +21,7 @@ const { authorizePermission, getUserPermissions } = require("../middleware/authM
 const { PERMISSIONS } = require('../constants/permissions');
 const { salonDate, isValidDate, addDays } = require("../utils/time");
 const counter = require("../utils/counter");
+const paymentIdCheck = require("../utils/paymentIdCheck");
 
 const router = express.Router();
 
@@ -138,172 +141,6 @@ async function resolveRequestedServicesWithDuplicates(serviceIds) {
   return { orderedServices };
 }
 
-// ─── Validation rules ────────────────────────────────────────────────────────
-const createRules = [
-  body("name").trim().notEmpty().withMessage("Name is required"),
-  body("contact")
-    .trim()
-    .matches(/^[6-9]\d{9}$/)
-    .withMessage("Valid 10-digit Indian mobile required"),
-  body("gender")
-    .trim()
-    .notEmpty()
-    .isIn(["male", "female", "other", "prefer_not"])
-    .withMessage("Gender is required"),
-  body("date").notEmpty().withMessage("Date is required"),
-  body("startTime")
-    .trim()
-    .notEmpty()
-    .matches(/^\d{2}:\d{2}$/)
-    .withMessage("Start time is required (HH:mm)"),
-  body("endTime")
-    .trim()
-    .notEmpty()
-    .matches(/^\d{2}:\d{2}$/)
-    .withMessage("End time is required (HH:mm)"),
-  body("artist").trim().notEmpty().withMessage("Artist is required"),
-  body("serviceIds")
-    .isArray({ min: 1 })
-    .withMessage("At least one service is required"),
-  body("serviceIds.*").isMongoId().withMessage("Invalid service ID"),
-  body("paymentMethod")
-    .optional()
-    .isIn(["online", "cash", "card", "partial"])
-    .withMessage("paymentMethod must be online, cash, card, or partial"),
-  body("cashAmount")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("cashAmount must be >= 0"),
-  body("onlineAmount")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("onlineAmount must be >= 0"),
-  body("cardAmount")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("cardAmount must be >= 0"),
-  body("razorpayPaymentId")
-    .optional({ values: "null" })
-    .trim(),
-  body("discountPercent")
-    .optional()
-    .isFloat({ min: 0, max: 100 })
-    .withMessage("Discount must be 0–100"),
-];
-
-// ─── POST / — create a visit ─────────────────────────────────────────────────
-router.post("/", authorizePermission(PERMISSIONS.VISIT_CREATE), createRules, async (req, res) => {
-  const errs = validationResult(req);
-  if (!errs.isEmpty()) {
-    return res.status(400).json({ errors: errs.array() });
-  }
-
-  try {
-    await connectDB();
-    const {
-      name,
-      contact,
-      gender,
-      date,
-      startTime,
-      endTime,
-      artist,
-      serviceType,
-      serviceIds,
-      discountPercent = 0,
-      paymentMethod = "online",
-      cashAmount = 0,
-      razorpayPaymentId = null,
-    } = req.body;
-
-    // ── Resolve services from DB (authoritative prices) ───────────────────
-    const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
-    if (error) {
-      return res.status(400).json({ error });
-    }
-
-    const services = orderedServices.map((s) => ({
-      name: s.name,
-      price: s.price,
-      serviceId: s._id,
-      // Snapshot the expected duration at visit creation time.
-      // Only an owner-CONFIRMED time counts. No time, or the one-hour
-      // placeholder (Service.durationConfirmed false), stores null — this visit
-      // is then excluded from time-performance calculations (not penalised,
-      // not rewarded).
-      duration: Service.performanceDuration(s),
-    }));
-
-    // ── Compute billing server-side ───────────────────────────────────────
-    const subtotal = services.reduce((sum, s) => sum + s.price, 0);
-    const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
-    const discountAmount = Math.round(subtotal * (pct / 100));
-    const finalTotal = Math.max(0, subtotal - discountAmount);
-
-    if (paymentMethod === "online" && !razorpayPaymentId) {
-      return res.status(400).json({ error: "Razorpay Payment ID is required for online payment" });
-    }
-    if (paymentMethod === "partial" && !razorpayPaymentId) {
-      return res.status(400).json({ error: "Razorpay Payment ID is required for partial payment" });
-    }
-
-    const amounts = derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount });
-
-    // ── Create visit document ─────────────────────────────────────────────
-    const visit = await Visit.create({
-      schemaVersion: 1,
-      name,
-      contact,
-      gender,
-      date: new Date(date),
-      startTime,
-      endTime,
-      artist,
-      serviceType: serviceType || undefined,
-      services,
-      // visitDurationMins is calculated on the frontend (endTime − startTime)
-      // and sent with the form. Storing it avoids recalculating from strings.
-      visitDurationMins: req.body.visitDurationMins != null ? Number(req.body.visitDurationMins) : null,
-      filledBy: req.session.name || "Unknown",
-      subtotal,
-      discountPercent: pct,
-      discountAmount,
-      finalTotal,
-      paymentMethod,
-      cashAmount: amounts.cashAmount,
-      cardAmount: amounts.cardAmount,
-      onlineAmount: amounts.onlineAmount,
-      paymentStatus: "success",
-      razorpayPaymentId: razorpayPaymentId || null,
-      assignmentStatus: "not_required",
-      lockUntilAssigned: false,
-      paymentConfirmedAt: new Date(),
-      paymentSnapshot: {
-        subtotal,
-        discountPercent: pct,
-        discountAmount,
-        finalTotal,
-        paymentMethod,
-        cashAmount: amounts.cashAmount,
-        cardAmount: amounts.cardAmount,
-        onlineAmount: amounts.onlineAmount,
-        razorpayPaymentId: razorpayPaymentId || null,
-      },
-    });
-
-    return res.status(201).json({
-      success: true,
-      visitId: visit._id,
-      finalTotal,
-    });
-  } catch (err) {
-    console.error("[visits] Create error:", err);
-    return res
-      .status(500)
-      .json({ error: "Failed to create visit", details: err.message });
-  }
-});
-
 // ─── POST /v2 — create paid draft (assignment pending) ─────────────────────
 // ─── Online bookings at checkout (CF §8, T2.16) ─────────────────────────────
 
@@ -352,6 +189,65 @@ router.get("/appointment-bill/:id", authorizePermission(PERMISSIONS.VISIT_CREATE
 });
 
 /**
+ * The payment-id check for a booking at checkout (audit #1, D70). The online money the desk collected is
+ * what is left after the deposit and any cash/card part, i.e. `buckets.onlineAmount - bill.depositApplied`;
+ * it is worked out here from the same two functions the transaction below uses, so the two cannot disagree.
+ * Only the cases where the transaction would store a desk payment id are checked. Never throws: if the
+ * booking cannot be read, the transaction below gives the real answer (a CheckoutError) or the save
+ * goes on and the check is recorded as "check_failed".
+ */
+async function checkBookingPayment({ req, appointmentId, serviceIds, paymentMethod, cashAmount, razorpayPaymentId, date }) {
+  const none = { refusal: null, done: async () => {} };
+  try {
+    if (!razorpayPaymentId || !["online", "partial"].includes(paymentMethod)) return none;
+    let bill;
+    let buckets;
+    try {
+      bill = await appointmentBill({ appointmentId, serviceIds });
+      if (!(bill.remainder > 0)) return none;
+      buckets = appointmentBuckets(bill, { paymentMethod, cashAmount });
+    } catch (err) {
+      if (err instanceof CheckoutError) return none; // the transaction below will say the same thing
+      return await paymentIdCheck.begin({ req, paymentId: razorpayPaymentId, expectedPaise: NaN });
+    }
+    return await paymentIdCheck.begin({
+      req,
+      paymentId: razorpayPaymentId,
+      expectedPaise: (buckets.onlineAmount - bill.depositApplied) * 100,
+      name: bill.appt.name,
+      date,
+      ref: bill.appt.ref,
+    });
+  } catch (err) {
+    console.error("[visits] payment id check skipped:", err.message);
+    return none;
+  }
+}
+
+/**
+ * The duplicate replay in /v2 hands back the first visit when a payment id is reused. If the reusing sale is
+ * a different sale (its total or its services differ from that visit's), that is worth a record: a second
+ * customer's sale was just swallowed by the first. Compare only; nothing is written to a visit.
+ */
+async function noteReplayedSale({ req, existing, paymentId, serviceIds, discountPercent, paymentMethod, cashAmount }) {
+  const { orderedServices, error } = await resolveRequestedServicesWithDuplicates(serviceIds);
+  if (error) return; // cannot be priced: nothing to compare, and the caller's answer is unchanged
+  const subtotal = orderedServices.reduce((sum, s) => sum + s.price, 0);
+  const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
+  const requestedTotal = Math.max(0, subtotal - Math.round(subtotal * (pct / 100)));
+  const ids = (list) => list.map(String).sort().join(",");
+  const sameServices = ids(orderedServices.map((s) => s._id)) === ids((existing.services || []).map((s) => s.serviceId));
+  if (sameServices && requestedTotal === Math.round(existing.finalTotal)) return;
+  let expectedPaise = null;
+  try {
+    expectedPaise = derivePaymentAmounts({ paymentMethod, finalTotal: requestedTotal, cashAmount }).onlineAmount * 100;
+  } catch {
+    /* an invalid cash part: leave the expected amount out */
+  }
+  await paymentIdCheck.recordReplay({ req, paymentId, existing, requestedTotal, expectedPaise });
+}
+
+/**
  * POST /v2 with `appointmentId`: the visit for a booking. One transaction:
  * the Visit is written AND the booking becomes `completed` with `visitId`
  * and `deposit.status = applied`. If anything fails, neither happens.
@@ -374,6 +270,11 @@ async function createAppointmentVisit(req, res) {
       services: already.services.map((s) => ({ serviceEntryId: s._id, serviceId: s.serviceId, serviceName: s.name, servicePrice: s.price })),
     });
   }
+
+  // Audit #1 (D70): ask whether the desk payment id belongs to this sale. Outside the transaction: it may
+  // call Razorpay, and it must never be able to hold up or break the save.
+  const idCheck = await checkBookingPayment({ req, appointmentId, serviceIds, paymentMethod, cashAmount, razorpayPaymentId, date });
+  if (idCheck.refusal) return res.status(idCheck.refusal.status).json(idCheck.refusal.body);
 
   const session = await mongoose.startSession();
   let visit;
@@ -471,6 +372,13 @@ async function createAppointmentVisit(req, res) {
     });
   } catch (err) {
     if (err instanceof CheckoutError) return res.status(err.status).json({ error: err.message });
+    // Audit #2 (M8): the unique index on the payment id caught a second visit the pre-check missed. The same
+    // booking is the existing replay; any other booking keeps the message the pre-check gives.
+    if (err?.code === 11000 && err.keyPattern?.razorpayPaymentId && razorpayPaymentId) {
+      const first = await Visit.findOne({ razorpayPaymentId }).lean();
+      if (first && String(first.appointmentId) === String(appointmentId)) return res.status(200).json(visitReplay(first));
+      return res.status(409).json({ error: "That payment is already on another visit" });
+    }
     if (err?.code === 11000) return res.status(409).json({ error: "This booking has already been billed" });
     console.error("[visits] appointment visit error:", err);
     return res.status(500).json({ error: "Failed to create the visit", details: err.message });
@@ -488,6 +396,7 @@ async function createAppointmentVisit(req, res) {
       console.error("[visits] payment event reconcile failed:", visit.razorpayPaymentId, err.message);
     }
   }
+  await idCheck.done(visit._id);
 
   return res.status(201).json({
     success: true,
@@ -611,6 +520,8 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
     if (effectivePaymentId) {
       const existing = await Visit.findOne({ razorpayPaymentId: effectivePaymentId }).lean();
       if (existing) {
+        // Audit #1 addition (D70): a DIFFERENT sale reusing this id is only noted; the caller gets the same answer.
+        if (!counterSale) await paymentIdCheck.observe(() => noteReplayedSale({ req, existing, paymentId: effectivePaymentId, serviceIds, discountPercent, paymentMethod, cashAmount }));
         return res.status(200).json({
           success: true,
           duplicate: true,
@@ -668,6 +579,13 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
 
     const amounts = derivePaymentAmounts({ paymentMethod, finalTotal, cashAmount });
 
+    // Audit #1 (D70): does this payment id belong to this sale? An observer: it records, and refuses only in
+    // "enforce" mode and only when the payment is clearly wrong. A counter QR sale carries the server's own id.
+    const idCheck = counterSale
+      ? { refusal: null, done: async () => {} }
+      : await paymentIdCheck.begin({ req, paymentId: effectivePaymentId, expectedPaise: amounts.onlineAmount * 100, name: String(name).trim(), date: new Date(date) });
+    if (idCheck.refusal) return res.status(idCheck.refusal.status).json(idCheck.refusal.body);
+
     let visit;
     try {
     visit = await Visit.create({
@@ -721,6 +639,15 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         const first = await Visit.findOne({ counterSessionId: counterSale.session._id }).lean();
         if (first) return res.status(200).json(visitReplay(first));
       }
+      // Audit #2 (M8): two requests passed the pre-check above together and the unique index on the payment id
+      // caught the second. Answer exactly as the pre-check would have: the first visit, as a duplicate.
+      if (!counterSale && effectivePaymentId && err?.code === 11000 && err.keyPattern?.razorpayPaymentId) {
+        const first = await Visit.findOne({ razorpayPaymentId: effectivePaymentId }).lean();
+        if (first) {
+          await paymentIdCheck.observe(() => noteReplayedSale({ req, existing: first, paymentId: effectivePaymentId, serviceIds, discountPercent, paymentMethod, cashAmount }));
+          return res.status(200).json(visitReplay(first));
+        }
+      }
       throw err;
     }
     if (counterSale) await counter.attachVisit(counterSale.session._id, visit._id);
@@ -757,6 +684,7 @@ router.post("/v2", authorizePermission(PERMISSIONS.VISIT_CREATE), async (req, re
         console.error("[visits] payment event reconcile failed:", effectivePaymentId, err.message);
       }
     }
+    await idCheck.done(visit._id);
 
     return res.status(201).json({
       success: true,

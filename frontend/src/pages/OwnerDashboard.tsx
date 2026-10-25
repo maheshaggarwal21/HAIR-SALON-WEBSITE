@@ -49,7 +49,7 @@ const ownerLinks = [
   { to: "/dashboard/owner", label: "Overview", icon: LayoutDashboard },
   { to: "/dashboard/owner/bookings", label: "Bookings", icon: CalendarCheck },
   { to: "/dashboard/owner/website", label: "Website", icon: Globe },
-  { to: "/dashboard/owner/fix-numbers", label: "Fix Numbers", icon: AlertTriangle },
+  { to: "/dashboard/owner/fix-numbers", label: "Fix numbers & errors", icon: AlertTriangle },
   { to: "/dashboard/owner/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/owner/payments", label: "Payments", icon: Receipt },
   { to: "/dashboard/owner/data-pipeline", label: "Data Pipeline", icon: Database },
