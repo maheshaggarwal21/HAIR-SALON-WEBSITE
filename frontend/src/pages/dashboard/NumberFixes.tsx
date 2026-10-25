@@ -107,7 +107,11 @@ const day = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-IN", 
 const rupees = (n?: number) => `₹${Math.round(n ?? 0).toLocaleString("en-IN")}`;
 
 export default function NumberFixes() {
-  const [kind, setKind] = useState<Kind>("duplicate");
+  // `datafixes.manage` opens every tab. `paymentcheck.manage` alone opens only Payment log errors (the server enforces
+  // the same split), so that is all such a person is shown. The owner has both.
+  const canFixNumbers = usePermission("datafixes.manage");
+  const tabs = canFixNumbers ? KINDS : KINDS.filter((k) => k.id === "payment_id");
+  const [kind, setKind] = useState<Kind>(canFixNumbers ? "duplicate" : "payment_id");
   const [status, setStatus] = useState<Status>("open");
   const [days, setDays] = useState(30);
   const [q, setQ] = useState("");
@@ -134,7 +138,7 @@ export default function NumberFixes() {
   const data = reply?.sig === sig ? reply.data : null;
   const error = reply?.sig === sig ? reply.error : "";
 
-  const meta = KINDS.find((k) => k.id === kind)!;
+  const meta = tabs.find((k) => k.id === kind) ?? tabs[0];
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="max-w-5xl space-y-6">
@@ -150,7 +154,7 @@ export default function NumberFixes() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {KINDS.map((k) => (
+        {tabs.map((k) => (
           <button
             key={k.id}
             onClick={() => setKind(k.id)}

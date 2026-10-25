@@ -46,13 +46,13 @@ const managerLinks: SidebarLink[] = [
   { to: "/dashboard/manager", label: "Overview", icon: LayoutDashboard },
   { to: "/dashboard/manager/bookings", label: "Bookings", icon: CalendarCheck, requiredPermission: ["bookings.view", "bookings.refund"] },
   { to: "/dashboard/manager/website", label: "Website", icon: Globe, requiredPermission: "website.manage" },
-  { to: "/dashboard/manager/fix-numbers", label: "Fix numbers & errors", icon: AlertTriangle, requiredPermission: "datafixes.manage" },
+  { to: "/dashboard/manager/fix-numbers", label: "Fix numbers & errors", icon: AlertTriangle, requiredPermission: ["datafixes.manage", "paymentcheck.manage"] },
   { to: "/dashboard/manager/analytics", label: "Analytics", icon: BarChart3, requiredPermission: "analytics.view" },
   { to: "/dashboard/manager/payments", label: "Payments", icon: Receipt, requiredPermission: "payments.view" },
   { to: "/dashboard/manager/data-pipeline", label: "Data Pipeline", icon: Database, requiredPermission: "datapipeline.view" },
   { to: "/dashboard/manager/services", label: "Services", icon: Scissors, requiredPermission: ["services.view", "services.crud"] },
   { to: "/dashboard/manager/artists", label: "Artists", icon: Palette, requiredPermission: ["artists.view", "artists.crud"] },
-  { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: "artists.view" },
+  { to: "/dashboard/manager/artist-skills", label: "Artist Skills", icon: UserCog, requiredPermission: ["artists.view", "artistskills.manage"] },
   { to: "/dashboard/manager/team", label: "Team", icon: Users, requiredPermission: ["team.view", "team.manage"] },
   { to: "/visit-entry", label: "New Visit Entry", icon: CalendarPlus, requiredPermission: "visit.create" },
 ];
@@ -144,7 +144,7 @@ export default function ManagerDashboard() {
         <Route
           path="fix-numbers"
           element={
-            <RequirePermission permission="datafixes.manage" backTo={HOME}>
+            <RequirePermission permission={["datafixes.manage", "paymentcheck.manage"]} backTo={HOME}>
               <NumberFixes />
             </RequirePermission>
           }
@@ -208,7 +208,7 @@ export default function ManagerDashboard() {
         <Route
           path="artist-skills"
           element={
-            <RequirePermission permission="artists.view" backTo={HOME}>
+            <RequirePermission permission={["artists.view", "artistskills.manage"]} backTo={HOME}>
               <ArtistSkills />
             </RequirePermission>
           }

@@ -46,7 +46,15 @@ router.use(async (_req, res, next) => {
     res.status(503).json({ error: "Database unavailable" });
   }
 });
-router.use(authorizePermission(PERMISSIONS.DATAFIXES_MANAGE));
+// Two levels. `datafixes.manage` opens everything on this page. `paymentcheck.manage` opens ONLY the Payment log
+// errors list (kind payment_id) and deciding its entries (D70): the other tabs, and correcting numbers, still need
+// `datafixes.manage`. The owner bypasses both.
+const fullAccess = authorizePermission(PERMISSIONS.DATAFIXES_MANAGE);
+router.use(authorizePermission([PERMISSIONS.DATAFIXES_MANAGE, PERMISSIONS.PAYMENT_CHECK_MANAGE]));
+const forKind = (req, res, next) => {
+  const kind = req.method === "GET" ? req.query.kind : req.body?.kind;
+  return kind === "payment_id" ? next() : fullAccess(req, res, next);
+};
 
 const SETTLED = {
   paymentStatus: "success",
@@ -223,7 +231,7 @@ async function missingReference() {
   }));
 }
 
-router.get("/", async (req, res) => {
+router.get("/", forKind, async (req, res) => {
   const kind = String(req.query.kind || "");
   if (!KINDS.includes(kind)) return res.status(400).json({ error: "kind must be one of " + KINDS.join(", ") });
   const status = ["open", "resolved", "all"].includes(req.query.status) ? req.query.status : "open";
@@ -266,7 +274,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/correct-contact", async (req, res) => {
+router.post("/correct-contact", fullAccess, async (req, res) => {
   try {
     const from = last10(req.body?.from);
     const toRaw = String(req.body?.to ?? "").trim();
@@ -304,12 +312,14 @@ router.post("/correct-contact", async (req, res) => {
   }
 });
 
-router.post("/resolve", async (req, res) => {
+router.post("/resolve", forKind, async (req, res) => {
   try {
     const { key, kind, status } = req.body || {};
     if (!KEY_RE.test(String(key || "")) || !KINDS.includes(kind)) return res.status(400).json({ error: "Bad request" });
     if (!["fixed", "dismissed", "open"].includes(status)) return res.status(400).json({ error: "status must be fixed, dismissed or open" });
 
+    // Payment log errors only ever hold payment-id keys, so this permission cannot write other kinds of rows.
+    if (kind === "payment_id" && !String(key).startsWith("pid:")) return res.status(400).json({ error: "Bad request" });
     // A payment-id result is closed only with a written reason, so the list explains itself later.
     if (kind === "payment_id" && status !== "open" && !String(req.body.note || "").trim()) {
       return res.status(400).json({ error: "Write a note saying what you checked." });

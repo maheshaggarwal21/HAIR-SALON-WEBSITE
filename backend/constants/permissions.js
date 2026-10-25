@@ -28,8 +28,15 @@ const PERMISSIONS = Object.freeze({
   WEBSITE_MANAGE:        'website.manage',
   // Daily review of mistyped / duplicate numbers, refunded payments and unassigned visits (D54)
   DATAFIXES_MANAGE:      'datafixes.manage',
+  // Payment ID check (D70): the Log only / Enforce switch and the Payment log errors tab. In ADDITION to the
+  // permissions that already opened them (visit.create, datafixes.manage), so no one loses access.
+  PAYMENT_CHECK_MANAGE:  'paymentcheck.manage',
   // Counter payments (D60): pair and manage the customer-facing QR tablet
   COUNTER_MANAGE:        'counter.manage',
+  // Artist Skills (D35): who can be booked for which services. A checklist item of its own, so it can be given to a
+  // receptionist without the Artists directory. In ADDITION to artists.view / artists.crud (no one loses access).
+  // Not on by default for any role: it changes who customers can book.
+  ARTIST_SKILLS_MANAGE:  'artistskills.manage',
 });
 
 // Default permission sets assigned when a new account is created.
@@ -50,6 +57,7 @@ const ROLE_DEFAULTS = {
     'bookings.manage',
     'schedules.manage',
     'datafixes.manage',
+    'paymentcheck.manage',
   ],
   receptionist: [
     'payments.view',
@@ -57,6 +65,7 @@ const ROLE_DEFAULTS = {
     'bookings.view',
     'bookings.manage',
     'datafixes.manage',
+    'paymentcheck.manage',
   ],
   artist:       [], // starts empty — owner grants permissions individually via Artist directory
   owner:        [], // bypasses PBAC — this array is intentionally unused
@@ -90,14 +99,16 @@ const PERMISSION_LABELS = {
   'schedules.manage':      'Online booking: artists on/off, leave and blocked time',
   'website.manage':        'Manage Website (Settings, Public Menu, Artist Profiles)',
   'datafixes.manage':      'Fix wrong numbers: review duplicates, refunds and unassigned visits',
+  'paymentcheck.manage':   'Payment ID check: switch Log only / Enforce, and review Payment log errors',
   'counter.manage':        'Counter display: pair tablets and manage the payment QR screen (owner)',
+  'artistskills.manage':   'Artist Skills: see and change who can be booked for which services',
 };
 
 // UI groupings for the permission editor checklist — purely cosmetic.
 const PERMISSION_GROUPS = [
   {
     label: 'Visit Operations',
-    keys:  ['visit.create', 'datafixes.manage'],
+    keys:  ['visit.create', 'datafixes.manage', 'paymentcheck.manage'],
   },
   {
     label: 'Financials',
@@ -111,7 +122,7 @@ const PERMISSION_GROUPS = [
   },
   {
     label: 'Artists',
-    keys:  ['artists.view', 'artists.crud', 'artist_dashboard.view'],
+    keys:  ['artists.view', 'artists.crud', 'artist_dashboard.view', 'artistskills.manage'],
   },
   {
     label: 'Services',
