@@ -75,9 +75,6 @@ function applyOffer(service, offers, exempt = null) {
 
 const applyOffers = (services, offers, exempt = null) => services.map((s) => applyOffer(s, offers, exempt));
 
-/** Whole-number percent off, for "20% off". */
-const percentOff = (regular, price) => (regular > 0 && price < regular ? Math.round((1 - price / regular) * 100) : 0);
-
 // ─── Saving an offer's prices (staff routes) ─────────────────────────────────
 
 const slugify = (s) =>
@@ -138,4 +135,4 @@ async function prepareOfferLines(input, existingBundles = []) {
   return { servicePrices: cleanPrices, bundles: cleanBundles };
 }
 
-module.exports = { liveOffers, clearOffersCache, applyOffer, applyOffers, percentOff, prepareOfferLines, OfferError };
+module.exports = { liveOffers, clearOffersCache, applyOffer, applyOffers, prepareOfferLines, OfferError };

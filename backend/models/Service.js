@@ -180,6 +180,15 @@ serviceSchema.statics.defaultPublicPrice = function (price) {
 };
 
 /**
+ * What the customer pays at the desk: the public price, or half the list price when none is set (D12).
+ * One place, used by the desk bill (utils/checkout.js) and the desk booking (utils/booking.js). Takes a
+ * document or a plain/lean object.
+ */
+serviceSchema.statics.deskPrice = function (s) {
+  return s.publicPrice != null ? s.publicPrice : Math.round((s.price || 0) * PUBLIC_PRICE_RATIO);
+};
+
+/**
  * Owner rule (13 Oct 2026): until real times are entered, a service is assumed
  * to take at least an hour. New services start at this and the owner edits it.
  */

@@ -274,9 +274,6 @@ const siteSettingsSchema = new mongoose.Schema(
       male: { type: skillRuleSchema, default: () => ({ all: true }) },
       other: { type: skillRuleSchema, default: () => ({ all: true }) },
     },
-
-    /** Website price = round(list × ratio). Mirrors Service.PUBLIC_PRICE_RATIO (D12). */
-    publicPriceRatio: { type: Number, default: 0.5, min: 0, max: 1 },
   },
   { timestamps: true, minimize: false }
 );
