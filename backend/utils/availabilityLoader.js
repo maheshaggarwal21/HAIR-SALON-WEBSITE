@@ -97,7 +97,8 @@ async function loadServices(ids, { allowPackageOnly = new Set() } = {}) {
  * @param {string}   opts.date                "YYYY-MM-DD" (IST)
  * @param {{key:string, serviceIds:string[]}[]} opts.guests
  * @param {Map}      opts.services           from loadServices
- * @param {string}   [opts.artistId]         preferred artist
+ * @param {string}   [opts.artistId]         preferred artist (one guest). A group names one per guest: `guests[].artistId`
+ * @param {"parallel"|"series"} [opts.groupMode]  series = one artist, guest after guest (D67)
  * @param {Date}     [opts.now]
  * @param {string}   [opts.excludeAppointmentId]  ignore this booking's own locks (reschedule)
  * @param {boolean}  [opts.patchTestOk]
@@ -105,7 +106,7 @@ async function loadServices(ids, { allowPackageOnly = new Set() } = {}) {
  *                                           time, no online share — the desk books for
  *                                           people in front of it or on the phone
  */
-async function loadEngineInput({ date, guests, services, artistId = null, now = new Date(), excludeAppointmentId = null, patchTestOk = false, staff = false }) {
+async function loadEngineInput({ date, guests, services, artistId = null, groupMode = "parallel", now = new Date(), excludeAppointmentId = null, patchTestOk = false, staff = false }) {
   const settings = (await SiteSettings.getSingleton()).toObject();
   const opening = openingIntervals(settings, date);
   const dayStart = salonInstant(date, "00:00");
@@ -159,6 +160,8 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
 
   const engineGuests = guests.map((g) => ({
     key: g.key,
+    // The artist this guest asked for (D67); null = any.
+    artistPref: g.artistId ? String(g.artistId) : null,
     items: g.serviceIds
       .map((id, order) => ({ s: services.get(String(id)), order }))
       // Cut before colour, threading before makeup: the owner's sortOrder, then the customer's order.
@@ -191,6 +194,7 @@ async function loadEngineInput({ date, guests, services, artistId = null, now = 
       resources: resources.map((r) => ({ id: String(r._id), capacity: r.capacity })),
       resourceLocks,
       artistPref: artistId ? String(artistId) : null,
+      groupMode,
       patchTestOk: staff ? true : patchTestOk,
     },
   };

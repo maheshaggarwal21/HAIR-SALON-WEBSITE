@@ -74,7 +74,12 @@ async function appointmentBill({ appointmentId, serviceIds = null, session = nul
   if (appt.visitId) throw new CheckoutError("This booking has already been billed", 409);
   if (!["confirmed", "checked_in"].includes(appt.status)) throw new CheckoutError(`This booking is ${appt.status.replace("_", " ")} — it can't be billed`, 409);
 
-  const booked = appt.guests.flatMap((g) => g.items.map((i) => ({ ...i, guestName: g.name })));
+  // For a group, say which person each row is for (display only, D67). A person with no name of their own is
+  // "<booker> (guest 2)", never the booker's bare name.
+  const group = appt.guests.length > 1;
+  const booked = appt.guests.flatMap((g, gi) =>
+    g.items.map((i) => ({ ...i, guestName: group ? g.name || (gi === 0 ? appt.name : `${appt.name} (guest ${gi + 1})`) : null }))
+  );
   const ids = (serviceIds && serviceIds.length ? serviceIds : booked.map((i) => String(i.serviceId))).map(String);
   if (!ids.every((id) => mongoose.Types.ObjectId.isValid(id))) throw new CheckoutError("Invalid service");
 
@@ -98,6 +103,7 @@ async function appointmentBill({ appointmentId, serviceIds = null, session = nul
         artistId: i.artistId || null,
         artistName: i.artistName || null,
         ...actual(i),
+        ...(i.guestName ? { guestName: i.guestName } : {}),
         booked: true,
       };
     }

@@ -28,7 +28,8 @@ function formatDate(date) {
 const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 function requestAlertText(appt) {
-  const items = appt.guests.flatMap((g) => g.items);
+  // A group has the same services for each person: list them once (the People line says how many).
+  const items = (appt.guests.length > 1 ? appt.guests.slice(0, 1) : appt.guests).flatMap((g) => g.items);
   const pkg = appt.source?.offerPackage;
   const lines = [
     `🆕 ${appt.source?.channel === "wa_ad" ? "WhatsApp ad" : "Website"} request ${appt.ref}`,
@@ -39,6 +40,8 @@ function requestAlertText(appt) {
     // A package request (D64) shows the package, its ONE price and the services as printed on the poster.
     ...(pkg ? [`Package: ${pkg.name} — ${rupees(pkg.price)}`, ...pkg.services.map((n) => `• ${n}`)] : [...items.map((i) => `• ${i.name} — ${rupees(i.publicPrice)}`), `Total ${rupees(appt.pricing.total)}`]),
   ];
+  // A group (D67). Nothing is added for one person.
+  if (appt.guests.length > 1) lines.push(`People: ${appt.guests.length}${pkg ? ` — total ${rupees(appt.pricing.total)}` : ""}`);
   if (appt.preferredArtistName) lines.push(`Prefers: ${appt.preferredArtistName}`);
   if (appt.notes) lines.push(`Note: ${appt.notes}`);
   const utm = appt.source?.utm;
@@ -82,6 +85,12 @@ function formatInstant(at) {
   const get = (type) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("weekday")}, ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")} ${get("dayPeriod").toLowerCase()}`;
 }
+
+/** " (3 people)" for a group, "" for one person: the group is said INSIDE the existing "when" text (D67). */
+const peopleSuffix = (appt) => ((appt.guests || []).length > 1 ? ` (${appt.guests.length} people)` : "");
+
+/** The "when" of a booking message: "Sat, 29 Oct, 4:00 pm" and, for a group, " (3 people)". */
+const whenText = (appt) => formatInstant(appt.startAt) + peopleSuffix(appt);
 
 const BOOKING_HEADINGS = {
   confirmed: "✅ Online booking",
@@ -161,4 +170,4 @@ async function alertReassigned({ artistName, why, moved, flagged }) {
   }
 }
 
-module.exports = { alertReassigned, alertNewRequest, requestAlertText, alertBooking, bookingAlertText, formatInstant };
+module.exports = { alertReassigned, alertNewRequest, requestAlertText, alertBooking, bookingAlertText, formatInstant, peopleSuffix, whenText };

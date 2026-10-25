@@ -16,7 +16,7 @@
 const Appointment = require("../models/Appointment");
 const { notify } = require("./notify");
 const { manageUrl } = require("./booking");
-const { formatInstant } = require("./bookingAlerts");
+const { formatInstant, peopleSuffix } = require("./bookingAlerts");
 const { DEFAULT_DURATION_MINUTES } = require("../models/Service");
 const { salonDate, salonInstant, weekdayKey, daysBetween, isValidDate } = require("./time");
 
@@ -81,9 +81,9 @@ const minutesFor = (items) => items.reduce((n, i) => n + (i.durationMin || DEFAU
 
 /** "Sat, 25 Oct, 11:00 am" for the time the customer asked for. */
 const requestedWhen = (appt) =>
-  appt.requestedWindow?.time && appt.requestedWindow?.date
+  (appt.requestedWindow?.time && appt.requestedWindow?.date
     ? formatInstant(salonInstant(appt.requestedWindow.date, appt.requestedWindow.time))
-    : appt.requestedWindow?.date || "";
+    : appt.requestedWindow?.date || "") + peopleSuffix(appt);
 
 /** WhatsApp "we got your request". Never throws; one per booking (notify de-duplicates by key). */
 function sendReceived(appt) {
@@ -103,7 +103,7 @@ function sendConfirmed(appt) {
     type: "booking_confirmed",
     to: appt.contact,
     appointmentId: appt._id,
-    params: { name: appt.name, ref: appt.ref, when: formatInstant(appt.startAt), link: manageUrl(appt) },
+    params: { name: appt.name, ref: appt.ref, when: formatInstant(appt.startAt) + peopleSuffix(appt), link: manageUrl(appt) },
   });
 }
 
@@ -118,4 +118,4 @@ function findDuplicate(phone, date, time) {
   });
 }
 
-module.exports = { cleanCampaign, slotProblem, windowFor, minutesFor, requestedWhen, sendReceived, sendConfirmed, findDuplicate, TIME_RE };
+module.exports = { cleanCampaign, slotProblem, windowFor, minutesFor, requestedWhen, peopleSuffix, sendReceived, sendConfirmed, findDuplicate, TIME_RE };

@@ -97,7 +97,8 @@ const siteSettingsSchema = new mongoose.Schema(
     /** Free cancel / move until this many hours before the start (D47). */
     cancellationCutoffHours: { type: Number, default: 24 },
     maxActiveBookingsPerPhone: { type: Number, default: 3, min: 1 },
-    maxGuests: { type: Number, default: 4 },
+    /** People per booking, 1 to 10; 1 switches group bookings off (set by the owner: Website → Settings, D68). */
+    maxGuests: { type: Number, default: 4, min: 1, max: 10 },
     maxOnlineReschedules: { type: Number, default: 2 },
     noShowGraceMinutes: { type: Number, default: 15 },
     deposit: {

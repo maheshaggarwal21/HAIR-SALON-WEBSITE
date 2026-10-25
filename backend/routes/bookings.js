@@ -28,7 +28,7 @@
  */
 
 const express = require("express");
-const { body, query, validationResult } = require("express-validator");
+const { body, param, query, validationResult } = require("express-validator");
 const connectDB = require("../db");
 const Appointment = require("../models/Appointment");
 const Artist = require("../models/Artist");
@@ -115,6 +115,8 @@ function toStaffView(a) {
     visitId: a.visitId ?? null,
     lockConflict: Boolean(a.lockConflict),
     lastChange: a.statusHistory?.[a.statusHistory.length - 1] ?? null,
+    // A group (D67). Absent for one person, so a one-person row has the shape it always had.
+    ...(a.guests?.length > 1 ? { people: a.guests.length, guests: a.guests.map((g) => ({ guestKey: g.guestKey, name: g.name ?? null })) } : {}),
     // Confirmed without blocking the artist's calendar (audit item 3): reception must check their day by hand.
     noLock: Boolean(a.noLockReason),
     noLockReason: a.noLockReason ?? null,
@@ -170,6 +172,9 @@ router.post(
     body("date").optional({ nullable: true }).custom(isValidDate).withMessage("Pick a date"),
     body("time").optional({ nullable: true }).matches(TIME_RE).withMessage("Pick a time"),
     body("artistId").optional({ nullable: true }).isMongoId().withMessage("Unknown artist"),
+    // A group (D67): one artist per person, {g1: id, g2: id}.
+    body("artistIds").optional({ nullable: true }).isObject().withMessage("Unknown artists"),
+    body("artistIds.*").optional({ nullable: true }).isMongoId().withMessage("Unknown artist"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -197,14 +202,16 @@ router.post(
       }
       if (!req.body.date || !req.body.time) return res.status(400).json({ error: "Pick a date and time" });
       // The artist is required (audit item 3): the confirm holds that artist's time.
-      if (!req.body.artistId) return res.status(400).json({ error: "Choose the artist who will do this booking." });
+      const artistIds = req.body.artistIds && typeof req.body.artistIds === "object" && !Array.isArray(req.body.artistIds) ? req.body.artistIds : null;
+      if (!req.body.artistId && !(artistIds && Object.keys(artistIds).length)) return res.status(400).json({ error: "Choose the artist who will do this booking." });
 
       // One transaction: lapsed holds go, the artist's blocks are checked, firm locks are
       // inserted and the status changes. Another booking in the way is 409 SLOT_TAKEN.
       const out = await booking.confirmRequestAtTime(appt._id, {
         date: req.body.date,
         time: req.body.time,
-        artistId: req.body.artistId,
+        artistId: req.body.artistId || null,
+        artistIds,
         // An older WhatsApp-ad request made before its link was wired up gets its link key now (D62).
         extraSet: appt.source?.channel === "wa_ad" && !appt.manageTokenHash ? { manageTokenHash: hashManageToken(manageToken(appt._id)) } : {},
         ...actor(req),
@@ -231,6 +238,8 @@ router.post(
           startAt: updated.startAt,
           endAt: updated.endAt,
           artist: updated.guests?.[0]?.items?.[0]?.artistName ?? null,
+          // A group: who serves each person (D67). Absent for one person.
+          ...(updated.guests.length > 1 ? { artists: updated.guests.map((g) => ({ guestKey: g.guestKey, artist: g.items[0]?.artistName ?? null })) } : {}),
           lock: out.lock,
         },
       });
@@ -471,6 +480,24 @@ router.post("/:id/approve", validateId, authorizePermission(PERMISSIONS.BOOKINGS
   }
 });
 
+// ─── POST /:id/suggest-artists — a free artist for each person of a request (D67) ──
+router.post(
+  "/:id/suggest-artists",
+  validateId,
+  authorizePermission(PERMISSIONS.BOOKINGS_MANAGE),
+  [body("date").custom(isValidDate).withMessage("Pick a date"), body("time").matches(TIME_RE).withMessage("Pick a time")],
+  async (req, res) => {
+    if (firstError(req, res)) return;
+    try {
+      const out = await booking.suggestArtistsForRequest(req.params.id, { date: req.body.date, time: req.body.time });
+      if (out.error === "CONFLICT") return conflict(res, req.params.id);
+      return res.json(out);
+    } catch (err) {
+      return sendBookingError(res, err, "suggest artists");
+    }
+  }
+);
+
 // ─── POST /:id/move (T2.17) ──────────────────────────────────────────────────
 router.post(
   "/:id/move",
@@ -491,6 +518,32 @@ router.post(
       return res.json({ booking: toStaffView(out.appt) });
     } catch (err) {
       return sendBookingError(res, err, "move the booking");
+    }
+  }
+);
+
+// ─── POST /:id/guests/:guestKey/artist — change ONE person's artist (D67) ─────
+router.post(
+  "/:id/guests/:guestKey/artist",
+  validateId,
+  authorizePermission(PERMISSIONS.BOOKINGS_MANAGE),
+  [param("guestKey").matches(/^g\d{1,2}$/).withMessage("Unknown person"), body("artistId").optional({ nullable: true }).isMongoId().withMessage("Unknown artist")],
+  async (req, res) => {
+    if (firstError(req, res)) return;
+    try {
+      const out = await booking.changeGuestArtist(req.params.id, req.params.guestKey, req.body.artistId || null, actor(req));
+      if (!out.ok) return conflict(res, req.params.id);
+      if (out.changed) {
+        await audit.record({
+          action: "booking.guest_artist_changed",
+          req,
+          target: { name: out.appt.name },
+          meta: { appointmentId: String(out.appt._id), ref: out.appt.ref, guestKey: req.params.guestKey, from: out.from, to: out.to, auto: !req.body.artistId },
+        });
+      }
+      return res.json({ booking: toStaffView(out.appt), changed: out.changed });
+    } catch (err) {
+      return sendBookingError(res, err, "change the artist");
     }
   }
 );

@@ -58,6 +58,12 @@ interface Item {
   startAt: string;
   endAt: string;
   busyUntil: string;
+  /** Which person of the booking this is (D67): a group shows one row per person. */
+  guestKey: string;
+  guestName: string | null;
+  groupSize: number;
+  groupMode: "parallel" | "series";
+  artistName: string | null;
   lockConflict: boolean;
   deposit: { kind: string; amount: number; status: string } | null;
   notes: string | null;
@@ -732,6 +738,37 @@ function NewPanel({
 }
 
 // ── A booking ────────────────────────────────────────────────────────────────
+/** One person of a group booking: their services and times, who serves them, and a way to change that (D67). */
+function GuestRow({ rows, board, canChange, onChange }: { rows: Item[]; board: Board; canChange: boolean; onChange: (artistId: string | null) => Promise<void> }) {
+  const [artistId, setArtistId] = useState("");
+  const first = rows[0];
+  const who = [...new Set(rows.map((r) => r.artistName).filter(Boolean))].join(", ") || "no artist";
+  return (
+    <div className="rounded-lg border border-stone-200 p-2.5 space-y-1.5">
+      <p className="font-medium text-stone-900">{first.name}</p>
+      {rows.map((r) => (
+        <p key={r.startAt + r.service} className="text-stone-700">
+          {time(r.startAt)}–{time(r.endAt)} · {r.service} · {rupees(r.price)}
+        </p>
+      ))}
+      <p className="text-stone-600">Artist: {who}</p>
+      {canChange && (
+        <div className="flex flex-wrap items-end gap-2">
+          <select value={artistId} onChange={(e) => setArtistId(e.target.value)} aria-label={`Artist for ${first.name}`} className="h-9 rounded-lg border border-stone-300 px-2 text-sm">
+            <option value="">Any other free artist</option>
+            {board.artists.filter((a) => !a.inactive).map((a) => (
+              <option key={a._id} value={a._id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <ActionButton label="Change" tone="light" onRun={() => onChange(artistId || null)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ItemPanel({ item, board, date, now, canAct, onClose, onDone }: { item: Item; board: Board; date: string; now: number; canAct: boolean; onClose: () => void; onDone: () => void }) {
   const navigate = useNavigate();
   const [moveTime, setMoveTime] = useState(hhmm(Date.parse(item.startAt)));
@@ -750,11 +787,31 @@ function ItemPanel({ item, board, date, now, canAct, onClose, onDone }: { item: 
           <span className="font-medium">{STATUS_LABEL[item.status]}</span>
           {item.channel === "walkin" ? " · walk-in" : item.channel === "web" ? " · booked online" : item.channel ? ` · ${item.channel}` : ""}
         </p>
-        {all.map((i) => (
-          <p key={i.startAt + i.service} className="text-stone-700">
-            {time(i.startAt)}–{time(i.endAt)} · {i.service} · {rupees(i.price)}
-          </p>
-        ))}
+        {item.groupSize > 1 ? (
+          <div className="space-y-2 pt-1">
+            <p className="text-xs text-stone-500">
+              {item.groupSize} people{item.groupMode === "series" ? " · one artist, one after another" : " · at the same time"}
+            </p>
+            {[...new Set(all.map((i) => i.guestKey))].map((key) => (
+              <GuestRow
+                key={key}
+                rows={all.filter((i) => i.guestKey === key)}
+                board={board}
+                canChange={canAct && ["confirmed", "requested", "checked_in"].includes(item.status)}
+                onChange={async (artistId) => {
+                  await post(`guests/${key}/artist`, { artistId });
+                  onDone();
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          all.map((i) => (
+            <p key={i.startAt + i.service} className="text-stone-700">
+              {time(i.startAt)}–{time(i.endAt)} · {i.service} · {rupees(i.price)}
+            </p>
+          ))
+        )}
         {item.deposit && (
           <p className="text-stone-700">
             {item.deposit.kind === "full" ? "Paid in full" : "Deposit"} {rupees(item.deposit.amount)} ({item.deposit.status}) — deducted at checkout
@@ -811,14 +868,18 @@ function ItemPanel({ item, board, date, now, canAct, onClose, onDone }: { item: 
               <p className="text-sm font-medium text-stone-800">Move</p>
               <div className="flex flex-wrap items-end gap-2 text-sm">
                 <input type="time" step={900} value={moveTime} onChange={(e) => setMoveTime(e.target.value)} className="h-9 rounded-lg border border-stone-300 px-2" />
-                <select value={moveArtist} onChange={(e) => setMoveArtist(e.target.value)} className="h-9 rounded-lg border border-stone-300 px-2">
-                  <option value="">Same artist</option>
-                  {board.artists.map((a) => (
-                    <option key={a._id} value={a._id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+                {item.groupSize > 1 ? (
+                  <span className="text-xs text-stone-500">Everyone moves together, keeping their order. Change a person's artist above.</span>
+                ) : (
+                  <select value={moveArtist} onChange={(e) => setMoveArtist(e.target.value)} className="h-9 rounded-lg border border-stone-300 px-2">
+                    <option value="">Same artist</option>
+                    {board.artists.map((a) => (
+                      <option key={a._id} value={a._id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <ActionButton label="Move" tone="light" onRun={async () => { await post("move", { startAt: istIso(date, moveTime), artistId: moveArtist || null }); onDone(); }} />
               </div>
             </div>

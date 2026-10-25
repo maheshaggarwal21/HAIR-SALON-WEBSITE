@@ -157,6 +157,9 @@ export interface Slot {
   guests: { key: string; items: { serviceId: string; name: string; artistName: string; startAt: string; endAt: string }[] }[];
 }
 
+/** How a group is served (D67): side by side, or ONE artist one after another. */
+export type GroupMode = "parallel" | "series";
+
 export interface Quote {
   lines: { guestKey: string; serviceId: string; name: string; price: number; regularPrice: number | null; durationMinutes: number | null; inPackage: boolean }[];
   subtotal: number;
@@ -174,6 +177,8 @@ export interface PublicBooking {
   endAt: string | null;
   holdExpiresAt: string | null;
   guests: { key: string; name: string | null; items: { name: string; price: number; artistName: string | null; startAt: string | null; endAt: string | null }[] }[];
+  /** Only for 2+ people. */
+  groupMode?: GroupMode;
   pricing: { subtotal: number; discount: number; total: number };
   payment: { kind: "full" | "deposit"; amount: number; status: string };
 }
@@ -181,7 +186,8 @@ export interface PublicBooking {
 /** A request made on an offer page: when it was asked for, and the package chosen (D62/D64). */
 export interface ManageExtras {
   requestedFor: { date: string; time: string | null } | null;
-  package: { name: string; price: number; services: string[] } | null;
+  /** `people` only for a group (D67): the price is for each person. */
+  package: { name: string; price: number; services: string[]; people?: number } | null;
 }
 
 export interface ManageView {

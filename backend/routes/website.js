@@ -127,6 +127,8 @@ const SETTINGS_PATHS = [
   "horizonDays",
   "requestSlaMinutes",
   "maxActiveBookingsPerPhone",
+  // People per booking (D68). 1 switches group bookings off everywhere a group is made.
+  "maxGuests",
   "contact.parkingNote",
   "media.heroVideoUrl",
   "media.heroPosterUrl",
@@ -224,6 +226,7 @@ router.patch(
     body("horizonDays").optional().isInt({ min: 1, max: 120 }),
     body("requestSlaMinutes").optional().isInt({ min: 15, max: 24 * 60 }),
     body("maxActiveBookingsPerPhone").optional().isInt({ min: 1, max: 10 }),
+    body("maxGuests").optional().isInt({ min: 1, max: 10 }).withMessage("People per booking is a whole number from 1 to 10").toInt(),
     body("contact.parkingNote")
       .optional({ nullable: true })
       .customSanitizer((v) => (v === "" ? null : v))

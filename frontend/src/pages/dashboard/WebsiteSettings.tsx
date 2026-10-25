@@ -80,6 +80,8 @@ interface Settings {
   };
   openingHours: Record<Day, Interval[]>;
   holidays: string[];
+  /** People who can book together on the website (1 to 10). 1 = no group bookings. Kept as typed; checked on save. */
+  maxGuests: number | "";
   media: {
     heroVideoUrl: string | null;
     heroPosterUrl: string | null;
@@ -126,6 +128,7 @@ export default function WebsiteSettings() {
           },
           openingHours: Object.fromEntries(DAYS.map(([k]) => [k, d.openingHours?.[k] ?? []])) as Record<Day, Interval[]>,
           holidays: d.holidays ?? [],
+          maxGuests: Number.isInteger(d.maxGuests) ? d.maxGuests : 4,
           media: {
             heroVideoUrl: d.media?.heroVideoUrl ?? null,
             heroPosterUrl: d.media?.heroPosterUrl ?? null,
@@ -208,6 +211,11 @@ export default function WebsiteSettings() {
 
   async function save(forceHolidays = false) {
     if (!form) return;
+    const people = Number(form.maxGuests);
+    if (form.maxGuests === "" || !Number.isInteger(people) || people < 1 || people > 10) {
+      setMessage({ ok: false, text: "People per booking must be a whole number from 1 to 10." });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setHolidayConflicts(null);
@@ -219,6 +227,7 @@ export default function WebsiteSettings() {
         // Half-filled before/after pairs and reviews aren't sent; they'd be refused anyway.
         body: JSON.stringify({
           ...form,
+          maxGuests: people,
           forceHolidays,
           transformations: form.transformations.filter((t) => t.before && t.after),
           media: { ...form.media, heroSlides: form.media.heroSlides.filter((x) => x.url), gallery: form.media.gallery.filter((g) => g.url) },
@@ -733,6 +742,31 @@ export default function WebsiteSettings() {
           >
             <Plus className="w-4 h-4" /> Add
           </button>
+        </div>
+      </section>
+
+      {/* People per booking (D68) */}
+      <section className="bg-white rounded-xl border border-stone-200/80 shadow-sm p-5 mb-5">
+        <h3 className="font-semibold text-stone-900 mb-1">People per booking</h3>
+        <p className="text-xs text-stone-500 mb-4">
+          How many people can book together on the website, online or from an offer page. <b>1 switches group bookings off.</b> Bookings that already have
+          several people are not affected: you can still confirm, move and change them.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={1}
+            max={10}
+            step={1}
+            inputMode="numeric"
+            aria-label="People per booking"
+            value={form.maxGuests}
+            onChange={(e) => setForm({ ...form, maxGuests: e.target.value === "" ? "" : Number(e.target.value) })}
+            className="h-10 w-24 px-3 rounded-lg border border-stone-200 bg-stone-50 text-sm tabular-nums"
+          />
+          <span className={`text-sm ${Number(form.maxGuests) <= 1 ? "text-amber-700" : "text-stone-500"}`}>
+            {Number(form.maxGuests) <= 1 ? "Group bookings are off: one person at a time." : `Up to ${form.maxGuests} people can book together.`}
+          </span>
         </div>
       </section>
 

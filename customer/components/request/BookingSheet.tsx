@@ -36,6 +36,7 @@ import { ServiceCard } from "@/components/ui/ServiceCard";
 import { readFirstTouch } from "@/components/UtmCapture";
 import { Turnstile } from "./Turnstile";
 import { useRequest } from "./RequestContext";
+import { PersonLines } from "@/components/booking/PersonLines";
 
 const STEPS = ["Who", "Services", "Artist", "Time", "Details", "Pay"] as const;
 const MAX_ITEMS = 8;
@@ -50,7 +51,12 @@ interface Guest {
   for: "her" | "him";
   name: string;
   selected: string[];
+  /** The artist this person asked for (a public address), "" = any. Used when the group chooses for each person. */
+  artist: string;
 }
+
+/** How a group picks artists (D67): match us / choose for each person / one artist, one after another. */
+type GroupChoice = "auto" | "each" | "series";
 
 interface Props {
   site: SiteInfo;
@@ -113,12 +119,17 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
   const now = openedAt;
 
   const [step, setStep] = useState(0);
-  const [guests, setGuests] = useState<Guest[]>([{ for: "her", name: "", selected: [] }]);
+  const [guests, setGuests] = useState<Guest[]>([{ for: "her", name: "", selected: [], artist: "" }]);
   const isGroup = guests.length > 1;
   const [active, setActive] = useState(0);
   const [category, setCategory] = useState<string | null>(null);
   const [packageSlug, setPackageSlug] = useState<string | null>(null);
   const [artistSlug, setArtistSlug] = useState("");
+  const [groupChoice, setGroupChoice] = useState<GroupChoice>("auto");
+  /** Can ONE artist do everyone's services? null = not known yet. (Only asked for groups.) */
+  const [seriesPossible, setSeriesPossible] = useState<boolean | null>(null);
+  /** Side by side found nothing but one artist could do everyone one after another. */
+  const [seriesHint, setSeriesHint] = useState(false);
   const [date, setDate] = useState<string | null>(null);
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -205,7 +216,7 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
 
   const reset = useCallback(() => {
     setStep(0);
-    setGuests([{ for: "her", name: "", selected: [] }]);
+    setGuests([{ for: "her", name: "", selected: [], artist: "" }]);
     setActive(0);
     setPackageSlug(null);
     setDate(null);
@@ -271,13 +282,34 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
 
   const guestPayload = () =>
     guests.map((x, i) => ({ for: x.for, services: extrasOf(x, i), ...(i > 0 && x.name.trim() ? { name: x.name.trim() } : {}) }));
-  const availabilityQuery = (d: string) => {
+  const groupSeries = isGroup && groupChoice === "series";
+  /** The artist each person asked for, by position: "" = any. One artist for everyone in series; none when we match them. */
+  const askedArtists = () => guests.map((x) => (!isGroup ? "" : groupChoice === "each" ? x.artist : groupSeries ? artistSlug : ""));
+  /** What the booking is sent with: each person's artist (D67). One person keeps the single artist field. */
+  const bookingGuests = () => guestPayload().map((x, i) => (askedArtists()[i] ? { ...x, artist: askedArtists()[i] } : x));
+  const availabilityQuery = (d: string, forMode: GroupChoice = groupChoice) => {
     const q = new URLSearchParams({ date: d });
     guests.forEach((x, i) => q.append("g", extrasOf(x, i).join(",")));
     if (pkg) q.set("package", pkg.slug);
-    if (artistSlug && !isGroup) q.set("artist", artistSlug);
+    if (!isGroup) {
+      if (artistSlug) q.set("artist", artistSlug);
+    } else {
+      if (forMode === "series") q.set("mode", "series");
+      if (forMode === "each") guests.forEach((x) => q.append("a", x.artist));
+      if (forMode === "series" && artistSlug) guests.forEach(() => q.append("a", artistSlug));
+    }
     return q.toString();
   };
+  /** Minutes one person's services take, or null if any time is not confirmed yet. */
+  const minutesOf = (x: Guest, idx: number) => {
+    const ids = [...extrasOf(x, idx), ...(idx === 0 ? pkg?.items.map((i) => i.id) ?? [] : [])];
+    const times = ids.map((id) => optionIndex.get(id)?.card.options.find((o) => o.id === id)?.durationMinutes ?? null);
+    return times.length && times.every((t): t is number => t != null) ? times.reduce((n, t) => n + t, 0) : null;
+  };
+  const durations = guests.map(minutesOf);
+  const sideBySideMins = durations.every((m) => m != null) ? Math.max(...(durations as number[])) : null;
+  const seriesMins = durations.every((m) => m != null) ? (durations as number[]).reduce((n, m) => n + m, 0) : null;
+  const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`);
 
   // ── Actions ──────────────────────────────────────────────────────────────
   const toggle = (id: string) => {
@@ -304,6 +336,7 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
     setDate(d);
     setSlot(null);
     setSlots(null);
+    setSeriesHint(false);
     setSlotsLoading(true);
     setError("");
     try {
@@ -312,6 +345,8 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
       if (!res.ok) throw new Error(data.message || "Couldn't load times.");
       setSlots(data.slots);
       setPatchDelay(Boolean(data.patchTestDelay));
+      setSeriesHint(data.hint === "series_available");
+      if (typeof data.seriesPossible === "boolean") setSeriesPossible(data.seriesPossible);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load times.");
       setSlots([]);
@@ -369,7 +404,8 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
       bookingToken: verified,
       phone: phone.replace(/\D/g, ""),
       name: name.trim(),
-      guests: guestPayload(),
+      guests: bookingGuests(),
+      ...(groupSeries ? { groupMode: "series" } : {}),
       ...(pkg ? { packageSlug: pkg.slug } : {}),
       startAt: slot.startAt,
       ...(artistSlug && !isGroup ? { artistSlug } : {}),
@@ -465,14 +501,10 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
   const onlineArtists = artists.filter((a) => a.onlineBookable).length;
   const lastOne = (s: Slot) => !artistSlug && guests.length === 1 && onlineArtists > 1 && s.remaining === 1;
 
-  /**
-   * A group is served in parallel, so each person needs a different artist: the
-   * sheet skips the artist step and the system matches each guest with whoever
-   * is free (D46). One person keeps the choice.
-   */
-  const flow: readonly string[] = isGroup ? STEPS.filter((x) => x !== "Artist") : STEPS;
-  const stepAfter = (from: number) => (isGroup && from === 1 ? 3 : from + 1);
-  const stepBefore = (from: number) => (isGroup && from === 3 ? 1 : from - 1);
+  /** Every step, for one person or a group: a group chooses how it is served on the Artist step (D67, supersedes D46). */
+  const flow: readonly string[] = STEPS;
+  const stepAfter = (from: number) => from + 1;
+  const stepBefore = (from: number) => from - 1;
 
   const canNext = step === 1 ? everyoneHasSomething : step === 3 ? Boolean(slot) : true;
   async function next() {
@@ -489,6 +521,32 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
     }
     setStep(stepAfter(step));
   }
+
+  // On the Artist step of a group, ask once whether ONE artist could do everyone's services; the third choice needs it.
+  const firstDay = dates[0] ?? null;
+  const askKey = isGroup && step === 2 && firstDay ? `${firstDay}|${availabilityQuery(firstDay, "series")}` : null;
+  useEffect(() => {
+    if (!askKey || !isOpen) return;
+    let alive = true;
+    fetch(`/api/public/availability?${askKey.split("|")[1]}`)
+      .then((r) => r.json())
+      .then((d) => alive && typeof d.seriesPossible === "boolean" && setSeriesPossible(d.seriesPossible))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [askKey, isOpen]);
+
+  /** Any change to who serves whom invalidates the times already shown. */
+  const changedArtists = () => {
+    setSlot(null);
+    setSlots(null);
+    setDate(null);
+    setQuote(null);
+    setAlts([]);
+    setSeriesHint(false);
+    setError("");
+  };
 
   const holdLeft = made?.booking.holdExpiresAt ? Math.max(0, Date.parse(made.booking.holdExpiresAt) - nowMs) : 0;
   const resendIn = Math.max(0, Math.ceil((resendAt - nowMs) / 1000));
@@ -564,7 +622,7 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
                 {cfg.maxGuests > 1 && (
                   <div className="rounded-[var(--radius-card)] border border-line p-4">
                     <div className="font-semibold">Me and others</div>
-                    <div className="text-[14px] text-ink-muted">Up to {cfg.maxGuests} people at the same time, with different artists</div>
+                    <div className="text-[14px] text-ink-muted">Up to {cfg.maxGuests} people. Choose each person&apos;s artist, or one artist for everyone, one after another.</div>
                     <div className="mt-3 flex items-center gap-3">
                       <button
                         type="button"
@@ -580,7 +638,7 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
                         type="button"
                         aria-label="More people"
                         disabled={guests.length >= cfg.maxGuests}
-                        onClick={() => setGuests((x) => [...x, { for: "her", name: "", selected: [] }])}
+                        onClick={() => setGuests((x) => [...x, { for: "her", name: "", selected: [], artist: "" }])}
                         className="flex h-11 w-11 items-center justify-center rounded-full border border-line disabled:opacity-40"
                       >
                         <Plus className="h-4 w-4" />
@@ -668,19 +726,96 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
           ) : step === 2 ? (
             <div>
               <h2 className="font-serif text-[30px] leading-tight">Who would you like?</h2>
-              <div className="mt-5 grid gap-2" role="radiogroup" aria-label="Artist">
-                <ArtistOption selected={!artistSlug} onClick={() => setArtistSlug("")} title="Any available" hint="Most times to choose from" />
-                {artists
-                  .filter((a) => a.slug && a.onlineBookable)
-                  .map((a) => (
-                    <ArtistOption key={a.id} selected={artistSlug === a.slug} onClick={() => setArtistSlug(a.slug!)} title={a.name} hint={a.specialties.slice(0, 2).join(" · ") || null} />
-                  ))}
-              </div>
+              {!isGroup ? (
+                <div className="mt-5 grid gap-2" role="radiogroup" aria-label="Artist">
+                  <ArtistOption selected={!artistSlug} onClick={() => setArtistSlug("")} title="Any available" hint="Most times to choose from" />
+                  {artists
+                    .filter((a) => a.slug && a.onlineBookable)
+                    .map((a) => (
+                      <ArtistOption key={a.id} selected={artistSlug === a.slug} onClick={() => setArtistSlug(a.slug!)} title={a.name} hint={a.specialties.slice(0, 2).join(" · ") || null} />
+                    ))}
+                </div>
+              ) : (
+                <>
+                  <div className="mt-5 grid gap-2" role="radiogroup" aria-label="How you would like to be served">
+                    <ArtistOption
+                      selected={groupChoice === "auto"}
+                      onClick={() => { setGroupChoice("auto"); changedArtists(); }}
+                      title="Match us automatically"
+                      hint="Each of you gets a free artist, all at the same time. Most times to choose from."
+                    />
+                    <ArtistOption
+                      selected={groupChoice === "each"}
+                      onClick={() => { setGroupChoice("each"); changedArtists(); }}
+                      title="Choose for each person"
+                      hint="Pick an artist for each of you, or leave it on Any. All at the same time."
+                    />
+                    {seriesPossible !== false && (
+                      <ArtistOption
+                        selected={groupChoice === "series"}
+                        onClick={() => { setGroupChoice("series"); changedArtists(); }}
+                        title="Same artist for everyone, one after another"
+                        hint={seriesMins != null && sideBySideMins != null ? `Takes about ${hm(seriesMins)} in all, instead of about ${hm(sideBySideMins)} side by side.` : "Takes longer in all than being served side by side."}
+                      />
+                    )}
+                  </div>
+                  {seriesPossible === false && <p className="mt-2 text-[13px] text-ink-muted">One artist can&apos;t do everyone&apos;s services, so one after another isn&apos;t offered.</p>}
+
+                  {groupChoice === "each" && (
+                    <div className="mt-5 space-y-3">
+                      {guests.map((x, i) => (
+                        <label key={i} className="block">
+                          <span className="text-[13px] font-medium text-ink-muted">{i === 0 ? "You" : x.name.trim() || `Guest ${i + 1}`}</span>
+                          <select
+                            value={x.artist}
+                            onChange={(e) => { setGuests((all) => all.map((y, k) => (k === i ? { ...y, artist: e.target.value } : y))); changedArtists(); }}
+                            className="mt-1.5 h-12 w-full rounded-[var(--radius-control)] border border-line bg-ivory-2 px-3 text-[16px]"
+                          >
+                            <option value="">Any artist</option>
+                            {artists.filter((a) => a.slug && a.onlineBookable).map((a) => (
+                              <option key={a.id} value={a.slug!}>
+                                {a.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                      {(() => {
+                        const named = guests.map((x) => x.artist).filter(Boolean);
+                        const dup = named.find((n, i) => named.indexOf(n) !== i);
+                        const who = artists.find((a) => a.slug === dup)?.name;
+                        return dup ? (
+                          <p className="text-[13px] text-ink-muted">
+                            {who ?? "That artist"} can&apos;t do two people at the same moment. Choose different artists, or pick &quot;one after another&quot;.
+                          </p>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+
+                  {groupChoice === "series" && (
+                    <div className="mt-5 grid gap-2" role="radiogroup" aria-label="Artist for everyone">
+                      <ArtistOption selected={!artistSlug} onClick={() => { setArtistSlug(""); changedArtists(); }} title="Any available" hint="Whoever can do all your services" />
+                      {artists.filter((a) => a.slug && a.onlineBookable).map((a) => (
+                        <ArtistOption key={a.id} selected={artistSlug === a.slug} onClick={() => { setArtistSlug(a.slug!); changedArtists(); }} title={a.name} hint={a.specialties.slice(0, 2).join(" · ") || null} />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ) : step === 3 ? (
             <div>
               <h2 className="font-serif text-[30px] leading-tight">When suits you?</h2>
-              {isGroup && <p className="mt-2 text-[14px] text-ink-muted">We&apos;ll match each of you with a free artist, all at the same time.</p>}
+              {isGroup && (
+                <p className="mt-2 text-[14px] text-ink-muted">
+                  {groupSeries
+                    ? "One artist for everyone, one after another."
+                    : groupChoice === "each"
+                      ? "Each of you with the artist you chose, all at the same time."
+                      : "We'll match each of you with a free artist, all at the same time."}
+                </p>
+              )}
               <div className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 pb-2 md:-mx-6 md:px-6" role="group" aria-label="Day">
                 {dates.map((d) => {
                   const p = dayParts(d);
@@ -710,6 +845,37 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
                       {fmtTime(a.startAt)}
                     </Chip>
                   ))}
+                </div>
+              )}
+              {seriesHint && !groupSeries && seriesPossible !== false && (
+                <div className="mt-5 rounded-[var(--radius-card)] border border-gold-deep bg-sand/40 p-4 text-[15px]">
+                  <p>Nothing is free side by side that day. One artist could do all of you, one after another.</p>
+                  <button
+                    type="button"
+                    className="mt-2 text-[14px] font-semibold text-gold-deep underline underline-offset-2"
+                    onClick={() => {
+                      setGroupChoice("series");
+                      const named = [...new Set(guests.map((x) => x.artist).filter(Boolean))];
+                      setArtistSlug(named.length === 1 ? named[0] : "");
+                      setSlot(null);
+                      setSeriesHint(false);
+                      if (date) {
+                        // The next render holds the new choice; load with it now.
+                        const q = new URLSearchParams({ date, mode: "series" });
+                        guests.forEach((x, i) => q.append("g", extrasOf(x, i).join(",")));
+                        if (pkg) q.set("package", pkg.slug);
+                        if (named.length === 1) guests.forEach(() => q.append("a", named[0]));
+                        setSlotsLoading(true);
+                        fetch(`/api/public/availability?${q.toString()}`)
+                          .then((r) => r.json())
+                          .then((d) => { setSlots(d.slots ?? []); setPatchDelay(Boolean(d.patchTestDelay)); })
+                          .catch(() => setSlots([]))
+                          .finally(() => setSlotsLoading(false));
+                      }
+                    }}
+                  >
+                    Show times for one after another
+                  </button>
                 </div>
               )}
               {!date ? (
@@ -756,9 +922,15 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
               )}
               {slot && (
                 <div className="mt-5 rounded-[var(--radius-card)] border border-line bg-ivory-2 p-3 text-[14px]">
+                  {slot.guests.length > 1 && (
+                    <div className="mb-2 flex justify-between border-b border-line pb-2 font-semibold">
+                      <span>Starts {fmtTime(slot.startAt)}</span>
+                      <span className="text-ink-muted">done by {fmtTime(slot.endAt)}</span>
+                    </div>
+                  )}
                   {slot.guests.map((gg, i) => (
                     <div key={gg.key}>
-                      {slot.guests.length > 1 && <div className="font-semibold">{i === 0 ? "You" : guests[i]?.name || `Guest ${i + 1}`}</div>}
+                      {slot.guests.length > 1 && <div className="mt-1 font-semibold">{i === 0 ? "You" : guests[i]?.name.trim() || `Guest ${i + 1}`}</div>}
                       {gg.items.map((it) => (
                         <div key={it.serviceId + it.startAt} className="flex justify-between gap-3">
                           <span>{it.name}</span>
@@ -984,6 +1156,12 @@ function Done({ booking, manageToken, site, salonWa }: { booking: PublicBooking;
             </span>
           </div>
         )}
+        {booking.guests.length > 1 ? (
+          <div className="mt-3 border-t border-line pt-3">
+            <p className="mb-2 text-ink-muted">{booking.groupMode === "series" ? "One artist, one after another." : "Everyone at the same time."}</p>
+            <PersonLines guests={booking.guests} />
+          </div>
+        ) : (
         <ul className="mt-3 space-y-1 border-t border-line pt-3">
           {booking.guests.flatMap((g) =>
             g.items.map((i, idx) => (
@@ -997,6 +1175,7 @@ function Done({ booking, manageToken, site, salonWa }: { booking: PublicBooking;
             ))
           )}
         </ul>
+        )}
         <div className="mt-3 flex justify-between border-t border-line pt-3 font-semibold">
           <span>Paid online</span>
           <span className="tabular">{rupees(booking.payment.amount)}</span>

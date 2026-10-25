@@ -64,6 +64,7 @@ const ACTIONS = [
   "booking.walkin_created",
   "booking.created_by_staff",
   "booking.moved",
+  "booking.guest_artist_changed",
   "booking.checked_in",
   "booking.finished",
   "booking.refund_setting_changed",

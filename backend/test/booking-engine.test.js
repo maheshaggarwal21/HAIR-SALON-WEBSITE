@@ -178,7 +178,7 @@ async function selectionOf(serviceIds) {
   return booking.prepareSelection([{ for: "her", services: serviceIds }]);
 }
 
-test("group: a chosen artist is ignored — each guest gets a different free artist at the same time (D46)", async () => {
+test("group: one artist passed for everybody is ignored — each guest gets a different free artist at the same time (people name their own: D67, test/group-engine.test.js)", async () => {
   await Artist.updateOne({ name: "Walk In Only" }, { $set: { onlineBookable: true, gender: "female" } });
   const selection = await booking.prepareSelection([{ for: "her", services: [ids.cut] }, { for: "her", services: [ids.cut] }]);
   const withMansi = await booking.findSlots({ date: DATE, selection, artistId: ids.mansi });

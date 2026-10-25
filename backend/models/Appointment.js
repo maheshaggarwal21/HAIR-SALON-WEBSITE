@@ -85,6 +85,8 @@ const guestSchema = new mongoose.Schema(
     gender: { type: String, enum: ["female", "male", "other", "prefer_not", null], default: null },
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", default: null },
     items: { type: [itemSchema], default: [] },
+    /** The artist this guest asked for, if any (group bookings): a wish, used by the slot search. */
+    preferredArtistId: { type: mongoose.Schema.Types.ObjectId, ref: "Artist", default: null },
   },
   { _id: false }
 );
@@ -176,6 +178,17 @@ const appointmentSchema = new mongoose.Schema(
     },
     /** Walk-in forced over a lock (E2): staff must move one of the two. */
     lockConflict: { type: Boolean, default: false },
+    /**
+     * How a group is laid out in time. "parallel": each guest from the same start with their own
+     * artist (the default). "series": ONE artist for everyone, guest after guest. Kept in step with the
+     * artists on the items (series only while everyone has the same artist).
+     */
+    groupMode: { type: String, enum: ["parallel", "series"], default: "parallel" },
+    /**
+     * Counts every change of the booking's plan (times, artists, locks). A plan built from a copy that
+     * has since changed is refused instead of overwriting the newer change (applyGroupPlan).
+     */
+    planRev: { type: Number, default: 0 },
     /**
      * Set when a request was confirmed WITHOUT taking a slot lock (a package with no stored time, or
      * none of its services on the menu), with the reason. Reception sees it on the Requests page,
