@@ -15,6 +15,7 @@
     "migrate:m6": "node migrations/m6-import-catalogue.js",
     "migrate:m7": "node migrations/m7-website-menu.js",
     "migrate:m8": "node migrations/m8-payment-id-index.js",
+    "migrate:m9": "node migrations/m9-emergency-default-duration.js",
     "export:catalogue": "node scripts/exportCatalogue.js",
     "find:place": "node scripts/findPlace.js"
   },
