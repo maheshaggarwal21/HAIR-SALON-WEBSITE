@@ -55,7 +55,7 @@ export function OfferPageView({ offer, site }: { offer: OfferPageData; site: Sit
         </div>
       </section>
 
-      {/* Every "Send a request" button on this page scrolls here (components/request/RequestContext.tsx). */}
+      {/* Every "Book a request" button on this page scrolls here (components/request/RequestContext.tsx). */}
       <section id={OFFER_FORM_ID} className="scroll-mt-20 bg-ivory px-4 py-14 md:px-16 md:py-24">
         <div className="mx-auto max-w-[640px]">
           {live && site ? (
