@@ -566,3 +566,18 @@ test("cancelling a confirmed unpaid request (salon or customer) sends request_ca
   assert.equal(await NotificationLog.countDocuments({ appointmentId: id2, type: "request_cancelled" }), 1);
   assert.equal(await NotificationLog.countDocuments({ type: "booking_cancelled" }), 0);
 });
+
+// ─── "Any other query" typed with a request (offer page, bundle chosen) ─────
+
+test("a question typed with a request is kept as the customer's note (300 characters), shown to staff, and is optional", async () => {
+  const withNote = await request({ query: "  Can my mother come along?  " });
+  assert.equal(withNote.status, 201);
+  assert.equal((await Appointment.findOne({ ref: withNote.body.ref }).lean()).notes, "Can my mother come along?");
+  const without = await request();
+  assert.equal((await Appointment.findOne({ ref: without.body.ref }).lean()).notes, null, "unchanged when nothing is typed");
+  const blank = await request({ query: "   " });
+  assert.equal((await Appointment.findOne({ ref: blank.body.ref }).lean()).notes, null);
+  const tooLong = await request({ query: "x".repeat(301) });
+  assert.equal(tooLong.status, 400);
+  assert.equal(tooLong.body.error, "VALIDATION");
+});

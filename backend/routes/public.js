@@ -659,6 +659,7 @@ router.use(require("./publicBooking"));
 // Offer landing pages and WhatsApp-ad requests (D62). Unpaid requests; the paid booking above is unchanged.
 router.use(require("./publicOfferPages"));
 router.use(require("./publicWaRequest"));
+router.use(require("./publicLeads"));
 
 module.exports = router;
 module.exports.dateProblem = dateProblem;

@@ -70,6 +70,32 @@ async function alertNewRequest(appt) {
   }
 }
 
+/** A lead (offer page with no bundle chosen, or the landing page): the owner is told, with the number to call back. */
+function leadAlertText(lead) {
+  const s = lead.source || {};
+  const where = s.channel === "offer_page" ? `offer page${s.offerSlug ? ` (${s.offerSlug})` : ""}` : "landing page";
+  const lines = [`📩 New lead from the ${where}`, `${lead.name} · ${lead.phone}`];
+  if (lead.query) lines.push(`Question: ${lead.query}`);
+  if (s.campaign) lines.push(`From: ${s.campaign}`);
+  lines.push("", "Call or WhatsApp them. The list is in the staff app → Bookings → Leads.");
+  return lines.join("\n");
+}
+
+/** @returns {Promise<{sent: number, failed: number}>} Never throws. */
+async function alertNewLead(lead) {
+  if (!telegram.isConfigured()) return { sent: 0, failed: 0 };
+  try {
+    const owners = await User.find({ role: "owner", isActive: true, telegramChatId: { $ne: null } }, { telegramChatId: 1 }).lean();
+    const text = leadAlertText(lead);
+    const results = await Promise.allSettled(owners.map((o) => telegram.sendMessage(o.telegramChatId, text)));
+    const sent = results.filter((r) => r.status === "fulfilled" && r.value?.ok).length;
+    return { sent, failed: results.length - sent };
+  } catch (err) {
+    console.error("[bookingAlerts] lead alert failed:", err.message);
+    return { sent: 0, failed: 1 };
+  }
+}
+
 const { SALON_TZ } = require("./time");
 
 /**
@@ -170,4 +196,4 @@ async function alertReassigned({ artistName, why, moved, flagged }) {
   }
 }
 
-module.exports = { alertReassigned, alertNewRequest, requestAlertText, alertBooking, bookingAlertText, formatInstant, peopleSuffix, whenText };
+module.exports = { alertReassigned, alertNewRequest, alertNewLead, leadAlertText, requestAlertText, alertBooking, bookingAlertText, formatInstant, peopleSuffix, whenText };

@@ -807,6 +807,7 @@ app.use("/api/services", authenticate, require("./routes/services"));
 app.use("/api/bookings", authenticate, require("./routes/bookings"));
 app.use("/api/schedules", authenticate, require("./routes/schedules"));
 app.use("/api/data-fixes", authenticate, require("./routes/dataFixes"));
+app.use("/api/leads", authenticate, require("./routes/leads"));
 app.use("/api/payment-id-check", authenticate, require("./routes/paymentIdCheck"));
 app.use("/api/counter", authenticate, require("./routes/counter"));
 app.use("/api/website", authenticate, require("./routes/website"));
