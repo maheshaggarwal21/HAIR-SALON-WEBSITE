@@ -78,6 +78,8 @@ const ACTIONS = [
   "migration.applied",
   "visit.contact_corrected",
   "datafix.resolved",
+  // Leads (offer pages and the landing page)
+  "lead.updated",
   // Payment id check (audit #1, D70)
   "payment.id_unverified",
   "payment.id_check_mode_changed",

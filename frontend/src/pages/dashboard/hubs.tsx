@@ -8,7 +8,7 @@
  */
 
 import { lazy } from "react";
-import { CalendarClock, CalendarDays, Clapperboard, Globe, Inbox, Megaphone, RotateCcw, Store, CalendarCheck } from "lucide-react";
+import { CalendarClock, CalendarDays, Clapperboard, Globe, Inbox, Megaphone, RotateCcw, Store, CalendarCheck, UserPlus } from "lucide-react";
 import HubPage from "@/components/HubPage";
 
 const WebsiteSettings = lazy(() => import("@/pages/dashboard/WebsiteSettings"));
@@ -19,6 +19,7 @@ const TodayBoard = lazy(() => import("@/pages/dashboard/TodayBoard"));
 const BookingRequests = lazy(() => import("@/pages/dashboard/BookingRequests"));
 const OnlineBooking = lazy(() => import("@/pages/dashboard/OnlineBooking"));
 const Refunds = lazy(() => import("@/pages/dashboard/Refunds"));
+const Leads = lazy(() => import("@/pages/dashboard/Leads"));
 
 export function WebsiteHub() {
   return (
@@ -41,10 +42,11 @@ export function BookingsHub() {
     <HubPage
       title="Bookings"
       icon={CalendarCheck}
-      intro="Today's chairs, requests from the website, who can be booked online, and refunds owed."
+      intro="Today's chairs, requests and leads from the website, who can be booked online, and refunds owed."
       tabs={[
         { id: "today", label: "Today", blurb: "Timeline per artist: walk-ins, check-in, move, no-show.", icon: CalendarDays, permission: "bookings.view", Component: TodayBoard },
         { id: "requests", label: "Website requests", blurb: "People who asked for a slot on the website.", icon: Inbox, permission: "bookings.view", Component: BookingRequests },
+        { id: "leads", label: "Leads", blurb: "People who left their name and number without choosing a package: call them back.", icon: UserPlus, permission: "bookings.view", Component: Leads },
         { id: "online", label: "Online booking", blurb: "Which artists the website may book, their hours and leave.", icon: CalendarClock, permission: "bookings.view", Component: OnlineBooking },
         { id: "refunds", label: "Refunds", blurb: "Money owed back to online customers.", icon: RotateCcw, permission: "bookings.refund", Component: Refunds },
       ]}

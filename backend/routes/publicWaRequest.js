@@ -17,6 +17,7 @@
  *   - phone numbers normalised (+91, 0, spaces) so one person is one number, and an exact
  *     repeat of the same slot returns the first request instead of making a second;
  *   - past, too-soon, closed-day, off-grid and too-late-for-the-services times are refused.
+ * An optional `query` ("any other query") is kept as the booking note the salon sees.
  * Prices are computed here from the menu, never taken from the browser, and a discount is
  * never applied: the offer's words are recorded and reception applies it by hand.
  */
@@ -44,7 +45,7 @@ const { cleanUtm } = require("../utils/utm");
 const router = express.Router();
 const HOUR = 60 * 60 * 1000;
 const MAX_ITEMS = 8;
-const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "utm", "date", "time", "name", "phone", "website", "people", "guestNames"]);
+const FIELDS = new Set(["services", "offerSlug", "packageSlug", "campaign", "utm", "date", "time", "name", "phone", "website", "people", "guestNames", "query"]);
 const NAME_RE = /^[\p{L}\p{M} .'-]+$/u;
 
 const ipLimit = mongoRateLimit({ name: "wa-request-ip", windowMs: HOUR, max: 10 });
@@ -79,6 +80,8 @@ const validators = [
     .custom((v) => v !== null)
     .withMessage("Enter a 10-digit mobile number."),
   body("website").optional({ nullable: true }).isString().isLength({ max: 300 }),
+  // "Any other query" typed with the request: kept as the customer's note, shown to staff (same 300 characters as a booking note).
+  body("query").optional({ nullable: true }).isString().trim().isLength({ max: 300 }).withMessage("Keep your question under 300 characters."),
   // How many people (D67). The salon's own limit is checked in the handler; the price is never taken from the browser.
   body("people").optional({ nullable: true }).isInt({ min: 1, max: 10 }).withMessage("Choose how many people.").toInt(),
   body("guestNames").optional({ nullable: true }).isArray({ max: 9 }).withMessage("Names go in a list."),
@@ -233,6 +236,7 @@ router.post("/requests/wa", onlyKnownFields, ipLimit, validators, async (req, re
         ...Array.from({ length: people - 1 }, (_, n) => ({ guestKey: `g${n + 2}`, name: guestNames[n] || null, gender: null, items: items.map((i) => ({ ...i })) })),
       ],
       requestedWindow: { date: b.date, window: wa.windowFor(settings, b.time), time: b.time },
+      notes: typeof b.query === "string" && b.query.trim() ? b.query.trim() : null,
       // Unpaid, and no discount applied: the price is the menu price; reception applies the offer by hand.
       pricing: { subtotal, discount: 0, total: subtotal, packageId: null },
       deposit: { required: false, amount: 0, status: "none" },

@@ -4,6 +4,11 @@
  * WaRequestForm — the unpaid "request a time" form (D62), used on offer pages and on
  * /book?src=wa. Day and time, name, phone. No payment step, no code.
  *
+ * Two outcomes, decided by one thing: whether a bundle is chosen.
+ *   - bundle chosen (or an offer with fixed services): day and time are asked and it is sent as a REQUEST (Website requests);
+ *   - an offer with bundles and NONE chosen: no day or time, and it is sent as a LEAD (Bookings → Leads): name, number
+ *     and the question. Either way the button says "Send a request" and "Any other query" is optional.
+ *
  * What it sends is only what the customer typed plus WHICH services (ids from the server's
  * own menu or the offer). The server decides the price and checks the time; this form is a
  * convenience, never the authority. The hidden "website" box is a trap for bots: people
@@ -20,6 +25,7 @@ import { addDays, clock, dayParts, isOpenOn, nowMinutesIST, rupees, todayIST, wh
 import type { OfferPackage, SiteInfo } from "@/lib/types";
 import { pixelHeaders, track, trackOnce } from "@/lib/pixel";
 import { readFirstTouch } from "@/components/UtmCapture";
+import { postLead, QUERY_MAX } from "@/lib/leads";
 
 const DAYS_SHOWN = 14;
 const STEP = 30;
@@ -98,9 +104,13 @@ export function WaRequestForm({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState((initialPhone ?? "").replace(/\D/g, "").slice(-10));
   const [trap, setTrap] = useState("");
+  const [query, setQuery] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
+  const [leadSent, setLeadSent] = useState(false);
+  // An offer with bundles and none chosen is a lead, not a request.
+  const leadMode = Boolean(packages?.length) && !chosen;
 
   // How many people (D67). 1 = the form as it always was: nothing extra is sent.
   const maxPeople = Math.max(1, site.onlineBooking?.maxGuests ?? 1);
@@ -115,7 +125,10 @@ export function WaRequestForm({
   const phoneOk = /^[6-9]\d{9}$/.test(phoneDigits);
   const needsPick = !offerSlug && !fixedServices;
   const namesOk = guestNames.slice(0, people - 1).every((n) => !n.trim() || /^[\p{L}\p{M} .'-]{2,60}$/u.test(n.trim()));
-  const ready = Boolean(date && time && name.trim().length >= 2 && phoneOk && namesOk && (!needsPick || picked.length > 0) && (!packages?.length || chosen)) && !sending;
+  const nameFine = name.trim().length >= 2;
+  const ready = leadMode
+    ? nameFine && phoneOk && !sending
+    : Boolean(date && time && nameFine && phoneOk && namesOk && (!needsPick || picked.length > 0)) && !sending;
 
   // Meta Pixel: the first touch inside the form is the request STARTED (InitiateCheckout),
   // once per page view. Pointer as well as focus: Safari doesn't focus a tapped button.
@@ -129,6 +142,14 @@ export function WaRequestForm({
   async function submit() {
     setSending(true);
     setError("");
+    if (leadMode) {
+      const r = await postLead({ name, phone: phoneDigits, query, source: "offer_page", offerSlug, campaign, trap });
+      setSending(false);
+      if (!r.ok) return setError(r.message);
+      if (!r.duplicate) track("Lead", { content_name: offerSlug ?? campaign ?? "Lead" });
+      setLeadSent(true);
+      return;
+    }
     const utm = readFirstTouch();
     try {
       const res = await fetch("/api/public/requests/wa", {
@@ -143,6 +164,7 @@ export function WaRequestForm({
           name: name.trim(),
           phone: phoneDigits,
           website: trap,
+          ...(query.trim() ? { query: query.trim() } : {}),
           ...(people > 1 ? { people, guestNames: Array.from({ length: people - 1 }, (_, i) => (guestNames[i] ?? "").trim()) } : {}),
         }),
       });
@@ -161,6 +183,24 @@ export function WaRequestForm({
     } finally {
       setSending(false);
     }
+  }
+
+  if (leadSent) {
+    const wa = whatsappHref(site.contact.whatsapp, "Hi, I just left my details on your offer page.");
+    return (
+      <div role="status" className="rounded-[var(--radius-card)] border border-line bg-ivory-2 p-6 md:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Request sent</p>
+        <h3 className="mt-3 font-serif text-[30px] leading-tight md:text-[38px]">Thank you, {name.trim().split(" ")[0] || "and welcome"}.</h3>
+        <p className="mt-3 text-[16px] leading-[1.6]">We have your details and will call or WhatsApp you soon. Nothing is booked or paid.</p>
+        {wa && (
+          <div className="mt-5">
+            <Button variant="whatsapp" href={wa} target="_blank" rel="noreferrer">
+              Message us on WhatsApp
+            </Button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (result) {
@@ -224,6 +264,7 @@ export function WaRequestForm({
               );
             })}
           </div>
+          {leadMode && <p className="mt-3 text-[14px] text-ink-muted">Not sure yet? You can skip this and just leave your number below. We will call you.</p>}
         </fieldset>
       )}
 
@@ -258,6 +299,7 @@ export function WaRequestForm({
         </div>
       )}
 
+      {!leadMode && (
       <fieldset className="min-w-0">
         <legend className={label}>Day</legend>
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -283,8 +325,9 @@ export function WaRequestForm({
           })}
         </div>
       </fieldset>
+      )}
 
-      {date && (
+      {!leadMode && date && (
         <fieldset className="min-w-0">
           <legend className={label}>Time</legend>
           {times.length ? (
@@ -307,7 +350,7 @@ export function WaRequestForm({
         </fieldset>
       )}
 
-      {maxPeople > 1 && (
+      {!leadMode && maxPeople > 1 && (
         <fieldset className="min-w-0">
           <legend className={label}>How many people?</legend>
           <div className="mt-2 flex items-center gap-3">
@@ -376,6 +419,18 @@ export function WaRequestForm({
         </label>
       </div>
 
+      <label className={`${label} block`}>
+        Any other query (optional)
+        <textarea
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          maxLength={QUERY_MAX}
+          rows={3}
+          placeholder="e.g. Can my mother come along? Do you do bridal trials?"
+          className="mt-2 w-full rounded-[var(--radius-control)] border border-line bg-ivory px-4 py-3 text-[16px] outline-none focus:border-gold-deep"
+        />
+      </label>
+
       {/* Bot trap: invisible to people (off-screen, not focusable, ignored by password managers). */}
       <div aria-hidden className="pointer-events-none absolute -left-[9999px] top-0 h-0 w-0 overflow-hidden opacity-0">
         <label>
@@ -390,10 +445,12 @@ export function WaRequestForm({
         </p>
       )}
       <Button type="submit" className="w-full" disabled={!ready}>
-        {sending ? "Sending…" : "Send my request"}
+        {sending ? "Sending…" : "Send a request"}
       </Button>
       <p className="text-[13px] leading-[1.5] text-ink-muted">
-        This is a request, not a booking. We confirm it on WhatsApp, and you pay at the salon after your visit. By sending it you agree that we message you on WhatsApp about this visit (confirmation, any change and a reminder). We will use your number only for this visit.
+        {leadMode
+          ? "This is not a booking. We will call or WhatsApp you about your enquiry only, and we do not send offers unless you ask."
+          : "This is a request, not a booking. We confirm it on WhatsApp, and you pay at the salon after your visit. By sending it you agree that we message you on WhatsApp about this visit (confirmation, any change and a reminder). We will use your number only for this visit."}
       </p>
     </form>
   );

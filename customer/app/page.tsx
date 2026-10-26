@@ -29,6 +29,7 @@ import { ReelsWall } from "@/components/home/ReelsWall";
 import { ReviewsWall } from "@/components/home/ReviewsWall";
 import { imageBySlug } from "@/lib/serviceImages";
 import { Faq } from "@/components/site/Faq";
+import { LeadForm } from "@/components/home/LeadForm";
 import { SalonJsonLd } from "@/components/site/JsonLd";
 
 export const metadata: Metadata = {
@@ -434,6 +435,23 @@ export default async function Home() {
           )}
         </section>
       )}
+
+      {/* 11b. Interested? A lead form for people who are not ready to pick a time: name, number and a question.
+          It lands in the staff app under Bookings → Leads. Not a booking, not marketing consent. */}
+      <section id="interested" className={`scroll-mt-16 bg-ivory-2 ${section}`}>
+        <div className="mx-auto grid max-w-site gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+          <div className="reveal">
+            <Eyebrow>Interested?</Eyebrow>
+            <h2 className="mt-4 font-serif text-[34px] leading-[1.05] md:text-[56px]">
+              Not ready to pick a <em className="text-gold">time</em>?
+            </h2>
+            <p className="mt-4 max-w-[400px] text-[17px] text-ink-muted">Leave your number and any question. We will call or WhatsApp you.</p>
+          </div>
+          <div className="reveal max-w-[640px]">
+            <LeadForm whatsapp={site?.contact.whatsapp ?? null} />
+          </div>
+        </div>
+      </section>
 
       {/* 12. FAQ (white). Wide screens: title and the request button on the left
           (they stay in view while reading), questions on the right, inside the same

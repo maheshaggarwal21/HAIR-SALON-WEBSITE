@@ -265,9 +265,10 @@ export function RequestSheet({ site, services, artists, packages }: Props) {
   );
 
   // ── Render ───────────────────────────────────────────────────────────────
+  // Closed = invisible, not just parked below the screen (an address bar hiding on scroll would let it peek over the sticky button).
   return (
     <div
-      className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"}`}
+      className={`fixed inset-0 z-50 transition-[visibility] duration-[330ms] ${isOpen ? "visible" : "invisible pointer-events-none"}`}
       aria-hidden={!isOpen}
       inert={!isOpen}
     >
