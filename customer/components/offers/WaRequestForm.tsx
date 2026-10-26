@@ -26,6 +26,7 @@ import type { OfferPackage, SiteInfo } from "@/lib/types";
 import { pixelHeaders, track, trackOnce } from "@/lib/pixel";
 import { readFirstTouch } from "@/components/UtmCapture";
 import { postLead, QUERY_MAX } from "@/lib/leads";
+import { OFFER_FIELDS_ID } from "@/components/request/RequestContext";
 
 const DAYS_SHOWN = 14;
 const STEP = 30;
@@ -265,7 +266,7 @@ export function WaRequestForm({
               );
             })}
           </div>
-          {leadMode && <p className="mt-3 text-[14px] text-ink-muted">Not sure yet? You can skip this and just leave your number below. We will call you.</p>}
+          {leadMode && <p id={OFFER_FIELDS_ID} className="mt-3 scroll-mt-24 text-[14px] text-ink-muted">Not sure yet? You can skip this and just leave your number below. We will call you.</p>}
         </fieldset>
       )}
 
@@ -301,7 +302,7 @@ export function WaRequestForm({
       )}
 
       {!leadMode && (
-      <fieldset className="min-w-0">
+      <fieldset id={OFFER_FIELDS_ID} className="min-w-0 scroll-mt-24">
         <legend className={label}>Day</legend>
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {days.map((d) => {

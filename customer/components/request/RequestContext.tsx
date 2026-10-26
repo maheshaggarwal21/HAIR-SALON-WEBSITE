@@ -33,6 +33,12 @@ export type SheetKind = "book" | "request";
 /** The offer page's request form carries this id; on an offer page every call-to-action scrolls to it (see RequestProvider). */
 export const OFFER_FORM_ID = "send-request";
 
+/**
+ * Where "Book a request" lands: the start of the part the visitor fills in (the "not sure yet" line above the name box for
+ * a lead, or the Day picker for a request), not the top of the whole section, which is the long list of package cards.
+ */
+export const OFFER_FIELDS_ID = "request-fields";
+
 /** The label every call-to-action shows on an offer page. */
 export const OFFER_CTA_LABEL = "Book a request";
 
@@ -86,10 +92,16 @@ export function RequestProvider({
     (p: RequestPreset = {}) => {
       // On an offer page the button goes to the offer's form, whatever the booking mode is.
       if (onOfferPage) {
-        const form = document.getElementById(OFFER_FORM_ID);
-        if (form) {
-          const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-          form.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+        const target = document.getElementById(OFFER_FIELDS_ID) ?? document.getElementById(OFFER_FORM_ID);
+        if (target) {
+          // An instant jump, then one check once the page has settled. A smooth scroll is cut short on phones: Android Chrome
+          // interrupts it when the address bar hides, and images loading above shift the page under it.
+          const go = () => target.scrollIntoView({ behavior: "auto", block: "start" });
+          go();
+          window.setTimeout(() => {
+            const wanted = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+            if (Math.abs(target.getBoundingClientRect().top - wanted) > 40) go();
+          }, 400);
           return;
         }
       }
