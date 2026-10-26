@@ -7,7 +7,7 @@
  * Two outcomes, decided by one thing: whether a bundle is chosen.
  *   - bundle chosen (or an offer with fixed services): day and time are asked and it is sent as a REQUEST (Website requests);
  *   - an offer with bundles and NONE chosen: no day or time, and it is sent as a LEAD (Bookings → Leads): name, number
- *     and the question. Either way the button says "Send a request" and "Any other query" is optional.
+ *     and the question. Either way the button says "Book a request" and "Any other query" is optional.
  *
  * What it sends is only what the customer typed plus WHICH services (ids from the server's
  * own menu or the offer). The server decides the price and checks the time; this form is a
@@ -248,7 +248,8 @@ export function WaRequestForm({
               const on = p.slug === pkgSlug;
               return (
                 <label key={p.slug} className={`block cursor-pointer rounded-[var(--radius-card)] border p-4 transition-colors ${on ? "border-ink bg-ivory-2 ring-1 ring-ink" : "border-line bg-ivory hover:bg-ivory-2"}`}>
-                  <input type="radio" name="package" value={p.slug} checked={on} onChange={() => { setPkgSlug(p.slug); setTime(""); }} className="sr-only" />
+                  {/* A tap on the chosen package takes it off again (a radio does not do that by itself, so the click decides). */}
+                  <input type="radio" name="package" value={p.slug} checked={on} onChange={() => {}} onClick={() => { setPkgSlug(on ? "" : p.slug); setTime(""); }} className="sr-only" />
                   <span className="flex items-baseline justify-between gap-4">
                     <span className="font-serif text-[22px] leading-tight">{p.name}</span>
                     <span className="tabular text-[22px] font-semibold">{rupees(p.price)}</span>
@@ -259,7 +260,7 @@ export function WaRequestForm({
                     ))}
                   </ul>
                   <span className="mt-3 block text-[13px] text-ink-muted">About {p.durationMinutes >= 60 ? `${Math.round((p.durationMinutes / 60) * 2) / 2} ${Math.round((p.durationMinutes / 60) * 2) / 2 === 1 ? "hour" : "hours"}` : `${p.durationMinutes} minutes`}</span>
-                  <span className={`mt-2 inline-block rounded-full px-3 py-1 text-[13px] font-semibold ${on ? "bg-ink text-ivory" : "border border-line text-ink-muted"}`}>{on ? "Selected" : "Tap to choose"}</span>
+                  <span className={`mt-2 inline-block rounded-full px-3 py-1 text-[13px] font-semibold ${on ? "bg-ink text-ivory" : "border border-line text-ink-muted"}`}>{on ? "Selected · tap again to remove" : "Tap to choose"}</span>
                 </label>
               );
             })}
@@ -445,7 +446,7 @@ export function WaRequestForm({
         </p>
       )}
       <Button type="submit" className="w-full" disabled={!ready}>
-        {sending ? "Sending…" : "Send a request"}
+        {sending ? "Sending…" : "Book a request"}
       </Button>
       <p className="text-[13px] leading-[1.5] text-ink-muted">
         {leadMode

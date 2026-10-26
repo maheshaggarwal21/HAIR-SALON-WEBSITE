@@ -34,7 +34,7 @@ export type SheetKind = "book" | "request";
 export const OFFER_FORM_ID = "send-request";
 
 /** The label every call-to-action shows on an offer page. */
-export const OFFER_CTA_LABEL = "Send a request";
+export const OFFER_CTA_LABEL = "Book a request";
 
 interface RequestState {
   isOpen: boolean;
@@ -54,7 +54,7 @@ interface RequestState {
   /** Which sheet the buttons open: live booking, or the Phase 1 request form. */
   kind: SheetKind;
   /**
-   * True on /offers/*. There the buttons say "Send a request" and scroll down to the offer's own form instead of
+   * True on /offers/*. There the buttons say "Book a request" and scroll down to the offer's own form instead of
    * opening the booking sheet (an offer is asked for, not booked through the six-step sheet).
    */
   onOfferPage: boolean;
@@ -138,7 +138,7 @@ export function RequestCta({
   if (formEnabled || onOfferPage) {
     return (
       <Button variant={variant} tone={tone} className={className} onClick={() => open(preset)} aria-haspopup={onOfferPage ? undefined : "dialog"}>
-        {/* Request mode must say "request" (CP1); live booking says "book"; an offer page says "Send a request". */}
+        {/* Request mode must say "request" (CP1); live booking says "book"; an offer page says "Book a request". */}
         {onOfferPage ? OFFER_CTA_LABEL : label ? (kind === "book" ? label.replace(/^Request/, "Book") : label) : kind === "book" ? "Book your slot" : "Request your slot"}
       </Button>
     );
