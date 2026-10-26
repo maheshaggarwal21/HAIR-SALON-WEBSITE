@@ -560,8 +560,10 @@ export function BookingSheet({ site, services, artists, packages }: Props) {
   const salonWa = whatsappHref(site.contact.whatsapp, made ? `Hi, about my booking ${made.booking.ref}.` : undefined);
 
   // ── Render ───────────────────────────────────────────────────────────────
+  // Closed = invisible, not just moved below the screen: when a phone's address bar hides while scrolling, the screen grows
+  // and a parked panel would slide up over the sticky button. Visibility flips after the slide-out finishes.
   return (
-    <div className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"}`} aria-hidden={!isOpen} inert={!isOpen}>
+    <div className={`fixed inset-0 z-50 transition-[visibility] duration-[330ms] ${isOpen ? "visible" : "invisible pointer-events-none"}`} aria-hidden={!isOpen} inert={!isOpen}>
       <div onClick={handleClose} className={`absolute inset-0 bg-ink/50 transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0"}`} />
       <div
         ref={panel}

@@ -15,6 +15,7 @@
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { BOOKING_MODE } from "@/lib/config";
 import { whatsappHref } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +29,12 @@ export interface RequestPreset {
 }
 
 export type SheetKind = "book" | "request";
+
+/** The offer page's request form carries this id; on an offer page every call-to-action scrolls to it (see RequestProvider). */
+export const OFFER_FORM_ID = "send-request";
+
+/** The label every call-to-action shows on an offer page. */
+export const OFFER_CTA_LABEL = "Send a request";
 
 interface RequestState {
   isOpen: boolean;
@@ -46,6 +53,11 @@ interface RequestState {
   formEnabled: boolean;
   /** Which sheet the buttons open: live booking, or the Phase 1 request form. */
   kind: SheetKind;
+  /**
+   * True on /offers/*. There the buttons say "Send a request" and scroll down to the offer's own form instead of
+   * opening the booking sheet (an offer is asked for, not booked through the six-step sheet).
+   */
+  onOfferPage: boolean;
 }
 
 const Ctx = createContext<RequestState | null>(null);
@@ -67,21 +79,33 @@ export function RequestProvider({
   const [openedAt, setOpenedAt] = useState<Date | null>(null);
   const formEnabled = formAvailable && BOOKING_MODE === "request";
 
+  const pathname = usePathname() ?? "";
+  const onOfferPage = pathname.startsWith("/offers/");
+
   const open = useCallback(
     (p: RequestPreset = {}) => {
+      // On an offer page the button goes to the offer's form, whatever the booking mode is.
+      if (onOfferPage) {
+        const form = document.getElementById(OFFER_FORM_ID);
+        if (form) {
+          const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+          form.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+          return;
+        }
+      }
       if (!formEnabled) return;
       setPreset(p);
       setOpenedAt(new Date());
       setOpen(true);
     },
-    [formEnabled]
+    [formEnabled, onOfferPage]
   );
   const close = useCallback(() => setOpen(false), []);
   const whatsapp = whatsappHref(whatsappNumber, "Hi, I'd like to book an appointment at The Experts.");
 
   const value = useMemo(
-    () => ({ isOpen, preset, openedAt, open, close, whatsapp, formEnabled, kind }),
-    [isOpen, preset, openedAt, open, close, whatsapp, formEnabled, kind]
+    () => ({ isOpen, preset, openedAt, open, close, whatsapp, formEnabled, kind, onOfferPage }),
+    [isOpen, preset, openedAt, open, close, whatsapp, formEnabled, kind, onOfferPage]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -110,12 +134,12 @@ export function RequestCta({
   tone?: "light" | "dark";
   className?: string;
 }) {
-  const { open, formEnabled, whatsapp, kind } = useRequest();
-  if (formEnabled) {
+  const { open, formEnabled, whatsapp, kind, onOfferPage } = useRequest();
+  if (formEnabled || onOfferPage) {
     return (
-      <Button variant={variant} tone={tone} className={className} onClick={() => open(preset)} aria-haspopup="dialog">
-        {/* Request mode must say "request" (CP1); live booking says "book". */}
-        {label ? (kind === "book" ? label.replace(/^Request/, "Book") : label) : kind === "book" ? "Book your slot" : "Request your slot"}
+      <Button variant={variant} tone={tone} className={className} onClick={() => open(preset)} aria-haspopup={onOfferPage ? undefined : "dialog"}>
+        {/* Request mode must say "request" (CP1); live booking says "book"; an offer page says "Send a request". */}
+        {onOfferPage ? OFFER_CTA_LABEL : label ? (kind === "book" ? label.replace(/^Request/, "Book") : label) : kind === "book" ? "Book your slot" : "Request your slot"}
       </Button>
     );
   }

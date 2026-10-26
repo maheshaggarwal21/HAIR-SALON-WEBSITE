@@ -14,6 +14,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { OfferSlideshow, type Slide } from "@/components/offers/OfferSlideshow";
 import { WaRequestForm } from "@/components/offers/WaRequestForm";
+import { OFFER_FORM_ID } from "@/components/request/RequestContext";
 import { ViewContent } from "@/components/analytics/ViewContent";
 import { offerTill, rupees } from "@/lib/format";
 import type { OfferPageData, SiteInfo } from "@/lib/types";
@@ -54,15 +55,19 @@ export function OfferPageView({ offer, site }: { offer: OfferPageData; site: Sit
         </div>
       </section>
 
-      <section className="bg-ivory px-4 py-14 md:px-16 md:py-24">
+      {/* Every "Send a request" button on this page scrolls here (components/request/RequestContext.tsx). */}
+      <section id={OFFER_FORM_ID} className="scroll-mt-20 bg-ivory px-4 py-14 md:px-16 md:py-24">
         <div className="mx-auto max-w-[640px]">
           {live && site ? (
             <>
               <h2 className="font-serif text-[32px] leading-tight md:text-[44px]">
-                Ask for your <em className="text-gold">time</em>.
+                Send us a <em className="text-gold">request</em>.
               </h2>
               <p className="mt-3 text-[16px] leading-[1.6] text-ink-muted">
-                Pick a day and time. We confirm it on WhatsApp. The offer price is given at the salon when you pay after your visit.
+                {offer.packages?.length
+                  ? "Choose a package, a day and a time, and we confirm it on WhatsApp. Not sure yet? Leave your number and any question, and we will call you. "
+                  : "Pick a day and time. We confirm it on WhatsApp. "}
+                The offer price is given at the salon when you pay after your visit.
               </p>
               <div className="mt-8">
                 <WaRequestForm

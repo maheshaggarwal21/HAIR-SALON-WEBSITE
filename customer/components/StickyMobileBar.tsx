@@ -13,11 +13,25 @@
 
 import { useEffect, useState } from "react";
 import { MapPin, MessageCircle } from "lucide-react";
-import { useRequest } from "./request/RequestContext";
+import { OFFER_CTA_LABEL, OFFER_FORM_ID, useRequest } from "./request/RequestContext";
 
 export function StickyMobileBar({ mapUrl, watchId }: { mapUrl: string | null; watchId?: string }) {
-  const { isOpen, open, formEnabled, whatsapp, kind } = useRequest();
+  const { isOpen, open, formEnabled, whatsapp, kind, onOfferPage } = useRequest();
   const [pastHero, setPastHero] = useState(!watchId);
+  // On an offer page the button scrolls to the offer's form, so it steps aside once the form has clearly arrived (its top is in
+  // the upper part of the screen), and is there while the visitor is still reading the offer above it.
+  const [formInView, setFormInView] = useState(false);
+  useEffect(() => {
+    const form = onOfferPage ? document.getElementById(OFFER_FORM_ID) : null;
+    if (!form || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([entry]) => setFormInView(entry.isIntersecting), { rootMargin: "0px 0px -35% 0px", threshold: 0 });
+    io.observe(form);
+    return () => {
+      io.disconnect();
+      setFormInView(false);
+    };
+  }, [onOfferPage]);
+  const canAsk = formEnabled || onOfferPage;
 
   useEffect(() => {
     const el = watchId ? document.getElementById(watchId) : null;
@@ -31,8 +45,8 @@ export function StickyMobileBar({ mapUrl, watchId }: { mapUrl: string | null; wa
     return () => io.disconnect();
   }, [watchId]);
 
-  if (!formEnabled && !whatsapp && !mapUrl) return null;
-  const hidden = isOpen || !pastHero;
+  if (!canAsk && !whatsapp && !mapUrl) return null;
+  const hidden = isOpen || !pastHero || (onOfferPage && formInView);
 
   return (
     <div
@@ -43,14 +57,14 @@ export function StickyMobileBar({ mapUrl, watchId }: { mapUrl: string | null; wa
       inert={hidden}
     >
       <div className="flex gap-2">
-        {formEnabled && (
+        {canAsk && (
           <button
             type="button"
             onClick={() => open()}
-            aria-haspopup="dialog"
+            aria-haspopup={onOfferPage ? undefined : "dialog"}
             className="h-12 flex-1 rounded-[var(--radius-control)] bg-ink text-[15px] font-semibold text-ivory"
           >
-            {kind === "book" ? "Book a slot" : "Request a slot"}
+            {onOfferPage ? OFFER_CTA_LABEL : kind === "book" ? "Book a slot" : "Request a slot"}
           </button>
         )}
         {whatsapp && (
@@ -59,12 +73,12 @@ export function StickyMobileBar({ mapUrl, watchId }: { mapUrl: string | null; wa
             target="_blank"
             rel="noopener"
             className={`flex h-12 items-center justify-center gap-2 rounded-[var(--radius-control)] border border-line text-[15px] font-semibold ${
-              formEnabled ? "w-12" : "flex-1"
+              canAsk ? "w-12" : "flex-1"
             }`}
             aria-label="WhatsApp us"
           >
             <MessageCircle className="h-5 w-5" strokeWidth={1.5} />
-            {!formEnabled && "WhatsApp"}
+            {!canAsk && "WhatsApp"}
           </a>
         )}
         {mapUrl && (
