@@ -28,7 +28,7 @@ export function WebsiteHub() {
       icon={Globe}
       intro="Everything the customer site shows: contact details, the menu, videos and offers."
       tabs={[
-        { id: "settings", label: "Settings", blurb: "Phone, address, opening hours, closed days, artists on the site.", icon: Globe, permission: "website.manage", Component: WebsiteSettings },
+        { id: "settings", label: "Settings", blurb: "Simple booking form on/off, phone, address, opening hours, closed days, artists on the site.", icon: Globe, permission: "website.manage", Component: WebsiteSettings },
         { id: "menu", label: "Menu", blurb: "Which services appear on the website, with their public names and photos.", icon: Store, permission: "website.manage", Component: WebsiteMenu },
         { id: "reels", label: "Reels", blurb: "The hero slides and reels shown on the home page.", icon: Clapperboard, permission: "website.manage", Component: WebsiteReels },
         { id: "offers", label: "Offers", blurb: "Offer bars and pop-ups with their start and end dates.", icon: Megaphone, permission: "website.manage", Component: WebsiteOffers },
