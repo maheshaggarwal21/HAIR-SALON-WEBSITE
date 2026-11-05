@@ -75,8 +75,9 @@ export async function getPackages(): Promise<PublicPackage[] | null> {
   "use cache";
   cacheTag("packages");
   const data = await read<{ packages: PublicPackage[] }>("/packages");
-  // Packages switch on and off by date, so they refresh more often.
-  if (data) cacheLife("minutes");
+  // Packages switch on and off by date: the backend's midnight cron and every owner edit drop this tag at once, so
+  // "hours" is only the fallback. "minutes" here re-rendered every page each minute (all pages share the layout).
+  if (data) cacheLife("hours");
   else cacheLife(FAILED);
   return data?.packages ?? null;
 }
@@ -92,7 +93,7 @@ export async function getCampaigns(): Promise<{ today: string; campaigns: Public
   // `today` is the server's IST date at fetch time: the prerendered page picks
   // the offer with it (no clock read during render), the browser re-checks.
   const data = await read<{ today: string; campaigns: PublicCampaign[] }>("/campaigns");
-  if (data) cacheLife("minutes");
+  if (data) cacheLife("hours");
   else cacheLife(FAILED);
   return data ?? null;
 }
@@ -108,14 +109,14 @@ export async function getReels(): Promise<PublicReel[] | null> {
 
 /**
  * The offer page that is live today (India time), or null. Tagged "campaigns" so an owner's
- * edit refreshes it at once; the short life is because the answer also changes at midnight IST
- * by itself, and a page must never show yesterday's offer for hours.
+ * edit refreshes it at once. The answer also changes at midnight IST: the backend's bookings cron drops the
+ * "campaigns" tag in the first half hour of the new day, so "hours" is only the fallback if that ping fails.
  */
 export async function getOfferNow(): Promise<{ offer: OfferPageData | null } | null> {
   "use cache";
   cacheTag("campaigns");
   const data = await read<{ offer: OfferPageData | null }>("/offer-pages/now");
-  if (data) cacheLife("minutes");
+  if (data) cacheLife("hours");
   else cacheLife(FAILED);
   return data;
 }
@@ -125,7 +126,7 @@ export async function getOfferPage(slug: string): Promise<OfferPageData | null> 
   "use cache";
   cacheTag("campaigns");
   const data = await read<{ offer: OfferPageData }>(`/offer-pages/${encodeURIComponent(slug)}`);
-  if (data) cacheLife("minutes");
+  if (data) cacheLife("hours");
   else cacheLife(FAILED);
   return data?.offer ?? null;
 }
